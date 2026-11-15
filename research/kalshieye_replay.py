@@ -131,7 +131,8 @@ def k_market(day):
 def outcomes(day):
     out={}
     for m in table_records(day,"settlements",
-          ("series","ticker","result","close_ts","settlement_ts","floor_strike","ts_recv")):
+          ("series","ticker","result","close_ts","settlement_ts","floor_strike","ts_recv",
+           "coin_price_start","coin_price_end","expiration_value")):
         if m["result"] not in ("yes","no"):continue
         if m["settlement_ts"] is None or m["close_ts"] is None:continue
         if m["settlement_ts"]<m["close_ts"]:continue
@@ -242,6 +243,64 @@ def fit_logit(rows):
     return theta
 
 
+def audit_benchmark_proxy_basis(spot,markets,labels,bad_hours):
+    """Compare official settled BTC benchmark with 60 observed quote seconds.
+
+    Official values are after-the-event diagnostics ONLY; never predictive
+    inputs. Neither quote mean nor Coinbase mid is BRTI itself.
+    """
+    differences=collections.defaultdict(list)
+    mismatches=collections.Counter()
+    official_count=0;target_checks=[];rejected=collections.Counter()
+    for ticker,m in markets.items():
+        result=labels.get(ticker)
+        if not result:continue
+        value=result.get("coin_price_end")
+        if value is None:
+            try:value=float(result.get("expiration_value"))
+            except (TypeError,ValueError):value=None
+        if value is None or not math.isfinite(value) or value<=0:
+            rejected["no_numerical_official_end_index"]+=1;continue
+        if any(h+3600>m["open"] and h<m["close"] for h in bad_hours):
+            rejected["incident_window"]+=1;continue
+        official_count+=1
+        target_index=result.get("coin_price_start")
+        if target_index is not None and math.isfinite(target_index):
+            target_checks.append(abs(target_index-m["floor_strike"]))
+        for venue in SOURCES:
+            sample=[]
+            for sec in range(int(m["close"]-60),int(m["close"])):
+                # Access latest quote received on or before second 'sec':
+                # point() internally refuses the currently incomplete second.
+                q=point(spot,venue,sec+1,2)
+                if q is None:
+                    break
+                sample.append(q["price"])
+            if len(sample)!=60:
+                rejected[f"incomplete_60s_{venue}"]+=1
+                continue
+            avg=sum(sample)/60
+            differences[venue].append(avg-value)
+            mismatches[venue]+=int((avg>=m["floor_strike"]) != (result["result"]=="yes"))
+    stats={}
+    for venue,errs in differences.items():
+        abs_errors=sorted(abs(x) for x in errs)
+        stats[venue]={
+            "markets_with_60_complete_spot_seconds":len(errs),
+            "mean_signed_usd":round(statistics.mean(errs),4),
+            "mean_absolute_usd":round(statistics.mean(abs_errors),4),
+            "median_absolute_usd":round(statistics.median(abs_errors),4),
+            "p95_absolute_usd":round(abs_errors[min(len(errs)-1,int(.95*(len(errs)-1)))],4),
+            "max_absolute_usd":round(max(abs_errors),4),
+            "wrong_contract_winner_if_replaced_with_spot_average":mismatches[venue]}
+    return {"official_end_index_markets_after_excluding_incidents":official_count,
+            "target_vs_official_start_index_available":len(target_checks),
+            "max_abs_target_minus_index_start_usd":round(max(target_checks),4) if target_checks else None,
+            "by_exchange":stats,
+            "unusable":dict(rejected),
+            "interpretation":"This uses official end-of-window index only as POST-SETTLEMENT ground truth; spot quote averages must never become the official contract result."}
+
+
 def make_dataset():
     all_obs={};provenance={};summary={}
     for day in DAYS:
@@ -304,7 +363,9 @@ def make_dataset():
                 if market is None:
                     excluded["no_recent_balanced_kalshi_quote"]+=1
         all_obs[day]=rows
-        summary[day]={"contract_catalog_count":candidate_market,
+        basis=audit_benchmark_proxy_basis(spot,markets,labels,bad_hours)
+        summary[day]={"official_index_vs_quote_basis":basis,
+                      "contract_catalog_count":candidate_market,
                       "official_outcomes_with_ticker":len(labels),
                       "clean_checkpoints":len(rows),
                       "clean_distinct_contracts":len({r["ticker"] for r in rows}),
