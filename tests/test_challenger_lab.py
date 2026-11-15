@@ -120,7 +120,7 @@ def test_synthetic_full_holdout_folds_paired_scoring_and_report_disclaimer():
     assert any(x["model"]=="settlement_zero_drift" for x in report["scores"])
     assert all(x["matched_contracts"] <= 40 for x in report["paired_brier"])
     assert all(0 <= x["brier"] <= 1 for x in report["scores"])
-    assert report["unavailable_models"]["siddha_spot_xgboost"].startswith("Optional")
+    assert report["unavailable_models"]["siddha_spot_xgboost@14m"].startswith("Optional")
 
 
 def test_insufficient_contracts_never_pretend_to_report_skill():
