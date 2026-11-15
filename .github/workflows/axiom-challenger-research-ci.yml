@@ -1,0 +1,47 @@
+name: AXIOM isolated challenger optional XGBoost CI
+on:
+  push:
+    paths:
+      - 'research/**'
+      - 'tests/test_challenger_lab.py'
+      - '.github/workflows/axiom-challenger-research-ci.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'research/**'
+      - 'tests/test_challenger_lab.py'
+      - '.github/workflows/axiom-challenger-research-ci.yml'
+permissions:
+  contents: read
+jobs:
+  synthetic-research-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DEMO_MODE: '1'
+      AUTO_PAPER: '0'
+      PYTHONPATH: '.'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install original AXIOM pinned dependencies
+        run: python -m pip install --disable-pip-version-check -r requirements.lock.txt
+      - name: Install isolated research-only ML dependencies
+        run: python -m pip install --disable-pip-version-check xgboost==3.4.1 scikit-learn==1.7.2
+      - name: Run challenger tests including real XGBoost training on SYNTHETIC fixtures
+        run: python -m pytest -q tests/test_challenger_lab.py
+      - name: Verify no actual order/settlement storage or runtime dependency changes
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import ast
+          src=Path('research/challenger_lab.py').read_text()
+          mod=ast.parse(src)
+          assert 'app.main' not in src
+          assert 'BOT_ADMIN_TOKEN' not in src
+          import research.challenger_lab as research
+          assert 'market_mid' not in research.FEATURES
+          print('PASS: research sidecar input allowlist excludes Kalshi prices and active app imports')
+          PY
