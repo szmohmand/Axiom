@@ -204,3 +204,28 @@ def test_collector_never_records_missing_or_unknown_market(tmp_path):
     provider.candles=lambda: a["candles"][:20]
     assert record_live.observe(provider,root,lambda:a["ts"])["status"]=="INPUT_WITHHELD"
     assert not (root/"observations.jsonl").exists()
+
+
+def test_actual_xgboost_optional_training_independence():
+    """Runs only in the separate research-CI job with pinned XGBoost installed."""
+    import importlib.util
+    if importlib.util.find_spec("xgboost") is None:
+        pytest.skip("XGBoost not installed in AXIOM production dependency set")
+    items=[lab.normalize_observation(one(i,remaining=840,market_mid=.09 if i%2 else .91))
+           for i in range(35)]
+    labels={r["ticker"]:lab.normalize_settlement(
+            outcome(one(i),yes=i%2==0),allow_synthetic=True)
+            for i,r in enumerate(items)}
+    cutoff=items[-1]["expires_ts"]+20
+    model,reason=lab.fit_spot_xgboost(items,labels,cutoff)
+    assert reason is None
+    assert model is not None
+    a=lab.normalize_observation(one(500,remaining=840,market_mid=.05))
+    b=lab.normalize_observation(one(500,remaining=840,market_mid=.95))
+    vec_a=[[lab.inputs(a)[name] for name in lab.FEATURES]]
+    vec_b=[[lab.inputs(b)[name] for name in lab.FEATURES]]
+    assert vec_a==vec_b
+    pa=float(model.predict_proba(vec_a)[0][1])
+    pb=float(model.predict_proba(vec_b)[0][1])
+    assert math.isfinite(pa) and 0 <= pa <= 1
+    assert pa==pytest.approx(pb)
