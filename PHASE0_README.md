@@ -1,7 +1,7 @@
 # AXIOM Phase 0 — isolated source freeze and transfer
 
 **Scope:** A source-preserving AXIOM v2 checkpoint and reproducible local/CI tests.
-Target repository: **`szmohmand/Axiom`**, existing `main` branch only. The dedicated GitHub repository was empty when verified on 2026-11-15. Do not create/delete branches or touch any other repositories.
+Target repository: **`szmohmand/Axiom`**, imported on existing `main`. The dedicated GitHub repository was empty before import. Future branches are permitted only inside `Axiom` when needed; no other repositories may be accessed or changed.
 No live orders or production resources are configured.
 
 ## Transfer baseline
@@ -40,4 +40,4 @@ offline tests. For AXIOM research mode, run only with DEMO_MODE=1 and AUTO_PAPER
 - `phase0/SOURCE_RECONCILIATION.md`: provenance and open issues
 - `phase0/ACCEPTANCE.md`: transfer gate and sign-off state
 
-**Phase 0 gate is pending** until clean dependency installation and GitHub Actions are observed, the named audit archive versions and original commit reference are reconciled or explicitly waived, and the user signs off. A new GitHub commit pins this transfer *going forward* but is not an original legacy ZIP commit.
+**Technical transfer completed:** GitHub Actions clean Python 3.13 dependency install, exact source/ZIP hash verification, and 21 offline tests all passed on November 15, 2026 (run #43723325225). **Formal historical-source/sign-off gate remains pending** until the named audit archive versions and original commit reference are reconciled or explicitly waived, and the user signs off. A new GitHub commit pins this transfer *going forward* but is not an original legacy ZIP commit.

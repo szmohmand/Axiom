@@ -1,22 +1,23 @@
-# AXIOM Phase 0 Gate — acceptance checklist
+# AXIOM Phase 0 — technical transfer acceptance
+
+**Technical transfer: VERIFIED on `szmohmand/Axiom` (main).** Formal complete gate is **PENDING HISTORICAL DISPOSITION + OWNER SIGN-OFF**.
 
 | Criterion | Status | Evidence |
 |---|---|---|
-| Frozen legacy ZIP bytes | PASS | transfer_manifest.json includes exact v1/v2 SHA-256 |
-| Original legacy ZIP Git commit | OPEN | historical commit unavailable in ZIP |
-| Copied-source checksum verification | PASS | 19 byte-identical originals + 1 documented test-only amendment; original ZIP hash independently checked |
-| Audit archive versions | OPEN | research PDFs hashed, but not the specified archived audit ZIP versions |
-| New AXIOM requirements pinned | PASS (scope register) | NEW_BOT_REQUIREMENTS.md; gaps explicitly noted |
-| Reusable files/imports/licenses/dependencies | PASS (inventory) | REUSABLE_CODE_INVENTORY.md + import_inventory.json, dependencies.json, third_party_pins.json |
-| No migrated secrets | PASS (scoped inspection) | no actual credentials, keys, databases copied; common secret-pattern scan: no candidates |
-| Isolated local Git repository | PASS | verified local source snapshot and 21 tests |
-| Dedicated GitHub repository | READY FOR INITIAL COMMIT | existing public `szmohmand/Axiom` was verified empty; **main only**, no branch creation |
-| CI workflow defined | PASS (config only) | `.github/workflows/phase0-ci.yml` (networked CI execution not observed) |
-| Original AXIOM v2 source tests | PASS AFTER TEST AMENDMENT | 19 tests; one demo-boundary flaky test fixed without changing app code |
-| New Phase 0 tests | PASS | 2/2 tests |
-| Fresh-venv offline dependency install | BLOCKED | New 3.13 virtualenv cannot resolve `annotated-doc==0.0.4` from offline cache; GitHub Actions must prove fresh install |
-| Manifest signed off | PENDING | No user sign-off or final original-commit/audit reconciliation |
+| Frozen v1/v2 original ZIP files | PASS | `phase0/source_archives/`, exact SHA-256 in `transfer_manifest.json` |
+| V2 transferred source identity | PASS | CI `verify_transfer.py` validates all 20 transferred source hashes, including documented one-file test amendment |
+| Reusable code, imports, licenses and external dependencies | PASS | Existing inventories, source catalog and notices retained |
+| New bot requirements | PASS (transfer scope) | `phase0/NEW_BOT_REQUIREMENTS.md`; no claims of live validation |
+| No credentials, data stores or real orders migrated | PASS (scoped inspection) | Protected `.gitignore`; code only; no secrets copied |
+| Dedicated GitHub repository | PASS | [Axiom repository](https://github.com/szmohmand/Axiom) on `main`, initialized without any other repo or branch changes |
+| Clean Python 3.13 dependency install | PASS | [GitHub Actions run](https://github.com/szmohmand/Axiom/actions/runs/43723325225), install locked 24 dependencies |
+| Source and frozen ZIP integrity in GitHub CI | PASS | [GitHub Actions run](https://github.com/szmohmand/Axiom/actions/runs/43723325225), transfer verification success |
+| Original 19 + Phase 0 2 offline tests | PASS (21/21) | [GitHub Actions run](https://github.com/szmohmand/Axiom/actions/runs/43723325225); synthetic/offline only |
+| CI workflow installed and executable | PASS | `.github/workflows/phase0-ci.yml`; push to `main` and manual dispatch |
+| Original legacy ZIP Git commit SHA | UNRESOLVED | Original ZIPs have no Git history; SHA-256 is byte-identity substitute |
+| Exact AXIOM audit archive ZIP versions | UNRESOLVED | Available research PDFs are hashed but not validated audit ZIPs |
+| User's transfer manifest sign-off | PENDING | No explicit signed acceptance of exceptions recorded |
 
-**Gate status: NOT PASSED / SIGN-OFF PENDING.**
+**Frozen source import checkpoint:** [`5537d61752d3`](https://github.com/szmohmand/Axiom/commit/5537d61752d3212f0934b727d664ad63c1c1a850).
 
-The local source snapshot and tests are ready for a network-enabled clean-install/CI run. No live trade operation has been tested or approved.
+**Interpretation:** repository/CI infrastructure is ready for ongoing research development. This does **not** prove any live forecast accuracy, model calibration, trading profitability, or approval for automatic order execution. Do not present the formal historical-source/sign-off gate as completed.

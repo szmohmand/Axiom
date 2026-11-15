@@ -200,9 +200,9 @@
   "secrets_migrated": false,
   "secret_scan_findings": [],
   "approval": {
-    "engineering_transfer_manifest": "PREPARED; verification pending",
+    "engineering_transfer_manifest": "TECHNICAL VERIFIED: GitHub Actions clean install, source ZIP checks and 21/21 tests pass; historical exceptions pending",
     "user_sign_off": "PENDING",
-    "gate": "NOT PASSED"
+    "gate": "TECHNICAL PASS; HISTORICAL PROVENANCE AND OWNER SIGN-OFF PENDING"
   },
   "migration_policy": "No live execution, credentials, production data, or deployments; new isolated working copy only.",
   "replaced_configuration_files": [
@@ -214,19 +214,29 @@
   "third_party_ref_pins": "phase0/third_party_pins.json",
   "acceptance": {
     "source_hash_verify": "PASS",
-    "offline_tests": "21/21 PASS",
-    "clean_install": "BLOCKED: dependency index unavailable",
+    "offline_tests": "PASS: 21/21 GitHub Actions run 43723325225",
+    "clean_install": "PASS: GitHub Actions run 43723325225 on Python 3.13; exact locked dependencies installed",
     "audit_versions": "NOT RESOLVED",
     "original_legacy_commit": "NOT RESOLVED",
-    "sign_off": "PENDING"
+    "sign_off": "PENDING",
+    "frozen_source_archives": "PASS: original v1/v2 ZIPs committed, SHA-256 verified in CI",
+    "github_actions": "PASS: workflow run 43723325225"
   },
   "repository_target": "szmohmand/Axiom",
   "repository_branch": "main",
-  "repository_initial_state": "Empty Git repository, checked 2026-11-15; initial AXIOM commit will establish new provenance (not legacy commit)",
+  "repository_initial_state": "Initially empty; AXIOM baseline imported on existing main 2026-11-15",
   "phase0_amendments": [
     {
       "path": "tests/test_app.py",
       "reason": "Deterministic synthetic clock prevents boundary-dependent false test failures. Source-archive SHA preserved in original_sha256."
     }
-  ]
+  ],
+  "remote_checkpoint": {
+    "repository": "szmohmand/Axiom",
+    "branch": "main",
+    "frozen_source_commit": "5537d61752d3212f0934b727d664ad63c1c1a850",
+    "ci_run_id": 43723325225,
+    "ci_url": "https://github.com/szmohmand/Axiom/actions/runs/43723325225",
+    "ci_result": "success"
+  }
 }

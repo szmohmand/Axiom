@@ -6,7 +6,7 @@
 - Every transferred file has a SHA-256 and byte count. One test (`tests/test_app.py`) was deliberately amended after the source freeze; its original ZIP hash is retained in `original_sha256`, and the new test hash is separately recorded. No application code was modified.
 - Actual AXIOM v2 implementation requirements are recorded from its README and test suite.
 - Research papers are referenced as research PDFs by file hash, **not as audit ZIPs**.
-- The destination is the existing empty `szmohmand/Axiom` repository, default branch `main` only. No other repository, branch or deployment is in scope.
+- The destination was the initially empty `szmohmand/Axiom` repository. Its existing `main` branch now holds the transfer; no other repository, branch or deployment was touched. Branches within `Axiom` may be created in future if needed, as authorized subsequently.
 - Only the transferred AXIOM-owned source is in this clean baseline; experimental imports
   from external codebases have not been added.
 
@@ -37,4 +37,4 @@
 
 ## Safety boundaries
 
-Do not migrate secrets, publish private records, access or alter other repositories/branches, or change Render/Supabase services. The only authorized remote is `szmohmand/Axiom` on its existing `main` branch. Its public visibility was verified; source files are credential-scanned before publishing.
+Do not migrate secrets, publish private records, access or alter other repositories/branches, or change Render/Supabase services. The only authorized remote is `szmohmand/Axiom`, currently using `main`; future in-repository branches are permitted as needed. Its public visibility was verified and original source ZIPs were scanned for common credential patterns before publishing.

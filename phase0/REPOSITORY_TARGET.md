@@ -1,9 +1,10 @@
-# AXIOM Phase 0 — exclusive repository target
+# AXIOM Phase 0 — exclusive GitHub target
 
-- **Allowed repository:** `szmohmand/Axiom` (case-insensitive GitHub owner/name).
-- **Allowed branch:** existing `main` only.
-- **Repository state at start:** public, initially empty Git repository, 2026-11-15.
-- **Prohibited operations:** creating/deleting repositories or branches; reads or writes in any other repository; changes to deployments, data stores, or secrets.
-- **Permitted Phase 0 action:** create the initial AXIOM baseline commit on existing `main`, run its GitHub Actions CI, and document acceptance.
-- **Historical provenance:** original ZIPs have SHA-256 checksums but no embedded Git history; the new GitHub commit is a new forward checkpoint, not the previous ZIP's original commit.
-- **Transfer sign-off:** pending explicit owner approval following CI and audit reconciliation.
+- **Only authorized repository:** `szmohmand/Axiom` (GitHub owner/name is case-insensitive).
+- **Transfer branch:** existing `main`. No new branch was necessary for the Phase 0 import.
+- **Future branch policy:** user permits creating branches **within `szmohmand/Axiom`** if needed. Do not create or delete another repository, and do not access or modify any other repository or its branches.
+- **Initial state:** public and empty before the transfer, November 15, 2026.
+- **Current state:** source, tests, frozen input ZIP archives and CI are committed to `main`.
+- **Excluded from Phase 0:** deployments, live orders, credentials and data-store changes.
+- **Historical provenance:** source ZIPs have exact SHA-256 fingerprints but no embedded Git history. A new repository commit is a forward checkpoint, not their historical source commit.
+- **Owner sign-off:** pending; see `SIGNOFF_TEMPLATE.md`.
