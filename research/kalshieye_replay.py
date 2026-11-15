@@ -366,6 +366,7 @@ def eval_models(observations):
         pass
     score=collections.defaultdict(list)
     paired=collections.defaultdict(list)
+    saved=collections.defaultdict(dict)
     opportunities=collections.defaultdict(list)
     call_candidates=collections.defaultdict(list)
     eval_summary={"train_day":DAYS[0],"test_day":DAYS[1],
@@ -399,6 +400,8 @@ def eval_models(observations):
         for name,p in preds.items():
             if p is not None and math.isfinite(p):
                 p=min(1-1e-6,max(1e-6,p))
+                saved[(cp,r["ticker"])][name]=p
+                saved[(cp,r["ticker"])]["y"]=r["y"]
                 score[(cp,name)].append((p,r["y"]))
                 call_candidates[(name,r["ticker"])].append((r["remaining"],p,r["y"]))
                 if r["quote"] and name!="kalshi_yes_mid_benchmark":
@@ -429,6 +432,36 @@ def eval_models(observations):
     for (cp,model),vals in sorted(paired.items()):
         paired_scores.append({"checkpoint":cp,"model":model,"n_matched_with_market":len(vals),
             "brier_skill_vs_market":round(sum((b-y)**2-(p-y)**2 for p,b,y in vals)/len(vals),6)})
+    # All comparisons use the SAME ticker/checkpoint and held-out label.
+    # Positive delta Brier = first model better than the second.
+    # Block-bootstrap contracts (one record per contract/checkpoint). This
+    # does NOT control fully for correlation across adjacent contracts.
+    import random
+    rng=random.Random(20261115)
+    comparisons=(
+        ("schen_m0_minute_proxy","axiom_ensemble"),
+        ("schen_m0_minute_proxy","kalshi_yes_mid_benchmark"),
+        ("independent_logit_candle_features","axiom_ensemble"),
+        ("xgb_spot_only_subset","axiom_ensemble"),
+        ("axiom_ensemble","kalshi_yes_mid_benchmark"),
+    )
+    paired_ci=[]
+    for cp in CHECKPOINTS:
+        cp_rows=[v for (checkpoint,ticker),v in saved.items() if checkpoint==cp]
+        for first,second in comparisons:
+            deltas=[(v[second]-v["y"])**2-(v[first]-v["y"])**2 for v in cp_rows
+                    if first in v and second in v]
+            if not deltas:continue
+            n=len(deltas)
+            draws=[]
+            for _ in range(2000):
+                draws.append(sum(deltas[rng.randrange(n)] for _ in range(n))/n)
+            draws.sort()
+            paired_ci.append({"checkpoint":cp,"first":first,"second":second,
+                              "matched":n,"positive_is_first_better":True,
+                              "delta_brier":round(statistics.mean(deltas),6),
+                              "approx_pair_bootstrap95":[round(draws[49],6),round(draws[1950],6)],
+                              "limited_to_one_holdout_day":True})
     leads=[]
     for name in sorted({m for m,t in call_candidates}):
         calls=collections.defaultdict(list)
@@ -457,6 +490,7 @@ def eval_models(observations):
                         "actual_fills_verified":False})
     return {"evaluation":eval_summary,
             "scores":by_score,"paired_brier_vs_market":paired_scores,
+            "paired_brier_contract_bootstrap_ci":paired_ci,
             "first_confident_call":leads,"paper_ask_only_opportunities":opp}
 
 
