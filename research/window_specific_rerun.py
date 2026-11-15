@@ -135,11 +135,32 @@ def score(rows):
         -r["y"]*math.log(max(1e-6,r["p"]))
         -(1-r["y"])*math.log(max(1e-6,1-r["p"]))
         for r in items) for items in by_contract.values())
+    # Five-bin calibration with equal contract influence. Ordinary
+    # observation-weighted ECE would overrepresent contracts with more
+    # timestamp snapshots or uninterrupted recorder coverage.
+    bin_weight=[0.]*5
+    bin_pred=[0.]*5
+    bin_truth=[0.]*5
+    for items in by_contract.values():
+        weight=1/(len(by_contract)*len(items))
+        for r in items:
+            k=min(4,max(0,int(r["p"]*5)))
+            bin_weight[k]+=weight
+            bin_pred[k]+=r["p"]*weight
+            bin_truth[k]+=r["y"]*weight
+    ece=sum(abs(p-y) for p,y in zip(bin_pred,bin_truth))
+    calibration=[{"range":[round(k*.2,1),round((k+1)*.2,1)],
+                  "mass":round(mass,6),
+                  "predicted":round(bin_pred[k]/mass,6),
+                  "observed_yes":round(bin_truth[k]/mass,6)}
+                 for k,mass in enumerate(bin_weight) if mass>0]
     result={
         "n_rows":len(rows),"n_contracts":len(by_contract),
         "brier":round(avg_brier,6),
         "directional_accuracy":round(avg_acc,6),
         "logloss":round(avg_log,6),
+        "ece_5bin_contract_weighted":round(ece,6),
+        "calibration_bins":calibration,
         "mean_obs_per_contract":round(len(rows)/len(by_contract),3),
     }
     # Confidence labels are a separate metric, not substitutes for proper scores.
