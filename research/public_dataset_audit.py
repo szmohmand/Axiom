@@ -122,8 +122,36 @@ def audit(windows,signals,shas):
                        "side_p":p_side,"y":int(result=="yes"),
                        "correct":expected_correct,"ask":ask,
                        "remain":actual_seconds,
-                       "month":w["close_utc"][:7]})
+                       "month":w["close_utc"][:7],"day":w["close_utc"][:10]})
     overall=stats(paired)
+    # Resample entire UTC days; consecutive 15m outcomes are not independent.
+    # These CIs describe selected alerts only and do not establish real fills.
+    import random
+    days=collections.defaultdict(list)
+    for row in paired:
+        days[row["day"]].append(row)
+    aggregates=[]
+    for day in sorted(days):
+        items=days[day]
+        aggregates.append((
+            len(items),sum(x["correct"] for x in items),
+            sum((x["p"]-x["y"])**2 for x in items),
+            sum(x["correct"]-x["ask"]-math.ceil(.07*x["ask"]*(1-x["ask"])*100-1e-9)/100 for x in items)))
+    bootstrap={"method":"UTC_day_cluster_percentile_95","seed":20261115,
+               "replicates":1000,"day_count":len(aggregates),
+               "interpretation":"selected sample; NOT proven executable strategy PnL"}
+    if len(aggregates)>=20:
+        rng=random.Random(20261115)
+        draws=collections.defaultdict(list)
+        for _ in range(1000):
+            selected=[aggregates[rng.randrange(len(aggregates))] for _ in aggregates]
+            n=sum(a[0] for a in selected)
+            draws["accuracy"].append(sum(a[1] for a in selected)/n)
+            draws["brier"].append(sum(a[2] for a in selected)/n)
+            draws["illustrative_net_usd"].append(sum(a[3] for a in selected)/n)
+        for name,values in draws.items():
+            values.sort()
+            bootstrap[name+"_ci_95"]=[round(values[24],6),round(values[975],6)]
     months=collections.defaultdict(list)
     remain=collections.defaultdict(list)
     for row in paired:
@@ -148,6 +176,7 @@ def audit(windows,signals,shas):
         "official_joined_strict_signals":len(paired),
         "excluded_or_invalid":dict(sorted(issues.items())),
         "all_official_selected":overall,
+        "utc_day_block_bootstrap_ci":bootstrap,
         "by_month":months_summary,
         "by_seconds_remaining":timing_summary,
         "can_establish_BRTI_outcome":"Only labels and published strikes; not original 1s BRTI history",
