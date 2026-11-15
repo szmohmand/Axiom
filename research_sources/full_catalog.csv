@@ -1,0 +1,33 @@
+name,group,availability,url,description,reports,repository,family
+KalshiBot — jaldrich2023,BTC and crypto,public_source,https://github.com/jaldrich2023/KalshiBot,Open-source Swift/macOS BTC15m forecasting app; threshold call timing and scorekeeping.,both,jaldrich2023/KalshiBot,
+aaryann123/kalshi-bot,BTC and crypto,public_source,https://github.com/aaryann123/kalshi-bot,"Python taker/maker bots, extensive BTC15m research and negative forward paper results.",second,aaryann123/kalshi-bot,
+Sarthak BTC Dashboard,BTC and crypto,public_source,https://github.com/sarthak-p/Kalshi-BTC-Dashboard,Python BTC15m dashboard/execution and multi-exchange feeds.,second,sarthak-p/Kalshi-BTC-Dashboard,
+SiddhaBasu/kalshi-bot,BTC and crypto,public_source,https://github.com/SiddhaBasu/kalshi-bot,"GBM/XGBoost with BTC15m market, whale scanner and weather features.",second,SiddhaBasu/kalshi-bot,
+oribarlevco-cell/kalshi-btc-15m-bot,BTC and crypto,public_source,https://github.com/oribarlevco-cell/kalshi-btc-15m-bot,BTC15m prediction research/paper system with logging.,second,oribarlevco-cell/kalshi-btc-15m-bot,
+kzenith2019/kalshi-btc-bot,BTC and crypto,public_source,https://github.com/kzenith2019/kalshi-btc-bot,"BTC15m GBM pricing, Kelly sizing, order-flow/momentum.",second,kzenith2019/kalshi-btc-bot,
+reedjacobp/kalshi-trading-bot,BTC and crypto,public_source,https://github.com/reedjacobp/kalshi-trading-bot,15-minute crypto bot with dashboard.,second,reedjacobp/kalshi-trading-bot,
+danielsilvaperez/kalshi-trading-bot,BTC and crypto,public_source,https://github.com/danielsilvaperez/kalshi-trading-bot,"BTC15m volatility scalper, logistic model, Kraken WebSocket.",second,danielsilvaperez/kalshi-trading-bot,
+darup67/kalshi-btc-1h-agent,BTC and crypto,public_source,https://github.com/darup67/kalshi-btc-1h-agent,BTC one-hour prediction caller; accuracy-by-minute investigation.,first,darup67/kalshi-btc-1h-agent,
+kamcs-dev/Kalshi-Btc-Bot,BTC and crypto,public_source_gitlab,https://gitlab.com/kamcs-dev/kalshi-btc-bot,GitLab project documenting simulation-to-live adverse-selection issues.,second,83202658,
+Synpath prediction-market arbitrage bot,Cross-market,public_source,https://github.com/Synpath-ai/prediction-market-arbitrage-trading-bot,Kalshi/Polymarket cross-venue arbitrage scanner and backtest/paper system.,second,Synpath-ai/prediction-market-arbitrage-trading-bot,
+AwpDemon weather bot,Weather,public_source,https://github.com/AwpDemon/kalshi-weather-bot,Weather-market model and paper validation.,second,AwpDemon/kalshi-weather-bot,
+ProjectKM,Weather,public_source,https://github.com/fsevkli/ProjectKM,Weather-market forecasting and automation research.,second,fsevkli/ProjectKM,
+Mick-Vaughn/Weather-Bot,Weather and crypto,public_source,https://github.com/Mick-Vaughn/Weather-Bot,Weather and additional BTC microstructure system.,second,Mick-Vaughn/Weather-Bot,
+K-Jeez/Kalshi-Vibe-Bot,General Kalshi,public_source,https://github.com/K-Jeez/Kalshi-Vibe-Bot,Kalshi automation using language-model decisions.,second,K-Jeez/Kalshi-Vibe-Bot,
+rodlaf/KalshiMarketMaker,General Kalshi,public_source,https://github.com/rodlaf/KalshiMarketMaker,Public Kalshi market-making bot.,second,rodlaf/KalshiMarketMaker,
+Ojo / Turbine Kalshi Bots Collection,Strategy DSL and backtests,public_strategy_specs,https://github.com/ojo-network/kalshi-bots-collection,"1,391 public strategy DSLs, research snapshots and backtests, NOT the proprietary runnable Turbine engine.",second,ojo-network/kalshi-bots-collection,
+BT-docs / Kalshi Weather Edge,Weather,public_docs_only,https://github.com/llukehanna/BT-docs,Public engineering documentation; original weather edge and market-maker engine explicitly private.,second,llukehanna/BT-docs,
+Patient Predator MAX,BTC daily multi-strike,public_report_no_source,https://gist.github.com/2080ufo/3cdb25d3d904014cf73b1a49880a9f83,"Published 97.3% simulated backtest report, no original executable strategy code identified.",second,,MAX research gist
+Deep Discount MAX,BTC daily multi-strike,public_report_no_source,https://gist.github.com/2080ufo/3cdb25d3d904014cf73b1a49880a9f83,"Alternative backtested strategy in same gist, no executable source.",second,,MAX research gist
+Patient Predator (Original),BTC daily multi-strike,public_report_no_source,https://gist.github.com/2080ufo/3cdb25d3d904014cf73b1a49880a9f83,"Older strategy in same MAX report, no executable source.",second,,MAX research gist
+Deep Discount (Original),BTC daily multi-strike,public_report_no_source,https://gist.github.com/2080ufo/3cdb25d3d904014cf73b1a49880a9f83,"Older strategy in same MAX report, no executable source.",second,,MAX research gist
+DCanavan Kalshi Paper Trading Lab,General Kalshi,public_status_page_only,https://gist.github.com/DCanavan/198d8c6ad82313aaa0c31da9aa26d90d,Public status-page HTML/JS Gist; not proven to contain underlying trading engine.,second,,
+TerryCalls / Terry,BTC and crypto,no_public_engine_found,https://terrycalls.com/developers,"Public API/developer documentation, not source of prediction engine.",first,,
+Agent LoLo / PM Countdown,BTC and crypto,no_public_engine_found,https://pmcountdown.com/community/the-lab/lolo,"Public performance/rules page, trading engine source not found.",first,,
+QuarterLine,BTC and crypto,no_public_engine_found,https://quaterlinesignals.com/record,"Public signals and results, source code not found.",first,,
+Oddometry,BTC and crypto,no_public_engine_found,https://app.oddometry.com/,"Hosted forecasting dashboard, no public source repo established.",first,,
+StrikeLine,BTC and crypto,no_public_engine_found,https://strikelinebot.com/,"Hosted Bitcoin signals app, no public source repo established.",first,,
+Kalshi Sniper,BTC/ETH/SOL/XRP,proprietary_no_public_source,https://www.kalshi-sniper.com/live,"Commercial proprietary trading system, published performance but no engine source located.",second,,
+Turbine live trading engine,BTC and Kalshi,proprietary_no_public_source,https://www.turbinefi.com/blog/5732-backtests-kalshi-bitcoin-15-minute-bots-2026,Commercial research platform; public Ojo strategy DSL corpus is separate from runtime source.,second,,
+Unidentified Discord screenshot bot,BTC and crypto,identity_unverified,,Original screenshot bot identity and code remain unverified.,first,,
+PM Countdown Sonia (reference-only),Crypto,reference_only,https://pmcountdown.com/community/the-lab/sonia/2026-11-13,Mentioned in the first report only as source citation; no bot source was identified.,first,,

@@ -1,0 +1,322 @@
+[
+  {
+    "name": "KalshiBot — jaldrich2023",
+    "group": "BTC and crypto",
+    "availability": "public_source",
+    "url": "https://github.com/jaldrich2023/KalshiBot",
+    "description": "Open-source Swift/macOS BTC15m forecasting app; threshold call timing and scorekeeping.",
+    "reports": "both",
+    "repository": "jaldrich2023/KalshiBot",
+    "family": ""
+  },
+  {
+    "name": "aaryann123/kalshi-bot",
+    "group": "BTC and crypto",
+    "availability": "public_source",
+    "url": "https://github.com/aaryann123/kalshi-bot",
+    "description": "Python taker/maker bots, extensive BTC15m research and negative forward paper results.",
+    "reports": "second",
+    "repository": "aaryann123/kalshi-bot",
+    "family": ""
+  },
+  {
+    "name": "Sarthak BTC Dashboard",
+    "group": "BTC and crypto",
+    "availability": "public_source",
+    "url": "https://github.com/sarthak-p/Kalshi-BTC-Dashboard",
+    "description": "Python BTC15m dashboard/execution and multi-exchange feeds.",
+    "reports": "second",
+    "repository": "sarthak-p/Kalshi-BTC-Dashboard",
+    "family": ""
+  },
+  {
+    "name": "SiddhaBasu/kalshi-bot",
+    "group": "BTC and crypto",
+    "availability": "public_source",
+    "url": "https://github.com/SiddhaBasu/kalshi-bot",
+    "description": "GBM/XGBoost with BTC15m market, whale scanner and weather features.",
+    "reports": "second",
+    "repository": "SiddhaBasu/kalshi-bot",
+    "family": ""
+  },
+  {
+    "name": "oribarlevco-cell/kalshi-btc-15m-bot",
+    "group": "BTC and crypto",
+    "availability": "public_source",
+    "url": "https://github.com/oribarlevco-cell/kalshi-btc-15m-bot",
+    "description": "BTC15m prediction research/paper system with logging.",
+    "reports": "second",
+    "repository": "oribarlevco-cell/kalshi-btc-15m-bot",
+    "family": ""
+  },
+  {
+    "name": "kzenith2019/kalshi-btc-bot",
+    "group": "BTC and crypto",
+    "availability": "public_source",
+    "url": "https://github.com/kzenith2019/kalshi-btc-bot",
+    "description": "BTC15m GBM pricing, Kelly sizing, order-flow/momentum.",
+    "reports": "second",
+    "repository": "kzenith2019/kalshi-btc-bot",
+    "family": ""
+  },
+  {
+    "name": "reedjacobp/kalshi-trading-bot",
+    "group": "BTC and crypto",
+    "availability": "public_source",
+    "url": "https://github.com/reedjacobp/kalshi-trading-bot",
+    "description": "15-minute crypto bot with dashboard.",
+    "reports": "second",
+    "repository": "reedjacobp/kalshi-trading-bot",
+    "family": ""
+  },
+  {
+    "name": "danielsilvaperez/kalshi-trading-bot",
+    "group": "BTC and crypto",
+    "availability": "public_source",
+    "url": "https://github.com/danielsilvaperez/kalshi-trading-bot",
+    "description": "BTC15m volatility scalper, logistic model, Kraken WebSocket.",
+    "reports": "second",
+    "repository": "danielsilvaperez/kalshi-trading-bot",
+    "family": ""
+  },
+  {
+    "name": "darup67/kalshi-btc-1h-agent",
+    "group": "BTC and crypto",
+    "availability": "public_source",
+    "url": "https://github.com/darup67/kalshi-btc-1h-agent",
+    "description": "BTC one-hour prediction caller; accuracy-by-minute investigation.",
+    "reports": "first",
+    "repository": "darup67/kalshi-btc-1h-agent",
+    "family": ""
+  },
+  {
+    "name": "kamcs-dev/Kalshi-Btc-Bot",
+    "group": "BTC and crypto",
+    "availability": "public_source_gitlab",
+    "url": "https://gitlab.com/kamcs-dev/kalshi-btc-bot",
+    "description": "GitLab project documenting simulation-to-live adverse-selection issues.",
+    "reports": "second",
+    "repository": "83202658",
+    "family": ""
+  },
+  {
+    "name": "Synpath prediction-market arbitrage bot",
+    "group": "Cross-market",
+    "availability": "public_source",
+    "url": "https://github.com/Synpath-ai/prediction-market-arbitrage-trading-bot",
+    "description": "Kalshi/Polymarket cross-venue arbitrage scanner and backtest/paper system.",
+    "reports": "second",
+    "repository": "Synpath-ai/prediction-market-arbitrage-trading-bot",
+    "family": ""
+  },
+  {
+    "name": "AwpDemon weather bot",
+    "group": "Weather",
+    "availability": "public_source",
+    "url": "https://github.com/AwpDemon/kalshi-weather-bot",
+    "description": "Weather-market model and paper validation.",
+    "reports": "second",
+    "repository": "AwpDemon/kalshi-weather-bot",
+    "family": ""
+  },
+  {
+    "name": "ProjectKM",
+    "group": "Weather",
+    "availability": "public_source",
+    "url": "https://github.com/fsevkli/ProjectKM",
+    "description": "Weather-market forecasting and automation research.",
+    "reports": "second",
+    "repository": "fsevkli/ProjectKM",
+    "family": ""
+  },
+  {
+    "name": "Mick-Vaughn/Weather-Bot",
+    "group": "Weather and crypto",
+    "availability": "public_source",
+    "url": "https://github.com/Mick-Vaughn/Weather-Bot",
+    "description": "Weather and additional BTC microstructure system.",
+    "reports": "second",
+    "repository": "Mick-Vaughn/Weather-Bot",
+    "family": ""
+  },
+  {
+    "name": "K-Jeez/Kalshi-Vibe-Bot",
+    "group": "General Kalshi",
+    "availability": "public_source",
+    "url": "https://github.com/K-Jeez/Kalshi-Vibe-Bot",
+    "description": "Kalshi automation using language-model decisions.",
+    "reports": "second",
+    "repository": "K-Jeez/Kalshi-Vibe-Bot",
+    "family": ""
+  },
+  {
+    "name": "rodlaf/KalshiMarketMaker",
+    "group": "General Kalshi",
+    "availability": "public_source",
+    "url": "https://github.com/rodlaf/KalshiMarketMaker",
+    "description": "Public Kalshi market-making bot.",
+    "reports": "second",
+    "repository": "rodlaf/KalshiMarketMaker",
+    "family": ""
+  },
+  {
+    "name": "Ojo / Turbine Kalshi Bots Collection",
+    "group": "Strategy DSL and backtests",
+    "availability": "public_strategy_specs",
+    "url": "https://github.com/ojo-network/kalshi-bots-collection",
+    "description": "1,391 public strategy DSLs, research snapshots and backtests, NOT the proprietary runnable Turbine engine.",
+    "reports": "second",
+    "repository": "ojo-network/kalshi-bots-collection",
+    "family": ""
+  },
+  {
+    "name": "BT-docs / Kalshi Weather Edge",
+    "group": "Weather",
+    "availability": "public_docs_only",
+    "url": "https://github.com/llukehanna/BT-docs",
+    "description": "Public engineering documentation; original weather edge and market-maker engine explicitly private.",
+    "reports": "second",
+    "repository": "llukehanna/BT-docs",
+    "family": ""
+  },
+  {
+    "name": "Patient Predator MAX",
+    "group": "BTC daily multi-strike",
+    "availability": "public_report_no_source",
+    "url": "https://gist.github.com/2080ufo/3cdb25d3d904014cf73b1a49880a9f83",
+    "description": "Published 97.3% simulated backtest report, no original executable strategy code identified.",
+    "reports": "second",
+    "repository": "",
+    "family": "MAX research gist"
+  },
+  {
+    "name": "Deep Discount MAX",
+    "group": "BTC daily multi-strike",
+    "availability": "public_report_no_source",
+    "url": "https://gist.github.com/2080ufo/3cdb25d3d904014cf73b1a49880a9f83",
+    "description": "Alternative backtested strategy in same gist, no executable source.",
+    "reports": "second",
+    "repository": "",
+    "family": "MAX research gist"
+  },
+  {
+    "name": "Patient Predator (Original)",
+    "group": "BTC daily multi-strike",
+    "availability": "public_report_no_source",
+    "url": "https://gist.github.com/2080ufo/3cdb25d3d904014cf73b1a49880a9f83",
+    "description": "Older strategy in same MAX report, no executable source.",
+    "reports": "second",
+    "repository": "",
+    "family": "MAX research gist"
+  },
+  {
+    "name": "Deep Discount (Original)",
+    "group": "BTC daily multi-strike",
+    "availability": "public_report_no_source",
+    "url": "https://gist.github.com/2080ufo/3cdb25d3d904014cf73b1a49880a9f83",
+    "description": "Older strategy in same MAX report, no executable source.",
+    "reports": "second",
+    "repository": "",
+    "family": "MAX research gist"
+  },
+  {
+    "name": "DCanavan Kalshi Paper Trading Lab",
+    "group": "General Kalshi",
+    "availability": "public_status_page_only",
+    "url": "https://gist.github.com/DCanavan/198d8c6ad82313aaa0c31da9aa26d90d",
+    "description": "Public status-page HTML/JS Gist; not proven to contain underlying trading engine.",
+    "reports": "second",
+    "repository": "",
+    "family": ""
+  },
+  {
+    "name": "TerryCalls / Terry",
+    "group": "BTC and crypto",
+    "availability": "no_public_engine_found",
+    "url": "https://terrycalls.com/developers",
+    "description": "Public API/developer documentation, not source of prediction engine.",
+    "reports": "first",
+    "repository": "",
+    "family": ""
+  },
+  {
+    "name": "Agent LoLo / PM Countdown",
+    "group": "BTC and crypto",
+    "availability": "no_public_engine_found",
+    "url": "https://pmcountdown.com/community/the-lab/lolo",
+    "description": "Public performance/rules page, trading engine source not found.",
+    "reports": "first",
+    "repository": "",
+    "family": ""
+  },
+  {
+    "name": "QuarterLine",
+    "group": "BTC and crypto",
+    "availability": "no_public_engine_found",
+    "url": "https://quaterlinesignals.com/record",
+    "description": "Public signals and results, source code not found.",
+    "reports": "first",
+    "repository": "",
+    "family": ""
+  },
+  {
+    "name": "Oddometry",
+    "group": "BTC and crypto",
+    "availability": "no_public_engine_found",
+    "url": "https://app.oddometry.com/",
+    "description": "Hosted forecasting dashboard, no public source repo established.",
+    "reports": "first",
+    "repository": "",
+    "family": ""
+  },
+  {
+    "name": "StrikeLine",
+    "group": "BTC and crypto",
+    "availability": "no_public_engine_found",
+    "url": "https://strikelinebot.com/",
+    "description": "Hosted Bitcoin signals app, no public source repo established.",
+    "reports": "first",
+    "repository": "",
+    "family": ""
+  },
+  {
+    "name": "Kalshi Sniper",
+    "group": "BTC/ETH/SOL/XRP",
+    "availability": "proprietary_no_public_source",
+    "url": "https://www.kalshi-sniper.com/live",
+    "description": "Commercial proprietary trading system, published performance but no engine source located.",
+    "reports": "second",
+    "repository": "",
+    "family": ""
+  },
+  {
+    "name": "Turbine live trading engine",
+    "group": "BTC and Kalshi",
+    "availability": "proprietary_no_public_source",
+    "url": "https://www.turbinefi.com/blog/5732-backtests-kalshi-bitcoin-15-minute-bots-2026",
+    "description": "Commercial research platform; public Ojo strategy DSL corpus is separate from runtime source.",
+    "reports": "second",
+    "repository": "",
+    "family": ""
+  },
+  {
+    "name": "Unidentified Discord screenshot bot",
+    "group": "BTC and crypto",
+    "availability": "identity_unverified",
+    "url": "",
+    "description": "Original screenshot bot identity and code remain unverified.",
+    "reports": "first",
+    "repository": "",
+    "family": ""
+  },
+  {
+    "name": "PM Countdown Sonia (reference-only)",
+    "group": "Crypto",
+    "availability": "reference_only",
+    "url": "https://pmcountdown.com/community/the-lab/sonia/2026-11-13",
+    "description": "Mentioned in the first report only as source citation; no bot source was identified.",
+    "reports": "first",
+    "repository": "",
+    "family": ""
+  }
+]

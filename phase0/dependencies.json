@@ -1,0 +1,37 @@
+{
+  "discovered_top_level_import_roots": [
+    "fastapi",
+    "pydantic",
+    "pytest",
+    "requests",
+    "zipfile"
+  ],
+  "source_requirements": [
+    "fastapi>=0.115,<1",
+    "uvicorn>=0.30,<1",
+    "requests>=2.31,<3"
+  ],
+  "runtime_environment_variables": [
+    "DEMO_MODE",
+    "AUTO_PAPER",
+    "POLL_SECONDS",
+    "BOT_ADMIN_TOKEN",
+    "DATA_PATH"
+  ],
+  "external_services": [
+    "Kalshi public market API",
+    "Coinbase spot/candles",
+    "GitHub public code endpoints (optional research collector)"
+  ],
+  "runtime_storage": [
+    "SQLite file determined by DATA_PATH"
+  ],
+  "not_transferred": [
+    "Kalshi private API credentials",
+    "admin token values",
+    "SQLite databases",
+    "Render deployment config",
+    "historical live data"
+  ],
+  "dependency_policy": "Pin versions in requirements.lock.txt for CI; no new paid resources authorized."
+}

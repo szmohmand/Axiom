@@ -1,0 +1,23 @@
+{
+  "date": "2026-11-15",
+  "warning": "These are observed public main-branch HEADs, not proven to be the exact commits used when the AXIOM v2 zip was assembled.",
+  "adaptations": [
+    {
+      "repository": "aaryann123/kalshi-bot",
+      "file": "bot.py",
+      "ref": "main",
+      "observed_head_sha": "589d9c23457a91c364eff6ef4752232088b1e7c0",
+      "license_at_review": "MIT",
+      "integrated_axm_v2": "app/ensemble.py:aaryann_fair"
+    },
+    {
+      "repository": "jaldrich2023/KalshiBot",
+      "file": "KalshiBot/Engine/Predictor.swift",
+      "ref": "main",
+      "observed_head_sha": "6f173410ed035e84761163efa1d584cf8191988b",
+      "license_at_review": "MIT",
+      "integrated_axm_v2": "app/ensemble.py:kalshibot_headstart"
+    }
+  ],
+  "candidate_code_transfer": "NONE; third-party candidates are references, not source copied into this phase 0 baseline."
+}

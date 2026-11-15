@@ -1,0 +1,232 @@
+{
+  "schema": "axiom.phase0.transfer.v1",
+  "generated_utc": "2026-11-15 (source-freeze date; not a trusted commit timestamp)",
+  "project": "AXIOM BTC/Kalshi 15-minute research prototype",
+  "transfer_base": "AXIOM_v2_Multi_Engine_Research_Bot.zip",
+  "legacy_zip_commit_sha": null,
+  "legacy_zip_commit_status": "unverifiable; original ZIP has no .git history; exact SHA-256 recorded",
+  "source_artifacts": [
+    {
+      "filename": "AXIOM_Kalshi_BTC_Bot_v1.zip",
+      "type": "legacy_zip",
+      "size_bytes": 28739,
+      "sha256": "6657e895ba4e9a850f15c1c9cdc9c7e2c64dc2139e4e82cfbb3e53504066ea43",
+      "git_commit": "NOT PRESENT IN FILE; UNVERIFIED"
+    },
+    {
+      "filename": "AXIOM_v2_Multi_Engine_Research_Bot.zip",
+      "type": "legacy_zip",
+      "size_bytes": 44780,
+      "sha256": "bdb17eac22d54cd3f2a34704f71a88c11830509624a131150a78fc334c5a6323",
+      "git_commit": "NOT PRESENT IN FILE; UNVERIFIED"
+    },
+    {
+      "filename": "The Search for the World’s Most Accurate Kalshi Trading Bot.pdf",
+      "type": "research_pdf",
+      "size_bytes": 259881,
+      "sha256": "c98345aed6a6abdb8ae7271148f76d303f64451c16faa71750678c6afd493aee",
+      "git_commit": null
+    },
+    {
+      "filename": "What the first pass missed or may have gotten wrong.pdf",
+      "type": "research_pdf",
+      "size_bytes": 242238,
+      "sha256": "e134a8b57203e24b410bb999535cf43ccfdb72d77314e15cfa6ebd1e8c533c01",
+      "git_commit": null
+    },
+    {
+      "filename": "Digital-forensics investigation_ Kalshi Bitcoin 15-minute bot shown in the screenshots.pdf",
+      "type": "research_pdf",
+      "size_bytes": 77850,
+      "sha256": "77dab10ee568b2d528ce505a40a990597338a991f47002560588feab1b2e7273",
+      "git_commit": null
+    },
+    {
+      "filename": "AXIOM_reexamination_personal_research_2026-11-15.md",
+      "type": "research_report",
+      "size_bytes": 16587,
+      "sha256": "7be116c547cfc7b4803d43c2fd7f984e8a5086a3bdaff2f9174d98ce1d067216",
+      "git_commit": null
+    },
+    {
+      "filename": "AXIOM_v2_full_cycle_test_result.md",
+      "type": "research_report",
+      "size_bytes": 2525,
+      "sha256": "c1108aefa490f36c25782178f114138d9530076f20de93f1f40d84445abb50a5",
+      "git_commit": null
+    }
+  ],
+  "transferred_files": [
+    {
+      "path": "LICENSE",
+      "size_bytes": 1063,
+      "sha256": "7de1e115d165f176e68f962acdb809b5ab8d8ae78d3981e0701392b2ac50c713",
+      "source": "AXIOM_v2_Multi_Engine_Research_Bot.zip"
+    },
+    {
+      "path": "README.md",
+      "size_bytes": 7549,
+      "sha256": "566d3571efca2c5ad56ba58c14361039717e6c07fe3cc80fc31cd2f901b9acca",
+      "source": "AXIOM_v2_Multi_Engine_Research_Bot.zip"
+    },
+    {
+      "path": "THIRD_PARTY_NOTICES.md",
+      "size_bytes": 3834,
+      "sha256": "464970319910066597aa30fc5c9cfd68abb0fbb10b8cc8641e81fa4546626167",
+      "source": "AXIOM_v2_Multi_Engine_Research_Bot.zip"
+    },
+    {
+      "path": ".env.example",
+      "size_bytes": 448,
+      "sha256": "c3c35ff6a0a587645a6c6f352dbee8dd7421e494a89892b8e5381f4b7fdf689c",
+      "source": "AXIOM_v2_Multi_Engine_Research_Bot.zip"
+    },
+    {
+      "path": "requirements.txt",
+      "size_bytes": 53,
+      "sha256": "69ee213307eb5afca3b9ddeada083659315fe9205e1c28bac889595b43c78c12",
+      "source": "AXIOM_v2_Multi_Engine_Research_Bot.zip"
+    },
+    {
+      "path": "TEST_REPORT.md",
+      "size_bytes": 787,
+      "sha256": "cb22d9c4fb465680811ab50a590b682b458c4a249fd327a1636e32bb7a8d6fd9",
+      "source": "AXIOM_v2_Multi_Engine_Research_Bot.zip"
+    },
+    {
+      "path": "app/__init__.py",
+      "size_bytes": 32,
+      "sha256": "4625d0161e781e97f8400618178c89d96c8961d9119441b6ec2ea90191e408ea",
+      "source": "AXIOM_v2_Multi_Engine_Research_Bot.zip"
+    },
+    {
+      "path": "app/engine.py",
+      "size_bytes": 8418,
+      "sha256": "4074003786095a0b075d439d14747955b20e44a31f3ae16bc048332e681c46d4",
+      "source": "AXIOM_v2_Multi_Engine_Research_Bot.zip"
+    },
+    {
+      "path": "app/feeds.py",
+      "size_bytes": 4420,
+      "sha256": "7c8fb3184e3a77193d0ecc482e0cbf7cf31b6137d4c085ddddba160ae547e60a",
+      "source": "AXIOM_v2_Multi_Engine_Research_Bot.zip"
+    },
+    {
+      "path": "app/main.py",
+      "size_bytes": 6640,
+      "sha256": "78c1106661a4fb9c17d0341754590696bf1185109fedaf04cab544f973e6cdc5",
+      "source": "AXIOM_v2_Multi_Engine_Research_Bot.zip"
+    },
+    {
+      "path": "app/storage.py",
+      "size_bytes": 12399,
+      "sha256": "cdab8f1b2c941404da35826a6729c5c639a345d3f5a6165b5a34062732e31600",
+      "source": "AXIOM_v2_Multi_Engine_Research_Bot.zip"
+    },
+    {
+      "path": "app/ensemble.py",
+      "size_bytes": 7945,
+      "sha256": "758d5fbc5ecf89ef7776e9dc73e124b183ebfe5717f03f54018d8551eb2ebd48",
+      "source": "AXIOM_v2_Multi_Engine_Research_Bot.zip"
+    },
+    {
+      "path": "app/static/index.html",
+      "size_bytes": 28064,
+      "sha256": "d543c2543d5a795c4c44b77e9e7c9855f8ecd01b310ed8cf257a152cf912adf2",
+      "source": "AXIOM_v2_Multi_Engine_Research_Bot.zip"
+    },
+    {
+      "path": "tests/test_app.py",
+      "size_bytes": 1615,
+      "sha256": "a40af1ce57aca3383f799ec4442cfbee0f6600a415a7ce9233b4bb35ba1f98fe",
+      "source": "AXIOM_v2_Multi_Engine_Research_Bot.zip + documented Phase 0 deterministic test amendment",
+      "original_sha256": "68164be566386e0a84a8af1ac0a533ba5b7baa45c7e3cb30c20d1ad8bdc07c6c",
+      "amendment": "Fixed intermittent HTTP 409 near 15-minute demo boundary by injecting a fixed clock into the test only; original ZIP remains frozen."
+    },
+    {
+      "path": "tests/test_engine.py",
+      "size_bytes": 2229,
+      "sha256": "8ccb6393c4e92f63bcafffe142b2429edfb9b117502cca48d3e8833a60f63a20",
+      "source": "AXIOM_v2_Multi_Engine_Research_Bot.zip"
+    },
+    {
+      "path": "tests/test_ledger.py",
+      "size_bytes": 1983,
+      "sha256": "775af3fbf408f458498ac7f55eb464ea2b20b3fa89986216cf1e1b5e7b7e89f8",
+      "source": "AXIOM_v2_Multi_Engine_Research_Bot.zip"
+    },
+    {
+      "path": "tests/test_ensemble_v2.py",
+      "size_bytes": 4569,
+      "sha256": "44429384e2d7d88b525d202112d9cf8a13b08b6990848929efcd072bf10310a6",
+      "source": "AXIOM_v2_Multi_Engine_Research_Bot.zip"
+    },
+    {
+      "path": "research_sources/full_catalog.csv",
+      "size_bytes": 6519,
+      "sha256": "a8ef46b0da20b254e9ea6352b818abb37d52c690ff97628fc836fe160f43f613",
+      "source": "AXIOM_v2_Multi_Engine_Research_Bot.zip"
+    },
+    {
+      "path": "research_sources/full_catalog.json",
+      "size_bytes": 11321,
+      "sha256": "bd4fe35628107d86bbf43f81b26dd5fabec093892318cbafc5e5915ad9499cc2",
+      "source": "AXIOM_v2_Multi_Engine_Research_Bot.zip"
+    },
+    {
+      "path": "research_sources/collect_sources.py",
+      "size_bytes": 6641,
+      "sha256": "ce38d3d1be597ee9976f4515d24e0b3ba6eef7462c7e92666e5cbb8b1a8b5e45",
+      "source": "AXIOM_v2_Multi_Engine_Research_Bot.zip"
+    }
+  ],
+  "excluded_live_config_files": [
+    "Procfile",
+    "render.yaml",
+    "run_demo.sh"
+  ],
+  "missing_required_inputs": [
+    {
+      "name": "AXIOM-specific audit archive version(s)",
+      "status": "not located as exact ZIP in available AXIOM files",
+      "note": "Research PDFs are documented separately; they are not silently equated with audit ZIPs."
+    },
+    {
+      "name": "Original source repository commit for AXIOM v2",
+      "status": "unknown; ZIP cannot establish git SHA"
+    }
+  ],
+  "requirements_baseline": "AXIOM v2 README + tests; no unreviewed carry-over from different BTC project",
+  "secrets_migrated": false,
+  "secret_scan_findings": [],
+  "approval": {
+    "engineering_transfer_manifest": "PREPARED; verification pending",
+    "user_sign_off": "PENDING",
+    "gate": "NOT PASSED"
+  },
+  "migration_policy": "No live execution, credentials, production data, or deployments; new isolated working copy only.",
+  "replaced_configuration_files": [
+    {
+      "path": ".gitignore",
+      "reason": "Original was replaced with a stricter credential and data-file exclusion list; not claimed as byte-identical source transfer."
+    }
+  ],
+  "third_party_ref_pins": "phase0/third_party_pins.json",
+  "acceptance": {
+    "source_hash_verify": "PASS",
+    "offline_tests": "21/21 PASS",
+    "clean_install": "BLOCKED: dependency index unavailable",
+    "audit_versions": "NOT RESOLVED",
+    "original_legacy_commit": "NOT RESOLVED",
+    "sign_off": "PENDING"
+  },
+  "repository_target": "szmohmand/Axiom",
+  "repository_branch": "main",
+  "repository_initial_state": "Empty Git repository, checked 2026-11-15; initial AXIOM commit will establish new provenance (not legacy commit)",
+  "phase0_amendments": [
+    {
+      "path": "tests/test_app.py",
+      "reason": "Deterministic synthetic clock prevents boundary-dependent false test failures. Source-archive SHA preserved in original_sha256."
+    }
+  ]
+}
