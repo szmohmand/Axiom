@@ -182,6 +182,18 @@
         "tests/test_challenger_lab.py::test_duplicate_contract_checkpoint_and_mismatched_expiration_fail",
         "tests/test_challenger_lab.py::test_collector_observes_once_and_grades_only_official_label"
       ]
+    },
+    {
+      "id": "A16",
+      "finding": "Isolated historical BTC replay may accidentally admit future recorder quotes or mistake an auxiliary recorded coin end-price for Kalshi's official BRTI expiration value. Preserve strict receive-time ordering, official-only labels, and no fabricated minute history.",
+      "fixed_commit": "1083fef048ef07f571cda741ad9c73db2ed9014b",
+      "tests": [
+        "tests/test_kalshieye_replay.py::test_asof_received_sec_is_earlier_than_prediction_boundary",
+        "tests/test_kalshieye_replay.py::test_quote_bars_only_completed_and_contiguous",
+        "tests/test_kalshieye_replay.py::test_no_second_level_kalshi_book_forward_leakage",
+        "tests/test_kalshieye_replay.py::test_official_expiration_value_is_ground_truth_not_recorded_coin_end",
+        "tests/test_kalshieye_replay.py::test_unavailable_official_expiration_value_never_substitutes_coin_price_end"
+      ]
     }
   ]
 }
