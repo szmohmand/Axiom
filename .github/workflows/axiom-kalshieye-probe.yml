@@ -1,0 +1,18 @@
+name: AXIOM isolated KalshiEye data suitability probe
+on:
+  push:
+    branches: [research/real-tick-replay-kalshieye-2026-11-15]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  kalshieye-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Read public Hugging Face data manifest (no code from source executed)
+        run: python -m research.kalshieye_probe
