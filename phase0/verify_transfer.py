@@ -18,7 +18,7 @@ def sha(path):
     return h.hexdigest()
 
 
-def verify(checkout, legacy_zip=None):
+def verify(checkout, legacy_zip=None, require_archives=False):
     manifest=json.loads((checkout/'phase0/transfer_manifest.json').read_text())
     errors=[]
     for row in manifest['transferred_files']:
@@ -27,6 +27,16 @@ def verify(checkout, legacy_zip=None):
             errors.append('missing: '+row['path'])
         elif sha(path)!=row['sha256']:
             errors.append('modified from frozen ZIP: '+row['path'])
+    # Verify original ZIP archives independently when stored in this repository.
+    for row in manifest['source_artifacts']:
+        if row['type'] != 'legacy_zip':
+            continue
+        frozen = checkout/'phase0'/'source_archives'/row['filename']
+        if frozen.is_file():
+            if sha(frozen) != row['sha256']:
+                errors.append('archive hash mismatch: '+row['filename'])
+        elif require_archives:
+            errors.append('missing frozen ZIP: '+row['filename'])
     for forbidden in ('.env','credentials.json','private_key.pem'):
         if (checkout/forbidden).exists(): errors.append('credential artifact: '+forbidden)
     # If the checkout is a Git repo, refuse sensitive filenames anywhere in tracked contents.
@@ -49,8 +59,9 @@ if __name__=='__main__':
     parser=argparse.ArgumentParser()
     parser.add_argument('--checkout',default='.')
     parser.add_argument('--legacy-zip')
+    parser.add_argument('--require-archives', action='store_true')
     args=parser.parse_args()
-    e=verify(Path(args.checkout),Path(args.legacy_zip) if args.legacy_zip else None)
+    e=verify(Path(args.checkout),Path(args.legacy_zip) if args.legacy_zip else None, args.require_archives)
     if e:
         print('FAIL: '+', '.join(e));raise SystemExit(1)
     print('PASS: transferred files match pinned source SHA-256 fingerprints')

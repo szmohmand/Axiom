@@ -9,6 +9,7 @@ The original ZIPs are pinned in `phase0/transfer_manifest.json` by SHA-256,
 but do not contain Git history: do not report these as original Git commit SHAs.
 The working source comes solely from `AXIOM_v2_Multi_Engine_Research_Bot.zip`.
 The old v1 ZIP is preserved as a separate predecessor reference.
+The two exact input ZIPs are checked into `phase0/source_archives/` and validated by SHA-256 in CI; the original ZIPs have not been edited.
 
 **Documented test-only amendment:** `tests/test_app.py` uses a deterministic demo timestamp so a run near a 15-minute expiry does not intermittently return HTTP 409. The original archived file SHA is preserved as `original_sha256` in the manifest; the transferred file has its own new SHA. No trading logic was changed.
 
@@ -20,7 +21,7 @@ python3.13 -m venv .venv
 . .venv/bin/activate
 python -m pip install -r requirements.lock.txt
 DEMO_MODE=1 AUTO_PAPER=0 python -m pytest -q
-python phase0/verify_transfer.py --checkout .
+python phase0/verify_transfer.py --checkout . --require-archives
 ```
 
 Never paste API keys into files, code, or chat. Admin token is not required for the

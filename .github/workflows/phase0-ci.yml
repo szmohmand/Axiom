@@ -26,7 +26,7 @@ jobs:
           python -m pip install --disable-pip-version-check -r requirements.lock.txt
       - name: Verify transfer and secret policy
         run: |
-          python phase0/verify_transfer.py --checkout .
+          python phase0/verify_transfer.py --checkout . --require-archives
       - name: Run full offline suite
         run: |
           python -m pytest -q
