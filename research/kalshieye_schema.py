@@ -46,15 +46,13 @@ def source_schema():
             f=pq.ParquetFile(p)
             schema=f.schema_arrow
             names=[{"name":field.name,"type":str(field.type)} for field in schema]
-            table=pq.read_table(p)
-            data=table.slice(0,1).to_pylist()
-            sample={}
-            for k,v in data[0].items() if data else []:
-                if isinstance(v,(str,int,float,bool,type(None))):
-                    sample[k]=str(v)[:130]
-                elif isinstance(v,datetime):
-                    sample[k]=v.isoformat()
-                else: sample[k]=str(v)[:200]
+            # Stringify the actual Arrow scalars, without coercing nanosecond
+            # timestamps to Python microsecond datetime or losing precision.
+            batches=f.iter_batches(batch_size=1)
+            first=next(batches,None)
+            sample=({field.name:str(first.column(i)[0])[:200]
+                     for i,field in enumerate(schema)}
+                    if first is not None else {})
             hashes=hashlib.sha256(p.read_bytes()).hexdigest()
             result={"date":d,"family":family,"size_bytes":p.stat().st_size,
                     "sha256":hashes,"n":f.metadata.num_rows,"columns":names,
