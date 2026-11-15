@@ -120,3 +120,15 @@ def test_schen_is_compared_when_available_but_not_across_entire_final_minute():
         assert W.M0 in results[period]["independent_rankings"]
     assert W.M0 not in results["final_minute"]["independent_rankings"]
     assert results["final_minute"]["schen_m0_formula_only_when_remaining_ge_60s"]["score"]["n_rows"]==1
+
+
+def test_calibration_not_biased_by_multiple_observations_of_one_contract():
+    # A has triple the observations but is still only one settled contract.
+    rows=[{"ticker":"a","p":.5,"y":1} for _ in range(3)]
+    rows.append({"ticker":"b","p":.5,"y":0})
+    got=W.score(rows)
+    assert got["ece_5bin_contract_weighted"]==0.0
+    assert len(got["calibration_bins"])==1
+    assert got["calibration_bins"][0]["predicted"]==.5
+    assert got["calibration_bins"][0]["observed_yes"]==.5
+    assert got["calibration_bins"][0]["mass"]==1
