@@ -17,6 +17,30 @@ jobs:
           python-version: '3.13'
       - name: Install project locked packages
         run: python -m pip install -r requirements.lock.txt
+      - name: Verify authentic recovery on the historical missing-minute incident
+        shell: bash
+        run: |
+          PYTHONPATH=. python - <<'PY'
+          from datetime import datetime,timezone
+          from app.feeds import LiveProvider,KALSHI,COINBASE,contiguous_real_candle_suffix
+          from app.engine import normalize_candles
+          p=LiveProvider()
+          start='2026-11-15T17:50:00+00:00'
+          end='2026-11-15T18:55:00+00:00'
+          raw=p.get(COINBASE+'/products/BTC-USD/candles',{'start':start,'end':end,'granularity':60})
+          authentic=normalize_candles(raw)
+          assert len(authentic)>=31, f'historical Coinbase returned only {len(authentic)} bars'
+          usable, quality=contiguous_real_candle_suffix(authentic)
+          assert len(usable)>=31 and quality['status'] in ('FULL','RECOVERED_REAL_CONTIGUOUS'),quality
+          assert quality['missing_candles_filled']==0
+          assert all(b['t']-a['t']==60 for a,b in zip(usable,usable[1:]))
+          assert all(x in authentic for x in usable), 'Must use only source-supplied genuine market bars'
+          assert usable[-1]['t']==authentic[-1]['t'],'Must use most recent genuine data'
+          missing=int(datetime(2026,11,15,17,55,tzinfo=timezone.utc).timestamp())
+          if missing not in [x['t'] for x in authentic]:
+              assert missing not in [x['t'] for x in usable], 'Never fabricate the historical missing candle'
+          print('ACTUAL HISTORICAL INCIDENT RECOVERY',{'raw':len(authentic),'used':len(usable),'quality':quality,'bar_at_1755_present':missing in [x['t'] for x in authentic]})
+          PY
       - name: Compare timestamp coverage (no accounts, keys or orders)
         shell: bash
         run: |
