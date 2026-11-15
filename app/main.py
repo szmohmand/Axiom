@@ -149,8 +149,9 @@ def update_once(now=None):
                 op=execution_screen(model,market)
             else:
                 op['reason']='Paper entries suspended while settlement or ledger health is degraded'
-            # A polling cycle commits all of its ledger records or none.
-            # The ledger lock also serializes concurrent manual paper writes.
+            # A poll is one consistent ledger event. If any later write fails,
+            # none of this poll's observation, snapshots, watch, or paper entry
+            # may survive. Ledger also serializes concurrent manual writes.
             with ledger.atomic_cycle():
                 ledger.observed(market,model,spot,now)
                 ledger.engine_snapshots(market,model,now)
@@ -247,7 +248,7 @@ def _record_settlement_locked(now, attempted, pending):
 
 
 def worker():
-    """Keep fresh market data flowing independently of settlement grading."""
+    """Market polling must not wait for slow official-settlement lookups."""
     while not shutdown.is_set():
         try:
             update_once()
@@ -258,7 +259,11 @@ def worker():
 
 
 def grading_worker():
-    """Isolate potentially slow official-result reads from price/forecast updates."""
+    """Grade on a separate worker and (in live mode) separate HTTP session.
+
+    A settlement backlog may contain many slow API lookups; it cannot block
+    the price/forecast loop. The ledger's RLock serializes database writes.
+    """
     settlement_provider = LiveProvider() if isinstance(provider, LiveProvider) else provider
     try:
         while not shutdown.wait(4*POLL_SECONDS):

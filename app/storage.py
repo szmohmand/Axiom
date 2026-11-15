@@ -1,5 +1,6 @@
 """SQLite event journal. One worker per database (set WEB_CONCURRENCY=1)."""
 import sqlite3
+from contextlib import contextmanager
 import threading
 import time
 import os
@@ -42,7 +43,29 @@ class Ledger:
             );
             CREATE INDEX IF NOT EXISTS ix_engine_grades ON engine_snapshots(engine,result);
             ''')
+            self._commit()
+    @contextmanager
+    def atomic_cycle(self):
+        """Commit a full forecast poll or roll back all of its writes.
+
+        Existing Ledger methods can still be used independently. Holding the
+        existing RLock across the transaction also protects against overlapping
+        HTTP/worker writes to the same SQLite connection.
+        """
+        with self.lock:
+            if getattr(self, '_atomic_poll', False):
+                raise RuntimeError('Nested forecast poll transaction')
+            self._atomic_poll = True
+            try:
+                with self.conn:
+                    yield
+            finally:
+                self._atomic_poll = False
+
+    def _commit(self):
+        if not getattr(self, '_atomic_poll', False):
             self.conn.commit()
+
     def first_call(self, market, model, spot, now, hold_seconds=10, poll_gap=40):
         """Lock first directional 85%-confidence call after continuous observations."""
         ticker=market['ticker']; p=model.get('prob_above'); side=None
@@ -55,19 +78,19 @@ class Ledger:
             prev=self.conn.execute('SELECT * FROM watches WHERE ticker=?', (ticker,)).fetchone()
             if side is None:
                 self.conn.execute('DELETE FROM watches WHERE ticker=?', (ticker,))
-                self.conn.commit(); return None
+                self._commit(); return None
             if not prev or prev['side'] != side or now-prev['last_seen'] > poll_gap:
                 self.conn.execute('INSERT OR REPLACE INTO watches VALUES (?,?,?,?)', (ticker,side,now,now))
-                self.conn.commit(); return None
+                self._commit(); return None
             self.conn.execute('UPDATE watches SET last_seen=? WHERE ticker=?',(now,ticker))
             if now-prev['since'] >= hold_seconds:
                 self.conn.execute('''INSERT INTO first_calls(ticker,side,probability,created,seconds_left,spot,target)
                   VALUES(?,?,?,?,?,?,?)''', (ticker,side, p if side=='ABOVE' else 1-p,now,
                       market['seconds_left'],spot,market.get('target')))
                 self.conn.execute('DELETE FROM watches WHERE ticker=?',(ticker,))
-                self.conn.commit()
+                self._commit()
                 return {'ticker':ticker,'side':side,'probability':p if side=='ABOVE' else 1-p}
-            self.conn.commit(); return None
+            self._commit(); return None
     def healthcheck(self):
         """Detect unavailable/corrupted ledger tables even without new writes."""
         with self.lock:
@@ -82,7 +105,7 @@ class Ledger:
         """
         with self.lock:
             self.conn.execute('DELETE FROM watches')
-            self.conn.commit()
+            self._commit()
 
     def watch_info(self, ticker):
         with self.lock:
@@ -95,7 +118,7 @@ class Ledger:
                 VALUES(?,?,?,?,?,?,?)''',(market['ticker'], now, spot, market.get('target'),
                 market.get('market_mid'),model.get('prob_above'),model.get('side')))
             self.conn.execute('DELETE FROM observations WHERE id NOT IN (SELECT id FROM observations ORDER BY id DESC LIMIT 7000)')
-            self.conn.commit()
+            self._commit()
     def trade(self, market, side, now, model_probability=None, source='MANUAL'):
         side=side.upper()
         if side not in ('YES','NO'): raise ValueError('Side must be YES or NO')
@@ -107,7 +130,7 @@ class Ledger:
                 c=self.conn.execute('''INSERT INTO paper_trades(ticker,side,entry,created,seconds_left,model_prob,source)
                   VALUES(?,?,?,?,?,?,?)''', (market['ticker'],side,entry,now,market['seconds_left'],
                           model_probability,source))
-                self.conn.commit()
+                self._commit()
                 return {'id':c.lastrowid,'ticker':market['ticker'],'side':side,'entry':entry,'status':'OPEN'}
             except sqlite3.IntegrityError:
                 raise ValueError('A paper position already exists for this market')
@@ -156,7 +179,7 @@ class Ledger:
         with self.lock:
             for vals in rows:
                 self.conn.execute('INSERT OR IGNORE INTO engine_snapshots (ticker,engine,checkpoint,ts,seconds_left,prob_above,market_prob) VALUES(?,?,?,?,?,?,?)',vals)
-            self.conn.commit()
+            self._commit()
         return len(rows)
 
     def engine_scores(self):
