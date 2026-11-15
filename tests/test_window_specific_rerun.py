@@ -101,3 +101,22 @@ def test_confident_call_fraction_is_contract_weighted():
         {"ticker":"b","p":.55,"y":1},
     ]
     assert W.score(rows)["confident_contract_fraction"]==.5
+
+
+def test_schen_is_compared_when_available_but_not_across_entire_final_minute():
+    records=[]
+    for cp,sec in [
+        ("opening_plus_15s",885),("ten_min",600),
+        ("five_min",300),("last_60s",60),("last_45s",45),
+    ]:
+        predictions={k:.5 for k in W.COMPARE}
+        if sec>=60:
+            predictions[W.M0]=.99
+        records.append({"ticker":"a","checkpoint":cp,"remaining":sec,
+                        "y":1,"predictions":predictions})
+    results=W.summarize_windows(records)
+    for period in ("first_two_minutes","ten_minutes_left","five_minutes_left"):
+        assert results[period]["best_independent_model_by_brier"]==W.M0
+        assert W.M0 in results[period]["independent_rankings"]
+    assert W.M0 not in results["final_minute"]["independent_rankings"]
+    assert results["final_minute"]["schen_m0_formula_only_when_remaining_ge_60s"]["score"]["n_rows"]==1
