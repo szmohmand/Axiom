@@ -175,7 +175,8 @@ def update_once(now=None):
         state.update({'last_attempt':now,
             'market':market,'spot':spot,'candles':candles[-70:], 'model':model,'scalp':scalp,
             'opportunity':op,'engines':model.get('engines',[]),'errors':errors,'watch':watch,
-            'candle_quality':getattr(provider,'candle_quality',None)})
+            'candle_quality':({'status':'UNAVAILABLE','reason':errors['coinbase_candles']}
+                              if 'coinbase_candles' in errors else getattr(provider,'candle_quality',None))})
         _refresh_status_locked()
         if state['status'] in ('LIVE','DEMO'):
             state['last_success'] = now
