@@ -326,16 +326,25 @@ def evaluate(observations, labels, min_train_contracts=30, folds=4,
         before=[r for t in order[:min_train_contracts+start]
                 for r in observations_by_ticker[t] if r["ts"] < cutoff]
         # The cutoff uses actual label availability, NOT just the earlier contract's close.
-        logistic=fit_independent_logistic(before,labels,cutoff)
-        xgb, reason=(fit_spot_xgboost(before,labels,cutoff) if use_xgboost
-                     else (None,"Optional XGBoost explicitly disabled"))
-        if xgb is None:
-            statuses["siddha_spot_xgboost"]=reason
-        if logistic is None:
-            statuses["kalshibot_independent_logistic"]="Insufficient prior official labels"
+        # Train each challenger on the SAME checkpoint distribution it will
+        # later predict. Mixing 14m training features with 1m evaluation
+        # creates avoidable train/serve skew; each checkpoint stays causal.
+        per_checkpoint={}
+        for check in CHECKPOINTS:
+            train_at_check=[r for r in before if r["checkpoint"]==check]
+            model_logit=fit_independent_logistic(train_at_check,labels,cutoff)
+            model_xgb, reason=(fit_spot_xgboost(train_at_check,labels,cutoff)
+                               if use_xgboost else
+                               (None,"Optional XGBoost explicitly disabled"))
+            if model_xgb is None:
+                statuses[f"siddha_spot_xgboost@{check}"]=reason
+            if model_logit is None:
+                statuses[f"kalshibot_independent_logistic@{check}"]="Insufficient prior official labels at checkpoint"
+            per_checkpoint[check]=(model_logit,model_xgb)
         for row in testing:
             y=int(labels[row["ticker"]]["result"]=="yes")
             cp=row["checkpoint"]
+            logistic,xgb=per_checkpoint[cp]
             market={"target":row["target"],"seconds_left":row["seconds_left"],
                     "market_mid":row["market_mid"]}
             axiom=engine_pack(row["spot"],market,row["candles"])
