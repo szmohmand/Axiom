@@ -59,6 +59,9 @@ def normalize_observation(raw):
     ts, spot_ts = _num(raw.get("ts"), "ts"), _num(raw.get("spot_ts"), "spot_ts")
     opened = _num(raw.get("open_ts"), "open_ts")
     expires = _num(raw.get("expires_ts"), "expires_ts")
+    target_ts = _num(raw.get("target_ts"), "target_ts")
+    if target_ts > ts:
+        raise ReplayError("Target not published as of observation")
     spot, target = _num(raw.get("spot"), "spot"), _num(raw.get("target"), "target")
     if not (opened <= ts < expires and expires > opened and spot > 0 and target > 0):
         raise ReplayError("Invalid contract times or price")
@@ -88,6 +91,9 @@ def normalize_observation(raw):
     mid = raw.get("market_mid")
     if mid is not None:
         mid = _num(mid, "market_mid")
+        quote_ts = _num(raw.get("market_mid_ts"), "market_mid_ts")
+        if not (0 <= ts - quote_ts <= 30):
+            raise ReplayError("Benchmark quote is future-dated or stale")
         if not 0 < mid < 1:
             raise ReplayError("Invalid market benchmark quote")
     proxy_error = raw.get("proxy_error_usd")
@@ -96,7 +102,7 @@ def normalize_observation(raw):
         if proxy_error < 0:
             raise ReplayError("Negative proxy error")
     return {"ticker": ticker, "ts": ts, "spot_ts": spot_ts, "open_ts": opened,
-            "expires_ts": expires, "spot": spot, "target": target,
+            "expires_ts": expires, "spot": spot, "target": target, "target_ts": target_ts,
             "seconds_left": expires-ts, "candles": cleaned, "market_mid": mid,
             "proxy_error_usd": proxy_error, "checkpoint": checkpoint(expires-ts)}
 
@@ -156,13 +162,22 @@ def normal_cdf(z):
 
 
 def zero_drift(row):
-    """Spot/strike zero-drift estimate with approximate BRTI-average variance."""
-    x = inputs(row)
-    vol_usd = max(row["spot"]*x["volatility"], EPS)
-    effective = max(row["seconds_left"]/60 - 2/3, 1/3)
-    err = row["proxy_error_usd"] or 0.0
-    sigma = math.sqrt(vol_usd**2 * effective + err**2)
-    return min(.999, max(.001, normal_cdf((row["spot"]-row["target"])/sigma)))
+    """Schen M0 settlement-average *formula* with 1m-return volatility proxy.
+
+    The original uses an EWMA of per-second BTC index returns. This research
+    input supplies only 1m closes; sigma_1s=stdev(log 1m returns)/sqrt(60)
+    is an explicit approximation, NOT faithful original training/calibration.
+    Inside the final 60s, original M0 needs accumulated index samples. Until
+    those exist, refuse the partial-average branch rather than fabricating it.
+    """
+    tau = row["seconds_left"]
+    if tau < 60:
+        return None
+    sigma_1s = inputs(row)["volatility"] / math.sqrt(60)
+    var_time = tau - 40.0
+    drift_time = tau - 30.0
+    z = (math.log(row["spot"]/row["target"]) - .5*sigma_1s*sigma_1s*drift_time) / (sigma_1s*math.sqrt(var_time))
+    return min(1-EPS,max(EPS,normal_cdf(z)))
 
 
 def _glm_vector(x):
@@ -330,8 +345,10 @@ def evaluate(observations, labels, min_train_contracts=30, folds=4,
                 if name not in INDEPENDENT or p is None:
                     continue
                 scored[(name,cp)].append((p,y,row["ticker"],row["seconds_left"]))
-            scored[("settlement_zero_drift",cp)].append(
-                (zero_drift(row),y,row["ticker"],row["seconds_left"]))
+            m0_probability = zero_drift(row)
+            if m0_probability is not None:
+                scored[("settlement_zero_drift",cp)].append(
+                    (m0_probability,y,row["ticker"],row["seconds_left"]))
             if logistic is not None:
                 scored[("kalshibot_independent_logistic",cp)].append(
                     (logistic_predict(logistic,row),y,row["ticker"],row["seconds_left"]))
@@ -347,6 +364,21 @@ def evaluate(observations, labels, min_train_contracts=30, folds=4,
         result.append({"model":name,"checkpoint":cp,"category":
                       "market_price_benchmark" if name==BENCHMARK else "independent_btc",
                        **_score(pts)})
+    # On identical contract/checkpoint rows only, report paired Brier skill.
+    # Never use each model's mismatched coverage to proclaim a winner.
+    paired=[]
+    for (model,cp),pts in sorted(scored.items()):
+        if model == "axiom_volatility":
+            continue
+        reference={t:(p,y) for p,y,t,_ in scored.get(("axiom_volatility",cp),[])}
+        common=[(p,y,reference[t][0]) for p,y,t,_ in pts if t in reference
+                and reference[t][1]==y]
+        if common:
+            paired.append({"model":model,"checkpoint":cp,"baseline":"axiom_volatility",
+                           "matched_contracts":len(common),
+                           "delta_brier_baseline_minus_challenger":round(sum(
+                               (b-y)**2-(p-y)**2 for p,y,b in common)/len(common),6),
+                           "validated_alpha":False})
     leads=[]
     for name in INDEPENDENT:
         by=defaultdict(list)
@@ -369,9 +401,10 @@ def evaluate(observations, labels, min_train_contracts=30, folds=4,
                           "mean_seconds_before_expiry":round(statistics.mean(s for s,_ in calls),1) if calls else None})
     return {"status":"RESEARCH_ONLY_UNVALIDATED", "train_contract_floor":min_train_contracts,
             "out_of_sample_contracts":len(remaining),"folds":math.ceil(len(remaining)/chunk),
-            "official_contracts_total":len(order),"scores":result,"lead_time":leads,
+            "official_contracts_total":len(order),"scores":result,"paired_brier":paired,
+            "lead_time":leads,
             "unavailable_models":statuses,
-            "note":"Descriptive out-of-sample scoring only. No significance, economic edge, or early-move foresight established. Coinbase is a BRTI proxy, not its settlement index."}
+            "note":"Descriptive out-of-sample scoring only. No significance, economic edge, or early-move foresight established. Confidence-first timing is NOT evidence of predicting a move before its onset. Schen M0 here uses minute-candle volatility in place of the original per-second EWMA. The full original KalshiBot and SiddhaBasu predictors are not reproduced. Coinbase is a BRTI proxy, not its settlement index."}
 
 
 def main():
