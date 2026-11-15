@@ -1,0 +1,22 @@
+# AXIOM Phase 0: never commit local credentials, market databases or caches
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+.venv*/
+data/
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.sqlite3-*
+logs/
+.cache/
+*.log
