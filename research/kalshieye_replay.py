@@ -612,7 +612,7 @@ def early_test(provenance):
                 "positive_future_share":round(sum(r["future_move"]>0 for r in eligible)/n,5)}
     funcs={"spot_trend_prev_60s":lambda r:r["trend"],
            "coinbase_minus_other_venues":lambda r:r["dislocation"],
-           "kalshi_yes_top_book_pressure_market_derived":lambda r:r["market_book_pressure"],
+           "kalshi_yes_top_book_pressure_market_derived":lambda r:r.get("market_book_pressure"),
            "always_up":lambda r:1}
     scores={}
     for name,fn in funcs.items():
