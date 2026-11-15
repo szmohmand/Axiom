@@ -1,0 +1,31 @@
+name: AXIOM Batch 1 -- 100 checks and independent historical dataset audit
+on:
+  push:
+    branches:
+      - research/batch1-100-verified-experiments-2026-11-15
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  synthetic-100-and-public-data:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      DEMO_MODE: '1'
+      AUTO_PAPER: '0'
+      PYTHONPATH: '.'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install original locked AXIOM test dependencies only
+        run: python -m pip install --disable-pip-version-check -r requirements.lock.txt
+      - name: Preserve original sources and permanent regression floor
+        run: |
+          python phase0/verify_transfer.py --checkout . --require-archives
+          python phase0/check_regression_history.py
+      - name: Execute 100 individually numbered checks (synthetic methodological tests)
+        run: python -m pytest -v --tb=short tests/test_batch1_100.py
+      - name: Independently audit public official BTC settlement dataset -- NOT a model backtest
+        run: python -m research.public_dataset_audit
