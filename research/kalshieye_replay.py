@@ -284,6 +284,21 @@ def make_dataset():
                      "candles":candles,"features":None,"quote":market,
                      "y":outcome,"source_recv_ns":quote["recv_ns"],
                      "fee_multiplier":m["fee_multiplier"] if m["fee_multiplier"] is not None else 1.0}
+                # Robustness: compute the same unchanged AXIOM ensemble
+                # against three independently recorded exchange MID QUOTE
+                # candle streams. This measures proxy sensitivity, NOT BRTI.
+                venue_p={}
+                for venue in SOURCES:
+                    vp=point(spot,venue,now,2)
+                    vc=candles_at(spot,venue,now,61)
+                    if vp is not None and vc is not None:
+                        pred=engine_pack(vp["price"],
+                            {"target":m["floor_strike"],"seconds_left":remain,
+                             "market_mid":None},vc)
+                        if pred["available"]:
+                            venue_p[venue]={"prob":pred["prob_above"],
+                                            "spot":vp["price"]}
+                row["venue_proxy_ensembles"]=venue_p
                 row["features"]=math_features(row)
                 rows.append(row)
                 if market is None:
@@ -369,6 +384,7 @@ def eval_models(observations):
     saved=collections.defaultdict(dict)
     opportunities=collections.defaultdict(list)
     call_candidates=collections.defaultdict(list)
+    venue_sensitivity=collections.defaultdict(list)
     eval_summary={"train_day":DAYS[0],"test_day":DAYS[1],
                   "train_labeled_checkpoint_rows":len(train),
                   "test_labeled_checkpoint_rows":len(test),
@@ -378,6 +394,10 @@ def eval_models(observations):
                   "trained_xgboost_at":sorted(xgb),
                   "conditional_strike_replay":True}
     for r in test:
+        vp=r.get("venue_proxy_ensembles",{})
+        if "coinbase" in vp and ("bitstamp" in vp or "kraken" in vp):
+            values=[x["prob"] for x in vp.values()]
+            venue_sensitivity[r["checkpoint"]].append(max(values)-min(values))
         pack=engine_pack(r["spot"],
                         {"target":r["target"],"seconds_left":r["remaining"],
                          "market_mid":r["quote"]["market_mid"] if r["quote"] else None},
@@ -488,7 +508,16 @@ def eval_models(observations):
             opp.append({"model":name,"one_earliest_paper_entry_per_contract":len(selected),
                         "mean_hypothetical_after_fee_dollars":round(statistics.mean(x[1] for x in selected),6),
                         "actual_fills_verified":False})
+    venue_report=[]
+    for cp,spreads in sorted(venue_sensitivity.items()):
+        venue_report.append({"checkpoint":cp,
+          "asof_2s_matched_quote_sets":len(spreads),
+          "median_probability_range":round(statistics.median(spreads),6),
+          "mean_probability_range":round(statistics.mean(spreads),6),
+          "range_over_0_05":sum(x>0.05 for x in spreads),
+          "range_over_0_10":sum(x>0.10 for x in spreads)})
     return {"evaluation":eval_summary,
+            "venue_proxy_sensitivity":venue_report,
             "scores":by_score,"paired_brier_vs_market":paired_scores,
             "paired_brier_contract_bootstrap_ci":paired_ci,
             "first_confident_call":leads,"paper_ask_only_opportunities":opp}
