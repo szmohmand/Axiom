@@ -103,3 +103,39 @@ def test_future_price_movement_not_used_to_calculate_early_signal():
     assert result["test_minute_samples"]==2
     assert result["tests"]["spot_trend_prev_60s"]["holdout_oct25_all"]["directional_accuracy"]==1
     assert result["tests"]["coinbase_minus_other_venues"]["holdout_oct25_all"]["directional_accuracy"]==.5
+
+
+def test_official_expiration_value_is_ground_truth_not_recorded_coin_end():
+    # Two independent fields may disagree. The official Kalshi expiration
+    # string MUST win over the recorder's approximate coin_price_end.
+    close=1800
+    secmap={venue:{sec:(sec*R.NSEC+100,80001.0)
+                   for sec in range(close-60,close)}
+            for venue in R.SOURCES}
+    spot={"times":{venue:sorted(events) for venue,events in secmap.items()},
+          "seconds":secmap,"bars":{venue:{} for venue in R.SOURCES}}
+    markets={"KXBTC15M-SYNTH-1":{"open":900,"close":close,"floor_strike":80000.0}}
+    labels={"KXBTC15M-SYNTH-1":{
+        "result":"yes","expiration_value":"80001.0",
+        "coin_price_end":90000.0,"coin_price_start":79999.0}}
+    result=R.audit_benchmark_proxy_basis(spot,markets,labels,[])
+    assert result["official_end_index_markets_after_excluding_incidents"]==1
+    assert result["by_exchange"]["coinbase"]["markets_with_60_complete_spot_seconds"]==1
+    assert result["by_exchange"]["coinbase"]["mean_absolute_usd"]==pytest.approx(0)
+    assert result["by_exchange"]["coinbase"]["wrong_contract_winner_if_replaced_with_spot_average"]==0
+
+
+def test_unavailable_official_expiration_value_never_substitutes_coin_price_end():
+    close=1800
+    secmap={venue:{sec:(sec*R.NSEC+100,80001.0)
+                   for sec in range(close-60,close)}
+            for venue in R.SOURCES}
+    spot={"times":{venue:sorted(events) for venue,events in secmap.items()},
+          "seconds":secmap,"bars":{venue:{} for venue in R.SOURCES}}
+    markets={"KXBTC15M-SYNTH-2":{"open":900,"close":close,"floor_strike":80000.0}}
+    labels={"KXBTC15M-SYNTH-2":{
+        "result":"yes","expiration_value":None,
+        "coin_price_end":80001.0,"coin_price_start":79999.0}}
+    report=R.audit_benchmark_proxy_basis(spot,markets,labels,[])
+    assert report["official_end_index_markets_after_excluding_incidents"]==0
+    assert report["unusable"]["no_numerical_official_end_index"]==1
