@@ -163,16 +163,16 @@ class Ledger:
                 'note':'Descriptive only; 30 samples is a reporting threshold, NOT proof of alpha. Use held-out chronological testing.'}
 
     def grade(self, ticker, result, now):
-        if result not in ('yes','no'): raise ValueError('Requires Kalshi official yes/no')
-        with self.lock:
+        """Atomically grade all tables, or roll back completely if anything fails."""
+        if result not in ('yes','no'):
+            raise ValueError('Requires Kalshi official yes/no')
+        with self.lock, self.conn:
             self.conn.execute('UPDATE first_calls SET result=?, graded=? WHERE ticker=? AND result IS NULL', (result, now, ticker))
             self.conn.execute('UPDATE engine_snapshots SET result=?, graded=? WHERE ticker=? AND result IS NULL', (result, now, ticker))
             row=self.conn.execute('SELECT side,entry FROM paper_trades WHERE ticker=? AND result IS NULL',(ticker,)).fetchone()
             if row:
                 pnl=paper_result(row['side'],row['entry'],result)
-                self.conn.execute('''UPDATE paper_trades SET result=?,pnl=?,status='SETTLED',graded=?
-                    WHERE ticker=? AND result IS NULL''',(result,pnl,now,ticker))
-            self.conn.commit()
+                self.conn.execute("UPDATE paper_trades SET result=?,pnl=?,status='SETTLED',graded=? WHERE ticker=? AND result IS NULL",(result,pnl,now,ticker))
     def data(self, limit=60):
         with self.lock:
             calls=[dict(x) for x in self.conn.execute('SELECT * FROM first_calls ORDER BY created DESC LIMIT ?', (limit,))]

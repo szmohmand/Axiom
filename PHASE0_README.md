@@ -41,3 +41,12 @@ offline tests. For AXIOM research mode, run only with DEMO_MODE=1 and AUTO_PAPER
 - `phase0/ACCEPTANCE.md`: transfer gate and sign-off state
 
 **Technical transfer completed:** GitHub Actions clean Python 3.13 dependency install, exact source/ZIP hash verification, and 21 offline tests all passed on November 15, 2026 (run #43723325225). **Formal historical-source/sign-off gate remains pending** until the named audit archive versions and original commit reference are reconciled or explicitly waived, and the user signs off. A new GitHub commit pins this transfer *going forward* but is not an original legacy ZIP commit.
+
+## After the initial freeze
+
+The frozen original v1/v2 ZIPs and historical transfer manifest remain immutable.
+The working application code may receive reviewed fixes and new tests. The
+`phase0/verify_transfer.py` integrity check validates archived source bytes
+against the frozen manifest rather than incorrectly rejecting legitimate
+changes to the live checkout. Current-code correctness is checked by CI.
+See `reports/` for subsequent test and repair evidence.

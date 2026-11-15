@@ -197,7 +197,6 @@ def test_reconciliation_market_mid_does_not_change_independent_forecast(env):
     assert original['engines'][0]['prob_above']!=changed['engines'][0]['prob_above']
 
 
-@pytest.mark.xfail(strict=True, reason='grade_once silently swallows settlement provider exceptions')
 def test_settlement_failure_is_exposed_in_health(env):
     # Characterize actual current behavior rather than claim this is a passing guard.
     main,clock,provider,client,_=env
@@ -212,7 +211,6 @@ def test_settlement_failure_is_exposed_in_health(env):
     assert 'settlement' in client.get('/api/state').json()['errors'], 'Settlement errors must be visible'
 
 
-@pytest.mark.xfail(strict=True, reason='DEMO status currently overrides feed failures')
 def test_demo_feed_failure_degrades_health(env):
     main,clock,provider,client,_=env
     provider.fail_price=True

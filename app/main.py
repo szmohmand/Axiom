@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 import csv
 import io
+import math
 import os
 import threading
 import time
@@ -28,30 +29,93 @@ ledger = Ledger(DATA_PATH)
 state_lock = threading.RLock()
 state = {'mode':'DEMO' if DEMO else 'LIVE','last_attempt':None,'last_success':None,
          'market':None,'spot':None,'model':None,'engines':[],'scalp':None,'opportunity':None,'candles':[],
-         'errors':{},'paper_auto_enabled':AUTO_PAPER,'watch':None,'status':'STARTING'}
+         'errors':{},'paper_auto_enabled':AUTO_PAPER,'watch':None,'status':'STARTING',
+         'settlement':{'status':'NOT_CHECKED','last_attempt':None,'last_success':None,
+                       'checked':0,'failed':0}}
 shutdown = threading.Event()
+# Failed settlement lookups are retained by ticker. A successful market poll cannot
+# accidentally erase them, and a successful retry clears only that ticker's error.
+settlement_failures = {}
+
+
+def _error_message(exc):
+    return f'{type(exc).__name__}: {str(exc)[:160]}'
+
+
+def _refresh_status_locked():
+    """Recompute operational status from the *combined* source and grading state.
+
+    Called with state_lock held after each poll, grade, and worker failure.
+    Synthetic DEMO is a mode label, not a blanket declaration of health.
+    """
+    if 'worker' in state['errors']:
+        state['status'] = 'ERROR'
+    elif state['errors']:
+        state['status'] = 'DEGRADED'
+    elif state['last_attempt'] is None:
+        state['status'] = 'STARTING'
+    elif (state['market'] is None or state['spot'] is None or
+          not state['model'] or not state['model'].get('available') or
+          len(state['candles']) < 31):
+        state['status'] = 'DEGRADED'
+    else:
+        state['status'] = 'DEMO' if DEMO else 'LIVE'
+
+
+def _view_locked(now):
+    """Return a consistent read snapshot for both health and dashboard APIs.
+
+    The worker may have stopped updating without raising an exception. In that
+    case the last successful snapshot is NOT healthy indefinitely.
+    """
+    data = dict(state)
+    data['errors'] = dict(state['errors'])
+    data['settlement'] = dict(state['settlement'])
+    attempted = state['last_attempt']
+    data['heartbeat_age_seconds'] = None if attempted is None else max(0, round(now-attempted, 2))
+    stale_limit = max(60, 3*POLL_SECONDS)
+    if attempted is not None and now-attempted > stale_limit:
+        data['errors']['worker_stale'] = f'Last market update is more than {stale_limit} seconds old'
+    if data['status'] in ('LIVE','DEMO') and data['errors']:
+        data['status'] = 'DEGRADED'
+    data['ok'] = data['status'] in ('LIVE','DEMO') and not data['errors']
+    return data
+
 
 def update_once(now=None):
     now = time.time() if now is None else now
     errors={}; market=None; spot=None; candles=[]
-    try: market=provider.market(now)
-    except Exception as e: errors['kalshi']=f'{type(e).__name__}: {str(e)[:160]}'
-    try: spot=provider.price()
-    except Exception as e: errors['coinbase_ticker']=f'{type(e).__name__}: {str(e)[:160]}'
+    try:
+        market=provider.market(now)
+        if market is None:
+            errors['kalshi']='No active Kalshi BTC15M market available'
+    except Exception as e:
+        errors['kalshi']=_error_message(e)
+    try:
+        spot=provider.price()
+        if spot is None or not isinstance(spot,(float,int)) or not math.isfinite(spot) or spot<=0:
+            errors['coinbase_ticker']='Missing or invalid BTC spot price'; spot=None
+    except Exception as e:
+        errors['coinbase_ticker']=_error_message(e)
     try:
         candles=provider.candles()
-        # Don't let stale Coinbase candles produce fresh forecasts.
-        if candles and not DEMO and now-candles[-1]['t']>200:
+        if not isinstance(candles,list) or len(candles)<31:
+            errors['coinbase_candles']='Fewer than 31 candles available'; candles=[]
+        elif not DEMO and now-candles[-1]['t']>200:
+            # Don't let stale Coinbase candles masquerade as fresh signals.
             errors['coinbase_candles']='Candles stale'; candles=[]
-    except Exception as e: errors['coinbase_candles']=f'{type(e).__name__}: {str(e)[:160]}'
+    except Exception as e:
+        errors['coinbase_candles']=_error_message(e); candles=[]
     model={'available':False,'side':'WAIT','prob_above':None,'reason':'No active market or input data'}
     scalp=scalp_signal(candles,spot)
-    op={'side':'WAIT','edge':None,'entry_price':None,'reason':'No live forecast'}
+    op={'side':'WAIT','edge':None,'entry_price':None,'reason':'No healthy market forecast'}
     watch=None
     if market:
         model=engine_pack(spot,market,candles)
-        op=execution_screen(model,market)
-        if not errors and spot is not None and model.get('available'):
+        if not model.get('available') and not errors:
+            errors['forecast']=model.get('reason','Model unavailable')
+        if not errors and model.get('available'):
+            op=execution_screen(model,market)
             ledger.observed(market,model,spot,now)
             ledger.engine_snapshots(market,model,now)
             ledger.first_call(market,model,spot,now,hold_seconds=10,poll_gap=max(40,3*POLL_SECONDS))
@@ -59,23 +123,84 @@ def update_once(now=None):
                 try:
                     ledger.trade(market,op['side'],now,
                                  model['prob_above'] if op['side']=='YES' else model['prob_below'], 'AUTO_RESEARCH')
-                except ValueError: pass
+                except ValueError:
+                    pass
             watch=ledger.watch_info(market['ticker'])
     with state_lock:
-        state.update({'last_attempt':now, 'last_success':now if not errors and market and spot is not None else state['last_success'],
-          'status': 'DEMO' if DEMO else ('LIVE' if not errors and market and spot is not None else 'DEGRADED'),
-          'market':market,'spot':spot,'candles':candles[-70:], 'model':model,'scalp':scalp,
-          'opportunity':op,'engines':model.get('engines',[]),'errors':errors,'watch':watch})
-    return state.copy()
+        # Keep unresolved grading failures visible, even across good feed polls.
+        if 'settlement' in state['errors']:
+            errors['settlement'] = state['errors']['settlement']
+        state.update({'last_attempt':now,
+            'market':market,'spot':spot,'candles':candles[-70:], 'model':model,'scalp':scalp,
+            'opportunity':op,'engines':model.get('engines',[]),'errors':errors,'watch':watch})
+        _refresh_status_locked()
+        if state['status'] in ('LIVE','DEMO'):
+            state['last_success'] = now
+        return _view_locked(now)
+
 
 def grade_once():
     now=time.time()
-    for ticker in ledger.unresolved(50):
-        # Don't mark freshly open markets as settled; live provider guards on status.
+    attempted=[]
+    try:
+        tickers=ledger.unresolved(50)
+    except Exception as e:
+        # Even enumerating unresolved contracts can fail (for example, database
+        # downtime). It is a grading failure, never an empty/healthy queue.
+        with state_lock:
+            settlement_failures['__ledger__'] = 'Cannot list unresolved contracts: ' + _error_message(e)
+            _record_settlement_locked(now, attempted, pending=None)
+        return
+    with state_lock:
+        settlement_failures.pop('__ledger__', None)
+        if not tickers:
+            settlement_failures.clear()
+    for ticker in tickers:
+        attempted.append(ticker)
         try:
+            # The provider returns None while settlement is legitimately pending.
+            # We never substitute the Coinbase spot result for an official label.
             result=provider.settlement(ticker)
-            if result: ledger.grade(ticker,result,now)
-        except Exception: pass
+            if result is not None:
+                if result not in ('yes','no'):
+                    raise ValueError('Provider returned an invalid official result')
+                ledger.grade(ticker,result,now)
+        except Exception as e:
+            with state_lock:
+                settlement_failures[ticker] = _error_message(e)
+        else:
+            with state_lock:
+                settlement_failures.pop(ticker,None)
+    # One last database read distinguishes genuinely pending results from
+    # contracts which have all been graded successfully in this batch.
+    try:
+        pending=bool(ledger.unresolved(1))
+    except Exception as e:
+        pending=None
+        with state_lock:
+            settlement_failures['__ledger__']='Cannot confirm remaining settlement queue: ' + _error_message(e)
+    with state_lock:
+        _record_settlement_locked(now, attempted, pending)
+
+
+def _record_settlement_locked(now, attempted, pending):
+    """Publish grading errors atomically without destroying feed/worker errors."""
+    count=len(settlement_failures)
+    if count:
+        ticker,reason=next(iter(settlement_failures.items()))
+        state['errors']['settlement'] = f'{count} settlement check(s) failed; {ticker}: {reason}'
+    else:
+        state['errors'].pop('settlement',None)
+    previous_success=state['settlement']['last_success']
+    if not count:
+        previous_success=now
+    state['settlement']={
+        'status':'ERROR' if count else ('PENDING' if pending else ('CHECKED' if attempted else 'IDLE')),
+        'last_attempt':now,'last_success':previous_success,
+        'checked':len(attempted),'failed':count,
+    }
+    _refresh_status_locked()
+
 
 def worker():
     cycle=0
@@ -105,15 +230,21 @@ def index(): return FileResponse(ROOT/'static'/'index.html')
 @app.get('/health')
 def health():
     with state_lock:
-        return {'ok':state['status'] in ('LIVE','DEMO'),'status':state['status'],
-                'mode':state['mode'],'last_attempt':state['last_attempt'],'errors':state['errors']}
+        snapshot=_view_locked(time.time())
+        return {'ok':snapshot['ok'],'status':snapshot['status'],
+                'mode':snapshot['mode'],'last_attempt':snapshot['last_attempt'],
+                'last_success':snapshot['last_success'],
+                'heartbeat_age_seconds':snapshot['heartbeat_age_seconds'],
+                'errors':snapshot['errors'],'settlement':snapshot['settlement']}
 
 @app.get('/api/state')
 def get_state():
-    with state_lock: d=dict(state)
+    now=time.time()
+    with state_lock:
+        d=_view_locked(now)
     d.update(ledger.data())
     d['engine_scores']=ledger.engine_scores()
-    d['server_time']=time.time()
+    d['server_time']=now
     d['manual_paper_available']=bool(ADMIN_TOKEN)
     d['disclaimer']='Experimental models and gross simulated trading only. Coinbase is NOT the BRTI settlement index.'
     return JSONResponse(d,headers={'Cache-Control':'no-store'})
