@@ -21,11 +21,38 @@ jobs:
           python-version: '3.13'
       - name: Install pinned dependencies
         run: python -m pip install --disable-pip-version-check -r requirements.lock.txt
-      - name: Probe public Kalshi and Coinbase GET endpoints (no orders, credentials or writes)
+      - name: Probe public Kalshi and Coinbase GET endpoints (no orders or credentials)
         shell: bash
         run: |
           set -o pipefail
           PYTHONPATH=. python tests/live_readonly_smoke.py | tee live-readonly-smoke-result.json
+      - name: Exercise actual application on real read-only feeds
+        shell: bash
+        run: |
+          PYTHONPATH=. python - <<'PY'
+          import json
+          from app import main
+          snapshot=main.update_once()
+          health=main.health()
+          state=main.get_state()
+          result={
+              'mode':snapshot['mode'],
+              'status':snapshot['status'],
+              'engine_count':len(snapshot['engines']),
+              'scalp_side':snapshot['scalp']['side'],
+              'opportunity_side':snapshot['opportunity']['side'],
+              'health_http':health.status_code,
+              'api_state_http':state.status_code,
+              'auto_paper':main.AUTO_PAPER,
+          }
+          print(json.dumps(result,indent=2))
+          assert main.AUTO_PAPER is False
+          assert snapshot['status']=='LIVE',snapshot['errors']
+          assert snapshot['model']['available']
+          assert health.status_code==200
+          assert state.status_code==200
+          assert len(snapshot['engines'])==4
+          PY
       - name: Save probe output even if endpoints fail
         if: always()
         uses: actions/upload-artifact@v4

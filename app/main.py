@@ -36,6 +36,7 @@ shutdown = threading.Event()
 # Failed settlement lookups are retained by ticker. A successful market poll cannot
 # accidentally erase them, and a successful retry clears only that ticker's error.
 settlement_failures = {}
+last_grading_ticker = None  # round-robin cursor to prevent settlement queue starvation
 
 
 def _error_message(exc):
@@ -79,6 +80,21 @@ def _view_locked(now):
     if data['status'] in ('LIVE','DEMO') and data['errors']:
         data['status'] = 'DEGRADED'
     data['ok'] = data['status'] in ('LIVE','DEMO') and not data['errors']
+    if not data['ok']:
+        # Previous opportunity quotes must not look actionable during an
+        # outage even if they were calculated before the failure became known.
+        data['opportunity'] = {'side':'WAIT','edge':None,'entry_price':None,
+                               'reason':'System not healthy; paper opportunities paused'}
+    if 'worker_stale' in data['errors']:
+        # Preserve prior historical rows but never advertise a cached direction
+        # as a current signal if the worker has stopped updating.
+        data['model'] = {'available':False,'side':'WAIT','prob_above':None,
+                         'prob_below':None,'reason':'Market update worker is stale'}
+        data['engines'] = []
+        data['opportunity'] = {'side':'WAIT','edge':None,'entry_price':None,
+                               'reason':'Market updates stale; entries suspended'}
+        data['scalp'] = {'side':'WAIT','entry':None,'stop':None,'target':None,
+                         'reason':'Market updates stale; scalp suspended','atr':None}
     return data
 
 
@@ -101,21 +117,38 @@ def update_once(now=None):
         candles=provider.candles()
         if not isinstance(candles,list) or len(candles)<31:
             errors['coinbase_candles']='Fewer than 31 candles available'; candles=[]
-        elif not DEMO and now-candles[-1]['t']>200:
-            # Don't let stale Coinbase candles masquerade as fresh signals.
-            errors['coinbase_candles']='Candles stale'; candles=[]
+        else:
+            # Returns and ATR treat every candle as one minute. Detect missing
+            # intervals, duplicates and impossible future data before forecasting.
+            recent=candles[-61:]
+            timestamps=[c['t'] for c in recent]
+            if (any(not isinstance(t,(int,float)) or not math.isfinite(t) for t in timestamps)
+                    or any(b-a < 1 or b-a > 90 for a,b in zip(timestamps,timestamps[1:]))):
+                errors['coinbase_candles']='Candles are missing, duplicated or not one-minute intervals'; candles=[]
+            elif timestamps[-1] > now+60:
+                errors['coinbase_candles']='Candles timestamped in the future'; candles=[]
+            elif not DEMO and now-timestamps[-1]>200:
+                errors['coinbase_candles']='Candles stale'; candles=[]
     except Exception as e:
         errors['coinbase_candles']=_error_message(e); candles=[]
     model={'available':False,'side':'WAIT','prob_above':None,'reason':'No active market or input data'}
     scalp=scalp_signal(candles,spot)
     op={'side':'WAIT','edge':None,'entry_price':None,'reason':'No healthy market forecast'}
     watch=None
+    with state_lock:
+        # Older unresolved settlement/ledger faults are independent of this
+        # market poll. Preserve predictions, but suspend new paper decisions.
+        persistent_faults = any(k in state['errors'] for k in
+                                ('settlement','ledger_read','ledger_connection'))
     if market:
         model=engine_pack(spot,market,candles)
         if not model.get('available') and not errors:
             errors['forecast']=model.get('reason','Model unavailable')
         if not errors and model.get('available'):
-            op=execution_screen(model,market)
+            if not persistent_faults:
+                op=execution_screen(model,market)
+            else:
+                op['reason']='Paper entries suspended while settlement or ledger health is degraded'
             ledger.observed(market,model,spot,now)
             ledger.engine_snapshots(market,model,now)
             ledger.first_call(market,model,spot,now,hold_seconds=10,poll_gap=max(40,3*POLL_SECONDS))
@@ -126,10 +159,15 @@ def update_once(now=None):
                 except ValueError:
                     pass
             watch=ledger.watch_info(market['ticker'])
+    if errors:
+        # A missing poll must break the ten-second first-call confidence hold;
+        # otherwise a short feed outage can be counted as sustained evidence.
+        ledger.reset_watches()
     with state_lock:
         # Keep unresolved grading failures visible, even across good feed polls.
-        if 'settlement' in state['errors']:
-            errors['settlement'] = state['errors']['settlement']
+        for component in ('settlement','ledger_read','ledger_connection'):
+            if component in state['errors']:
+                errors[component] = state['errors'][component]
         state.update({'last_attempt':now,
             'market':market,'spot':spot,'candles':candles[-70:], 'model':model,'scalp':scalp,
             'opportunity':op,'engines':model.get('engines',[]),'errors':errors,'watch':watch})
@@ -140,10 +178,12 @@ def update_once(now=None):
 
 
 def grade_once():
+    global last_grading_ticker
     now=time.time()
     attempted=[]
     try:
-        tickers=ledger.unresolved(50)
+        tickers=ledger.unresolved(50, after_ticker=last_grading_ticker)
+        last_grading_ticker=tickers[-1] if tickers else None
     except Exception as e:
         # Even enumerating unresolved contracts can fail (for example, database
         # downtime). It is a grading failure, never an empty/healthy queue.
@@ -229,23 +269,55 @@ def index(): return FileResponse(ROOT/'static'/'index.html')
 
 @app.get('/health')
 def health():
+    try:
+        ledger.healthcheck()
+    except Exception as e:
+        ledger_error=_error_message(e)
+    else:
+        ledger_error=None
     with state_lock:
+        if ledger_error:
+            state['errors']['ledger_connection']=ledger_error
+        else:
+            state['errors'].pop('ledger_connection',None)
+        _refresh_status_locked()
         snapshot=_view_locked(time.time())
-        return {'ok':snapshot['ok'],'status':snapshot['status'],
-                'mode':snapshot['mode'],'last_attempt':snapshot['last_attempt'],
-                'last_success':snapshot['last_success'],
-                'heartbeat_age_seconds':snapshot['heartbeat_age_seconds'],
-                'errors':snapshot['errors'],'settlement':snapshot['settlement']}
+    return JSONResponse({'ok':snapshot['ok'],'status':snapshot['status'],
+        'mode':snapshot['mode'],'last_attempt':snapshot['last_attempt'],
+        'last_success':snapshot['last_success'],
+        'heartbeat_age_seconds':snapshot['heartbeat_age_seconds'],
+        'errors':snapshot['errors'],'settlement':snapshot['settlement']},
+        status_code=200 if snapshot['ok'] else 503,headers={'Cache-Control':'no-store'})
 
 @app.get('/api/state')
 def get_state():
     now=time.time()
+    try:
+        ledger_rows=ledger.data()
+        scores=ledger.engine_scores()
+    except Exception as e:
+        # Return an explicit, machine-readable outage instead of HTTP 500 with
+        # an apparently healthy /health endpoint or fabricated empty history.
+        with state_lock:
+            state['errors']['ledger_read']=_error_message(e)
+            _refresh_status_locked()
+            d=_view_locked(now)
+        d['engine_scores']={'status':'UNAVAILABLE','samples':None,'scores':[]}
+        d['ledger_available']=False
+        d['manual_paper_available']=False
+        d['server_time']=now
+        return JSONResponse(d,status_code=503,headers={'Cache-Control':'no-store'})
     with state_lock:
+        state['errors'].pop('ledger_read',None)
+        _refresh_status_locked()
         d=_view_locked(now)
-    d.update(ledger.data())
-    d['engine_scores']=ledger.engine_scores()
+    d.update(ledger_rows)
+    d['engine_scores']=scores
+    d['ledger_available']=True
     d['server_time']=now
-    d['manual_paper_available']=bool(ADMIN_TOKEN)
+    # A token alone is not permission to record a position against stale or
+    # broken market data. The UI and paper endpoint share the same readiness rule.
+    d['manual_paper_available']=bool(ADMIN_TOKEN) and d['ok'] and bool(d.get('market'))
     d['disclaimer']='Experimental models and gross simulated trading only. Coinbase is NOT the BRTI settlement index.'
     return JSONResponse(d,headers={'Cache-Control':'no-store'})
 
@@ -256,9 +328,16 @@ class PaperRequest(BaseModel):
 def paper(req:PaperRequest, authorization:str|None=Header(default=None)):
     if not ADMIN_TOKEN: raise HTTPException(403,'Manual paper trading disabled; configure BOT_ADMIN_TOKEN')
     if authorization != f'Bearer {ADMIN_TOKEN}': raise HTTPException(401,'Incorrect admin token')
-    with state_lock: m=state.get('market'); ts=state.get('last_attempt')
-    if not m or not ts or time.time()-ts > max(50,3*POLL_SECONDS):
-        raise HTTPException(409,'Live market snapshot unavailable or stale')
+    with state_lock:
+        snapshot=_view_locked(time.time())
+        m=snapshot.get('market'); ts=snapshot.get('last_attempt')
+    if (not snapshot['ok'] or not m or not ts or
+            time.time()-ts > max(50,3*POLL_SECONDS)):
+        raise HTTPException(409,'Market snapshot unhealthy, unavailable or stale')
+    ask=m.get('yes_ask' if req.side.upper()=='YES' else 'no_ask')
+    bid=m.get('yes_bid' if req.side.upper()=='YES' else 'no_bid')
+    if req.side.upper() in ('YES','NO') and (ask is None or bid is None or ask < bid):
+        raise HTTPException(409,'Invalid or crossed contract quote')
     if m['seconds_left'] < 45 or m['close_ts'] < time.time()+45:
         raise HTTPException(409,'Contract too close to close')
     try: entry=ledger.trade(m,req.side,time.time(),source='MANUAL_PAPER')

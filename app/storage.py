@@ -68,6 +68,22 @@ class Ledger:
                 self.conn.commit()
                 return {'ticker':ticker,'side':side,'probability':p if side=='ABOVE' else 1-p}
             self.conn.commit(); return None
+    def healthcheck(self):
+        """Detect unavailable/corrupted ledger tables even without new writes."""
+        with self.lock:
+            for name in ('first_calls','paper_trades','observations','engine_snapshots'):
+                self.conn.execute(f'SELECT 1 FROM {name} LIMIT 1').fetchone()
+
+    def reset_watches(self):
+        """Break confidence continuity after missing or failed market inputs.
+
+        A first-call hold is meaningful only across successive healthy polls.
+        Completed first calls are immutable and are never affected.
+        """
+        with self.lock:
+            self.conn.execute('DELETE FROM watches')
+            self.conn.commit()
+
     def watch_info(self, ticker):
         with self.lock:
             r=self.conn.execute('SELECT * FROM watches WHERE ticker=?',(ticker,)).fetchone()
@@ -95,12 +111,29 @@ class Ledger:
                 return {'id':c.lastrowid,'ticker':market['ticker'],'side':side,'entry':entry,'status':'OPEN'}
             except sqlite3.IntegrityError:
                 raise ValueError('A paper position already exists for this market')
-    def unresolved(self, max_rows=30):
+    def unresolved(self, max_rows=30, after_ticker=None):
+        """Distinct unresolved tickers, deterministically rotated across batches.
+
+        Repeated LIMIT on an unordered UNION can permanently starve newer
+        contracts if older results remain pending. The caller advances a
+        ticker cursor after each grading batch; we wrap to the beginning.
+        """
+        if max_rows < 1:
+            return []
+        base="""SELECT ticker FROM (
+          SELECT ticker FROM first_calls WHERE result IS NULL
+          UNION SELECT ticker FROM paper_trades WHERE result IS NULL
+          UNION SELECT ticker FROM engine_snapshots WHERE result IS NULL
+        ) AS unresolved """
         with self.lock:
-            cur=self.conn.execute('''SELECT ticker FROM first_calls WHERE result IS NULL
-              UNION SELECT ticker FROM paper_trades WHERE result IS NULL
-              UNION SELECT ticker FROM engine_snapshots WHERE result IS NULL LIMIT ?''',(max_rows,))
-            return [r['ticker'] for r in cur.fetchall()]
+            rows=self.conn.execute(base + 'WHERE ticker > ? ORDER BY ticker LIMIT ?',
+                                   (after_ticker or '', max_rows)).fetchall()
+            tickers=[r['ticker'] for r in rows]
+            if after_ticker and len(tickers)<max_rows:
+                remainder=self.conn.execute(base + 'WHERE ticker <= ? ORDER BY ticker LIMIT ?',
+                                            (after_ticker, max_rows-len(tickers))).fetchall()
+                tickers.extend(r['ticker'] for r in remainder)
+            return tickers
     def engine_snapshots(self, market, model, now):
         """Fixed-time forecasts for head-to-head scoring (same contract/clock).
 

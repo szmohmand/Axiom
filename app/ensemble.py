@@ -126,9 +126,13 @@ def execution_screen(ensemble:dict, market:dict|None, min_edge:float=.08)->dict:
     if not candidates:return out
     side,edge,gross,ask,fee=max(candidates,key=lambda x:x[1])
     out.update(edge=round(edge,5),gross_edge=round(gross,5),entry_price=ask,fee_estimate=fee)
-    spread=market.get('yes_ask')-market.get('yes_bid') if market.get('yes_ask') is not None and market.get('yes_bid') is not None else None
+    # Evaluate the executable spread on the SELECTED side, not always YES.
+    # A crossed book (negative spread) must never qualify as a tradable quote.
+    bid=market.get('yes_bid' if side=='YES' else 'no_bid')
+    spread=ask-bid if bid is not None else None
     if (side==('YES' if ensemble['side']=='ABOVE' else 'NO') and edge>=min_edge and
-        .05<=ask<=.90 and market['seconds_left']>=120 and spread is not None and spread<=.04):
+        .05<=ask<=.90 and market['seconds_left']>=120 and
+        spread is not None and 0 <= spread <= .04):
         out.update(side=side,reason='Experimental after-fee paper candidate, not verified alpha or guaranteed fill')
     else:
         out['reason']='No qualifying consensus-aligned opportunity after fee, spread, price and time screens'
