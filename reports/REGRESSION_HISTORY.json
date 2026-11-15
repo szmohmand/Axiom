@@ -128,6 +128,33 @@
         "tests/test_audit_regressions.py::test_paper_entries_blocked_during_failed_feed_and_recover",
         "tests/test_audit_regressions.py::test_ledger_read_failure_is_visible_in_both_apis_and_recovers"
       ]
+    },
+    {
+      "id": "A11",
+      "finding": "Thirty-second candles were accepted as one-minute bars and distorted market calculations",
+      "fixed_commit": "ae772308b62cc3cf4875ca2b87ce8fca40614fd4",
+      "tests": [
+        "tests/test_third_audit_findings.py::test_non_one_minute_candles_do_not_generate_forecast_or_records"
+      ]
+    },
+    {
+      "id": "A12",
+      "finding": "An interrupted forecast cycle could partially commit observations before later snapshot, watch or simulated paper writes failed",
+      "fixed_commit": "ae772308b62cc3cf4875ca2b87ce8fca40614fd4",
+      "tests": [
+        "tests/test_third_audit_findings.py::test_forecast_cycle_failure_does_not_write_orphan_observation",
+        "tests/test_third_audit_findings.py::test_first_call_write_failure_rolls_back_entire_poll",
+        "tests/test_third_audit_findings.py::test_auto_paper_database_error_rolls_back_all_poll_writes"
+      ]
+    },
+    {
+      "id": "A13",
+      "finding": "Slow official-settlement lookups blocked the time-sensitive market update worker",
+      "fixed_commit": "ae772308b62cc3cf4875ca2b87ce8fca40614fd4",
+      "tests": [
+        "tests/test_third_audit_findings.py::test_slow_settlement_grading_cannot_stop_market_polling",
+        "tests/test_third_audit_findings.py::test_background_grading_isolation_with_actual_server_lifespan"
+      ]
     }
   ]
 }
