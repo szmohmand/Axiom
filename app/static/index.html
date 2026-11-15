@@ -135,7 +135,7 @@ function view(s){latest=s;const m=s.market, f=s.model||{},o=s.opportunity||{},sc
    $('callRows').innerHTML=unavailable;
    $('tradeRows').innerHTML=unavailable;
  }
- set('refreshed',s.last_attempt?`Checked ${new Date(s.last_attempt*1000).toLocaleTimeString()}`:'Not connected');const errors=Object.entries(s.errors||{});set('dataErrors',errors.length?errors.map(([k,v])=>`${k}: ${v}`).join(' · '):'Kalshi and Coinbase reads healthy. Settlement grading uses Kalshi official market result.');
+ set('refreshed',s.last_attempt?`Checked ${new Date(s.last_attempt*1000).toLocaleTimeString()}`:'Not connected');const errors=Object.entries(s.errors||{});const q=s.candle_quality,qualityNote=q?.status==='RECOVERED_REAL_CONTIGUOUS'?` Coinbase gap excluded: ${q.bars_used} real consecutive 1m candles; no prices invented.`:'';set('dataErrors',(errors.length?errors.map(([k,v])=>`${k}: ${v}`).join(' · '):'Kalshi and Coinbase reads healthy. Settlement grading uses Kalshi official market result.')+qualityNote);
  if(s.mode==='DEMO')set('notice','DEMO MODE: All displayed BTC prices, markets and outcomes are synthetic. This is for software testing only; not real trading information.');
  paintChart(s.candles,m?.target);countdown()}
 async function load(){try{const r=await fetch('/api/state',{cache:'no-store'});const data=await r.json();if(!r.ok&&!data?.status)throw Error('HTTP '+r.status);view(data)}catch(e){set('status','OFFLINE','pill err');set('dataErrors','Cannot contact local bot server: '+e.message)}}
