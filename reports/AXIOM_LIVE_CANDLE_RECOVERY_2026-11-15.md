@@ -59,3 +59,16 @@ The live smoke test was strengthened to retry a bounded number of times, **only*
 - [12-hour source completeness investigation](https://github.com/szmohmand/Axiom/actions/runs/43757343909)
 - [Full-suite, integrity and 19 historical regression checks](https://github.com/szmohmand/Axiom/actions/runs/43757348769)
 - [Axiom-only draft pull request #5](https://github.com/szmohmand/Axiom/pull/5)
+
+## Final verified release checkpoint — completed November 15, 2026
+
+**Final accepted engineering/read-only research checkpoint:** `902f7d7dfd7a4a952b4afc2019f01a599af43355`, preserved without moving prior recovery branches at `verified/2026-11-15-902f7d7`. [Repair PR #5](https://github.com/szmohmand/Axiom/pull/5) and [permanent-regression gate PR #6](https://github.com/szmohmand/Axiom/pull/6) merged successfully.
+
+- **Final 16-minute post-merge continuity:** [Run #43759096906](https://github.com/szmohmand/Axiom/actions/runs/43759096906) SUCCESS: **32/32 healthy observations** spanning two genuine consecutive Kalshi BTC15M contracts, Coinbase quality FULL on all 32, no rollover transient in this sample, **zero** failed checks, no automatic paper entry and no real orders.
+- **Current verified commit:** [full-suite run #43759621808](https://github.com/szmohmand/Axiom/actions/runs/43759621808) SUCCESS: **72/72 Python tests**, all **19** historical permanent regression records, verified original v1/v2 source archives. [Read-only live-app run #43759621781](https://github.com/szmohmand/Axiom/actions/runs/43759621781) SUCCESS.
+- **Runtime identity:** The only code difference between the 16-minute post-merge observation commit `c01968c8d986a5c2d7bdf44b49fca0e6fb5dd340` and the latest verified commit `902f7d7dfd7a4a952b4afc2019f01a599af43355` is `phase0/check_regression_history.py`, which now permanently enforces A14. **No application/runtime file changed.**
+- **Actual live-background-workflow verification:** [Run #43759096797](https://github.com/szmohmand/Axiom/actions/runs/43759096797) SUCCESS on the merged runtime; both background threads and live HTTP endpoints were tested.
+- **Ongoing data limitation:** The historic 17:55 UTC missing Coinbase candle still has no authentic replacement. AXIOM now recovers by choosing only an authentic consecutive suffix after it, if 31 or more genuine candles are available. If fewer exist or the source remains incomplete, model/contract guidance is withheld. This is an **intentional safety condition** and does not contradict the bounded acceptance.
+- **Decision:** **PASS** for the implemented read-only research application's tested functional integration, historical regression integrity, authentic source recovery and bounded live observation. **NOT CLEARED** for live real-money execution, audited probabilistic forecasting accuracy, BRTI input equivalence, unmonitored 24/7 hosting, or perfect future uptime—none was claimed or tested. Live deployment was neither authorized nor performed.
+
+This conclusion is intentionally scoped to observable system behavior, and does not promise zero future external outages. Every later Axiom change must repeat the complete mandatory acceptance sequence.
