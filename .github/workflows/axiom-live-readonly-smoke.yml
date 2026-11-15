@@ -1,8 +1,8 @@
 name: AXIOM read-only live provider smoke test
 on:
   push:
-    paths:
-      - '.github/workflows/axiom-live-readonly-smoke.yml'
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 permissions:
   contents: read
