@@ -220,8 +220,13 @@ def summarize_windows(observations):
     report={}
     for period,cps in PERIODS.items():
         available=[r for r in observations if r["checkpoint"] in {c for c,_ in cps}]
+        # Schen M0 is an eligible independent challenger when its entire
+        # evaluation period contains only >=60-second checkpoints. It must
+        # NOT be ranked across the last-minute interval: its approximate
+        # formula is unavailable at -45,-30,-15 and -5 seconds.
+        candidate_models=(COMPARE+(M0,) if period!="final_minute" else COMPARE)
         rows={}
-        for name in COMPARE:
+        for name in candidate_models:
             s=period_rows(available,period,name)
             rows[name]=score(s)
         first_name=min(rows,key=lambda x:rows[x]["brier"] if rows[x]["n_rows"] else float("inf"))
@@ -229,7 +234,7 @@ def summarize_windows(observations):
         names_at_each_time={
             cp:{name:score(period_rows(
                 [r for r in available if r["checkpoint"]==cp],period,name))
-                for name in COMPARE}
+                for name in (COMPARE+(M0,) if CP[cp]>=60 else COMPARE)}
             for cp,_ in cps
         }
         by_market=[r for r in available if MARKET in r["predictions"]]
@@ -237,7 +242,7 @@ def summarize_windows(observations):
         market_score=score(market_rows)
         market_paired={}
         if market_rows:
-            for name in COMPARE:
+            for name in candidate_models:
                 market_paired[name]=paired_brier_by_contract(
                     by_market,period,name,MARKET)
         m0_rows=period_rows(available,period,M0)
@@ -249,7 +254,7 @@ def summarize_windows(observations):
             "time_offsets":{name:sec for name,sec in cps},
             "main_comparison_common_rows":len(available),
             "main_comparison_distinct_contracts":len({r["ticker"] for r in available}),
-            "ranking_basis":"equal-weight-per-contract Brier on common observations",
+            "ranking_basis":"equal-weight-per-contract Brier on common observations; Schen eligible in first2, 10m and 5m but not all of final 60s",
             "independent_rankings":rank,
             "best_independent_model_by_brier":first_name,
             "model_scores":rows,
