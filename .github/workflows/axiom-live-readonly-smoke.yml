@@ -40,6 +40,16 @@ jobs:
               if b['t']-a['t'] != 60: break
               tail+=1
           print(json.dumps({'count':len(candles),'age_seconds':round(time.time()-candles[-1]['t']) if candles else None,'continuous_tail_minutes':tail,'gaps_last_64':gaps[-10:]},indent=2))
+          if gaps:
+              from datetime import datetime, timezone
+              from app.feeds import COINBASE, normalize_candles
+              from datetime import timedelta
+              hole=gaps[-1]; a=candles[hole['index']]['t']; b=candles[hole['index']+1]['t']
+              lo=datetime.fromtimestamp(a-60,timezone.utc)
+              hi=datetime.fromtimestamp(b+60,timezone.utc)
+              raw=p.get(COINBASE+'/products/BTC-USD/candles',{'start':lo.isoformat(),'end':hi.isoformat(),'granularity':60})
+              recovered=normalize_candles(raw)
+              print(json.dumps({'hole_between':[a,b],'narrow_refetch_times':[c['t'] for c in recovered]},indent=2))
           PY
       - name: Exercise actual application on real read-only feeds
         shell: bash
