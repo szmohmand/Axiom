@@ -145,3 +145,62 @@ def test_duplicate_contract_checkpoint_and_mismatched_expiration_fail(tmp_path):
     lab_path.write_text(json.dumps(x)+"\n")
     with pytest.raises(lab.ReplayError,match="expiration"):
         lab.load_data(obs,lab_path,allow_synthetic=True)
+
+
+class FakeReadOnlyProvider:
+    def __init__(self, source):
+        self.source=source
+        self.candle_quality={"status":"FULL","source":"synthetic_test_only"}
+        self.reads=[]
+    def market(self):
+        self.reads.append("market")
+        return {"ticker":self.source["ticker"],"target":self.source["target"],
+                "close_ts":self.source["expires_ts"],"market_mid":self.source["market_mid"]}
+    def price(self):
+        self.reads.append("price")
+        return self.source["spot"]
+    def candles(self):
+        self.reads.append("candles")
+        return self.source["candles"]
+    def settlement(self, ticker):
+        self.reads.append("settlement")
+        return "yes" if ticker == self.source["ticker"] else None
+
+
+def test_collector_observes_once_and_grades_only_official_label(tmp_path):
+    from research import record_live
+    a=one()
+    provider=FakeReadOnlyProvider(a)
+    root=tmp_path/"isolated"
+    captured=record_live.observe(provider,root=root,clock=lambda:a["ts"])
+    assert captured["status"]=="RECORDED"
+    assert provider.reads==["market","price","candles"]
+    assert record_live.observe(provider,root=root,clock=lambda:a["ts"])["status"]=="ALREADY_RECORDED"
+    assert len(record_live._rows(root/"observations.jsonl"))==1
+    assert not (root/"settlements.jsonl").exists()
+    first=record_live.grade(provider,root=root,clock=lambda:a["ts"])
+    assert first["pending_or_unavailable"]==1
+    assert "settlement" not in provider.reads
+    later=a["expires_ts"]+12
+    completed=record_live.grade(provider,root=root,clock=lambda:later)
+    assert completed["new_official_results"]==1
+    assert completed["pending_or_unavailable"]==0
+    assert record_live.grade(provider,root=root,clock=lambda:later)["new_official_results"]==0
+    obs,labels=lab.load_data(root/"observations.jsonl",root/"settlements.jsonl")
+    assert len(obs)==len(labels)==1
+    assert labels[a["ticker"]]["source"]=="kalshi_official"
+    assert "result" not in record_live._rows(root/"observations.jsonl")[0]
+
+
+def test_collector_never_records_missing_or_unknown_market(tmp_path):
+    from research import record_live
+    a=one(remaining=300)
+    provider=FakeReadOnlyProvider(a)
+    provider.market=lambda:None
+    root=tmp_path/"lab"
+    assert record_live.observe(provider,root,lambda:a["ts"])["status"]=="NO_KNOWN_TARGET"
+    assert not (root/"observations.jsonl").exists()
+    provider=FakeReadOnlyProvider(a)
+    provider.candles=lambda: a["candles"][:20]
+    assert record_live.observe(provider,root,lambda:a["ts"])["status"]=="INPUT_WITHHELD"
+    assert not (root/"observations.jsonl").exists()
