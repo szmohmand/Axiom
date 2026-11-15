@@ -1,0 +1,70 @@
+name: AXIOM live background-worker and HTTP integration acceptance
+on:
+  push:
+    paths:
+      - '.github/workflows/axiom-live-worker-http.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  real-live-read-only-worker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      DEMO_MODE: '0'
+      AUTO_PAPER: '0'
+      POLL_SECONDS: '8'
+      DATA_PATH: '/tmp/axiom-live-worker-e2e.sqlite3'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install locked Python environment
+        run: python -m pip install -r requirements.lock.txt
+      - name: Start actual FastAPI lifespan with real public market feeds and verify worker keeps polling
+        shell: bash
+        run: |
+          PYTHONPATH=. python - <<'PY'
+          import json,threading,time
+          from fastapi.testclient import TestClient
+          from app import main
+          assert main.DEMO is False and main.AUTO_PAPER is False
+          with TestClient(main.app) as c:
+              assert {'research-data-worker','research-settlement-worker'}<=set(t.name for t in threading.enumerate())
+              first=None
+              for attempt in range(8):
+                  h=c.get('/health'); d=h.json()
+                  if h.status_code==200:
+                      state=c.get('/api/state')
+                      assert state.status_code==200
+                      payload=state.json()
+                      assert payload['ok'] is True and payload['status']=='LIVE'
+                      assert len(payload['engines'])==4
+                      assert payload['model']['available'] is True
+                      assert len(payload['candles'])>=31
+                      assert all(b['t']-a['t']==60 for a,b in zip(payload['candles'],payload['candles'][1:]))
+                      assert payload['candle_quality']['missing_candles_filled']==0
+                      first=d['last_attempt']
+                      print('READY',json.dumps({'time':first,'quality':payload['candle_quality'],'engines':len(payload['engines'])}),flush=True)
+                      break
+                  # Startup is legitimately NOT healthy until the first fetch.
+                  # Never represent uninitialized state as a successful signal.
+                  if d['status']=='STARTING' and d['errors']=={}:
+                      assert h.status_code==503 and d['ok'] is False
+                      time.sleep(10)
+                      continue
+                  # Allow only a brief, safely reported public Kalshi transition.
+                  assert d['errors']=={'kalshi':'No active Kalshi BTC15M market available'},d
+                  assert d['status']=='DEGRADED' and d['ok'] is False and h.status_code==503
+                  assert c.get('/api/state').json()['opportunity']['side']=='WAIT'
+                  time.sleep(10)
+              assert first is not None,'background worker did not achieve real healthy state within bounded retries'
+              time.sleep(19)
+              later=c.get('/health').json()
+              assert later['last_attempt']>first,'the background market worker stopped updating'
+              assert 'worker' not in later['errors'] and 'settlement_worker' not in later['errors'],later['errors']
+              assert main.AUTO_PAPER is False
+              print('WORKER_ALIVE',json.dumps({'first_attempt':first,'second_attempt':later['last_attempt'],'status':later['status'],'errors':later['errors']}),flush=True)
+          print('LIVE_WORKER_AND_HTTP_INTEGRATION_PASS',flush=True)
+          PY

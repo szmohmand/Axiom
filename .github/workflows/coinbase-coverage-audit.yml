@@ -1,0 +1,54 @@
+name: AXIOM Coinbase 12-hour real data completeness investigation
+on:
+  push:
+    paths:
+      - '.github/workflows/coinbase-coverage-audit.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  actual-coverage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install locked HTTP packages
+        run: python -m pip install -r requirements.lock.txt
+      - name: Inspect 12 hours of actual Coinbase BTC-USD one-minute timestamps (read-only)
+        shell: bash
+        run: |
+          PYTHONPATH=. python - <<'PY'
+          import json,time,datetime
+          from app.feeds import LiveProvider,COINBASE,contiguous_real_candle_suffix
+          from app.engine import normalize_candles
+          source=LiveProvider()
+          end=(int(time.time())//60)*60-60
+          all_gaps=[]
+          all_covered=0
+          fetch_errors=[]
+          for i in range(6):
+              right=end-i*120*60
+              left=right-120*60
+              iso=lambda t:datetime.datetime.fromtimestamp(t,datetime.timezone.utc).isoformat()
+              try:
+                  data=source.get(COINBASE+'/products/BTC-USD/candles',{'start':iso(left),'end':iso(right),'granularity':60})
+                  rows=normalize_candles(data)
+                  seen={r['t'] for r in rows}
+                  expected=list(range(left,right,60))
+                  missing=[t for t in expected if t not in seen]
+                  all_covered+=len(expected)-len(missing)
+                  all_gaps.extend(missing)
+                  print(json.dumps({'window':i,'from':iso(left),'to':iso(right),'observed':len(rows),
+                     'expected':len(expected),'missing':len(missing),'first_missing':[iso(x) for x in missing[:8]]}),flush=True)
+              except Exception as e:
+                  fetch_errors.append(str(e)[:180]);print('SOURCE ERROR',type(e).__name__,str(e)[:180],flush=True)
+              time.sleep(0.2)
+          summary={'hours':12,'expected_minutes':720,'genuine_minutes_count':all_covered,
+                   'missing_minutes_count':len(set(all_gaps)),'missing_utc':list(map(iso,sorted(set(all_gaps))[:30])),
+                   'source_errors':fetch_errors,'no_fabricated_prices':True}
+          print('SUMMARY',json.dumps(summary),flush=True)
+          assert not fetch_errors, 'source availability incomplete during audit'
+          PY

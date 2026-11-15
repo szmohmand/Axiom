@@ -8,8 +8,58 @@ from .engine import normalize_candles, market_snapshot, numeric
 KALSHI = 'https://external-api.kalshi.com/trade-api/v2'
 COINBASE = 'https://api.exchange.coinbase.com'
 
+# Both forecasting and scalp engines already support >=31 genuine 1m bars.
+# Coinbase Exchange may legitimately omit a bar; never synthesize or stretch it.
+# This recovery trims only to the most recent TRUE contiguous interval, and
+# only when enough consecutive real observations remain for all engines.
+MIN_REAL_ONE_MINUTE_BARS = 31
+PREFERRED_ONE_MINUTE_BARS = 61
+
+
+def contiguous_real_candle_suffix(candles, min_bars=MIN_REAL_ONE_MINUTE_BARS):
+    """Return (usable, quality) without fabricating a missing market candle.
+
+    Preserve the exact original data on the normal fully continuous path.
+    A positive whole-minute gap can be isolated from the more recent true
+    sequence. Non-minute cadence, duplicate or reversed timestamps cannot.
+    Never return a shortened sequence that fails existing model minima.
+    """
+    recent = candles[-PREFERRED_ONE_MINUTE_BARS:]
+    quality = {'status': 'FULL', 'bars_available': len(candles),
+               'bars_used': min(len(candles), PREFERRED_ONE_MINUTE_BARS), 'source': 'coinbase_exchange_real_1m',
+               'missing_candles_filled': 0}
+    if len(recent) < min_bars:
+        quality.update(status='INSUFFICIENT', bars_used=len(candles))
+        return candles, quality
+    gaps = []
+    for i in range(1, len(recent)):
+        seconds = recent[i]['t'] - recent[i-1]['t']
+        if seconds == 60:
+            continue
+        if seconds < 120 or seconds % 60:
+            quality.update(status='INVALID_CADENCE')
+            return candles, quality
+        gaps.append((i, seconds))
+    if not gaps:
+        if len(recent) < PREFERRED_ONE_MINUTE_BARS:
+            quality.update(status='SHORT_BUT_CONTIGUOUS')
+        return candles, quality
+    last_gap_start = gaps[-1][0]
+    suffix = recent[last_gap_start:]
+    missing = sum(seconds // 60 - 1 for _, seconds in gaps)
+    quality['source_gap_minutes'] = missing
+    if len(suffix) < min_bars:
+        quality.update(status='GAP_TOO_RECENT', bars_used=0,
+                       recent_valid_bars=len(suffix))
+        return candles, quality
+    quality.update(status='RECOVERED_REAL_CONTIGUOUS', bars_used=len(suffix),
+                   recent_valid_bars=len(suffix))
+    return suffix, quality
+
+
 class LiveProvider:
     def __init__(self):
+        self.candle_quality = None
         self.session = requests.Session()
         self.session.headers.update({'User-Agent':'ResearchBot/0.1 (read-only market data)', 'Accept':'application/json'})
     def get(self, url, params=None):
@@ -40,7 +90,10 @@ class LiveProvider:
         data = self.get(f'{COINBASE}/products/BTC-USD/candles', {
             'start': start.isoformat(), 'end': now.isoformat(), 'granularity':60,
         })
-        return normalize_candles(data)
+        real_bars = normalize_candles(data)
+        usable, quality = contiguous_real_candle_suffix(real_bars)
+        self.candle_quality = quality
+        return usable
     def settlement(self, ticker):
         if not ticker.startswith('KXBTC15M-') or '/' in ticker: raise ValueError('Bad ticker')
         t = urlquote(ticker, safe='')

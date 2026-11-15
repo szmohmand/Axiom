@@ -1,0 +1,117 @@
+name: AXIOM live read-only 16-minute continuity observation
+on:
+  push:
+    paths:
+      - '.github/workflows/axiom-live-continuity-observation.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  fifteen-minute-observation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 23
+    env:
+      DEMO_MODE: '0'
+      AUTO_PAPER: '0'
+      DATA_PATH: '/tmp/axiom-readonly-continuity.sqlite3'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install locked dependencies
+        run: python -m pip install -r requirements.lock.txt
+      - name: Observe actual Axiom full data-to-model pipeline across at least one contract rollover
+        shell: bash
+        run: |
+          set -o pipefail
+          PYTHONPATH=. python - <<'PY' | tee axiom-live-continuity.jsonl
+          import json,os,time,traceback
+          from app import main
+          start=time.monotonic()
+          duration=16*60
+          interval=30
+          samples=0
+          errors=[]
+          tickers=[]
+          qualities={}
+          safe_rollover_events=[]
+          rollover_streak=0
+          assert main.DEMO is False and main.AUTO_PAPER is False
+          while True:
+              elapsed=time.monotonic()-start
+              if elapsed>duration:break
+              try:
+                  now=time.time()
+                  state=main.update_once(now)
+                  health=main.health()
+                  api=main.get_state()
+                  quality=state.get('candle_quality') or {}
+                  status=quality.get('status','MISSING')
+                  qualities[status]=qualities.get(status,0)+1
+                  candles=state.get('candles') or []
+                  checks={
+                      'live':state['status']=='LIVE' and state.get('ok') is True,
+                      'feeds':state.get('market') is not None and state.get('spot') is not None,
+                      'model':state.get('model',{}).get('available') is True and len(state.get('engines',[]))==4,
+                      'candles':len(candles)>=31 and all(b['t']-a['t']==60 for a,b in zip(candles,candles[1:])),
+                      'quality':status in ('FULL','SHORT_BUT_CONTIGUOUS','RECOVERED_REAL_CONTIGUOUS'),
+                      'health_http':health.status_code==200,
+                      'state_http':api.status_code==200,
+                      'no_auto_paper':main.AUTO_PAPER is False,
+                      'scalp':state.get('scalp',{}).get('side') in ('LONG','SHORT','WAIT'),
+                      'opportunity':state.get('opportunity',{}).get('side') in ('YES','NO','WAIT'),
+                  }
+                  ticker=state.get('market',{}).get('ticker') if state.get('market') else None
+                  if ticker:tickers.append(ticker)
+                  row={'kind':'sample','index':samples,'time_utc':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime(now)),
+                       'elapsed_seconds':int(elapsed),'ticker':ticker,'checks':checks,'quality':quality,
+                       'health_errors':state.get('errors',{}),'bars':len(candles),
+                       'scalp_side':state.get('scalp',{}).get('side'),'contract_side':state.get('opportunity',{}).get('side')}
+                  failures=[k for k,v in checks.items() if not v]
+                  if failures:
+                      # A public Kalshi gap immediately after a 15m boundary
+                      # is legitimate only if the whole app FAILS CLOSED.
+                      # Never silently count this as a healthy market sample.
+                      boundary=int(now)%900
+                      expected_rollover=(boundary<=90
+                          and state.get('errors')=={'kalshi':'No active Kalshi BTC15M market available'}
+                          and not state.get('ok') and health.status_code==503
+                          and state['opportunity']['side']=='WAIT'
+                          and not state['model'].get('available')
+                          and main.AUTO_PAPER is False)
+                      if expected_rollover:
+                          rollover_streak+=1
+                          row['safe_rollover_transient']=True
+                          safe_rollover_events.append({'index':samples,'time_utc':row['time_utc'],'boundary_seconds':boundary})
+                          if rollover_streak>2:
+                              errors.append({'index':samples,'failed':['prolonged_kalshi_rollover'],'errors':row['health_errors']})
+                      else:
+                          errors.append({'index':samples,'failed':failures,'errors':row['health_errors']})
+                  else:rollover_streak=0
+              except Exception as e:
+                  row={'kind':'exception','index':samples,'error':type(e).__name__+': '+str(e)[:200]}
+                  errors.append(row)
+              print(json.dumps(row,sort_keys=True),flush=True)
+              samples+=1
+              remaining=duration-(time.monotonic()-start)
+              if remaining>1:time.sleep(min(interval,remaining))
+              else:break
+          result={'kind':'summary','sample_count':samples,'ticker_count':len(set(tickers)),
+                  'unique_tickers':sorted(set(tickers))[:8], 'quality_counts':qualities,
+                  'failed_sample_count':len(errors),'safe_rollover_transients':safe_rollover_events,
+                  'failures':errors[:12],
+                  'no_real_orders':True,'no_auto_paper':True}
+          print(json.dumps(result,sort_keys=True),flush=True)
+          assert samples>=30, 'insufficient 16-minute coverage'
+          assert len(set(tickers))>=2, 'market rollover not observed'
+          assert len(safe_rollover_events)<=4, 'unexpectedly high Kalshi rollover downtime'
+          assert not errors, 'one or more live application/health/integrity samples failed'
+          PY
+      - name: Preserve all observations even if check fails
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: axiom-live-continuity-observation
+          path: axiom-live-continuity.jsonl
+          if-no-files-found: warn

@@ -30,28 +30,47 @@ jobs:
         shell: bash
         run: |
           PYTHONPATH=. python - <<'PY'
-          import json
+          import json,time
           from app import main
-          snapshot=main.update_once()
-          health=main.health()
-          state=main.get_state()
-          result={
-              'mode':snapshot['mode'],
-              'status':snapshot['status'],
-              'engine_count':len(snapshot['engines']),
-              'scalp_side':snapshot['scalp']['side'],
-              'opportunity_side':snapshot['opportunity']['side'],
-              'health_http':health.status_code,
-              'api_state_http':state.status_code,
-              'auto_paper':main.AUTO_PAPER,
-          }
-          print(json.dumps(result,indent=2))
-          assert main.AUTO_PAPER is False
-          assert snapshot['status']=='LIVE',snapshot['errors']
-          assert snapshot['model']['available']
-          assert health.status_code==200
-          assert state.status_code==200
-          assert len(snapshot['engines'])==4
+          assert main.DEMO is False and main.AUTO_PAPER is False
+          for attempt in range(6):
+              snapshot=main.update_once()
+              health=main.health()
+              state=main.get_state()
+              result={
+                  'attempt':attempt,
+                  'mode':snapshot['mode'],
+                  'status':snapshot['status'],
+                  'errors':snapshot['errors'],
+                  'engine_count':len(snapshot['engines']),
+                  'quality':snapshot.get('candle_quality'),
+                  'scalp_side':snapshot['scalp']['side'],
+                  'opportunity_side':snapshot['opportunity']['side'],
+                  'health_http':health.status_code,
+                  'api_state_http':state.status_code,
+                  'auto_paper':main.AUTO_PAPER,
+              }
+              print(json.dumps(result,indent=2),flush=True)
+              assert state.status_code==200
+              if snapshot['status']=='LIVE':
+                  assert snapshot['model']['available']
+                  assert health.status_code==200
+                  assert len(snapshot['engines'])==4
+                  assert len(snapshot['candles'])>=31
+                  assert all(right['t']-left['t']==60 for left,right in zip(snapshot['candles'],snapshot['candles'][1:]))
+                  break
+              # Kalshi may temporarily show no active contract at the 15m
+              # rollover. This must be safe, visible, and SHORT-LIVED.
+              assert snapshot['errors']=={'kalshi':'No active Kalshi BTC15M market available'}, result
+              assert snapshot['status']=='DEGRADED' and snapshot['ok'] is False
+              assert snapshot['model']['available'] is False
+              assert snapshot['opportunity']['side']=='WAIT'
+              assert health.status_code==503
+              if attempt==5:
+                  raise AssertionError('No real Kalshi contract appeared within bounded rollover retries')
+              time.sleep(15)
+          else:
+              raise AssertionError('No healthy real-market snapshot')
           PY
       - name: Save probe output even if endpoints fail
         if: always()
