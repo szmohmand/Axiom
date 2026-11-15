@@ -6,6 +6,10 @@ Preserve every last-known-good commit **before** a new change. Keep old SHA and 
 |---|---|---|---|---|
 | 2026-11-15 | `981eb1e727159cb350edb59dd2872ed74443c942` | `verified/2026-11-15-981eb1e` | [Pass #43736997711](https://github.com/szmohmand/Axiom/actions/runs/43736997711), 49 tests | [Pass #43736997802](https://github.com/szmohmand/Axiom/actions/runs/43736997802), Kalshi/Coinbase and application API |
 
+| 2026-11-15 | `50d84ac9bc8cef7b8b82e0f555ed39ba37df1cab` | `verified/2026-11-15-50d84ac` | [Pass #43739391137](https://github.com/szmohmand/Axiom/actions/runs/43739391137) | [Pass #43739391130](https://github.com/szmohmand/Axiom/actions/runs/43739391130) |
+| 2026-11-15 | `88957587e1b4e5a94acc78956821ef3e8ebfdf44` | `verified/2026-11-15-8895758` | [Pass #43741212964](https://github.com/szmohmand/Axiom/actions/runs/43741212964) | [Pass #43741212473](https://github.com/szmohmand/Axiom/actions/runs/43741212473) |
+| 2026-11-15 | `2694dd0faf01479dea396e81535605dbf6e2111f` | `verified/2026-11-15-2694dd0` | [Pass #43743792529](https://github.com/szmohmand/Axiom/actions/runs/43743792529), full regression suite and new defect tests | [Pass #43743792532](https://github.com/szmohmand/Axiom/actions/runs/43743792532), live read-only app/Kalshi/Coinbase check |
+
 ## Future workflow
 1. Confirm the intended baseline SHA is fully verified and create a distinct in-repository recovery reference **before** coding.
 2. Make candidate changes on an isolated branch within `szmohmand/Axiom`, not by editing the verified branch. Compare the candidate to its baseline.
