@@ -123,7 +123,7 @@ def update_once(now=None):
             recent=candles[-61:]
             timestamps=[c['t'] for c in recent]
             if (any(not isinstance(t,(int,float)) or not math.isfinite(t) for t in timestamps)
-                    or any(b-a < 1 or b-a > 90 for a,b in zip(timestamps,timestamps[1:]))):
+                    or any(b-a != 60 for a,b in zip(timestamps,timestamps[1:]))):
                 errors['coinbase_candles']='Candles are missing, duplicated or not one-minute intervals'; candles=[]
             elif timestamps[-1] > now+60:
                 errors['coinbase_candles']='Candles timestamped in the future'; candles=[]
@@ -139,7 +139,7 @@ def update_once(now=None):
         # Older unresolved settlement/ledger faults are independent of this
         # market poll. Preserve predictions, but suspend new paper decisions.
         persistent_faults = any(k in state['errors'] for k in
-                                ('settlement','ledger_read','ledger_connection'))
+                                ('settlement','settlement_worker','ledger_read','ledger_connection'))
     if market:
         model=engine_pack(spot,market,candles)
         if not model.get('available') and not errors:
@@ -149,23 +149,26 @@ def update_once(now=None):
                 op=execution_screen(model,market)
             else:
                 op['reason']='Paper entries suspended while settlement or ledger health is degraded'
-            ledger.observed(market,model,spot,now)
-            ledger.engine_snapshots(market,model,now)
-            ledger.first_call(market,model,spot,now,hold_seconds=10,poll_gap=max(40,3*POLL_SECONDS))
-            if AUTO_PAPER and op['side'] in ('YES','NO'):
-                try:
-                    ledger.trade(market,op['side'],now,
-                                 model['prob_above'] if op['side']=='YES' else model['prob_below'], 'AUTO_RESEARCH')
-                except ValueError:
-                    pass
-            watch=ledger.watch_info(market['ticker'])
+            # A polling cycle commits all of its ledger records or none.
+            # The ledger lock also serializes concurrent manual paper writes.
+            with ledger.atomic_cycle():
+                ledger.observed(market,model,spot,now)
+                ledger.engine_snapshots(market,model,now)
+                ledger.first_call(market,model,spot,now,hold_seconds=10,poll_gap=max(40,3*POLL_SECONDS))
+                if AUTO_PAPER and op['side'] in ('YES','NO'):
+                    try:
+                        ledger.trade(market,op['side'],now,
+                                     model['prob_above'] if op['side']=='YES' else model['prob_below'], 'AUTO_RESEARCH')
+                    except ValueError:
+                        pass
+                watch=ledger.watch_info(market['ticker'])
     if errors:
         # A missing poll must break the ten-second first-call confidence hold;
         # otherwise a short feed outage can be counted as sustained evidence.
         ledger.reset_watches()
     with state_lock:
         # Keep unresolved grading failures visible, even across good feed polls.
-        for component in ('settlement','ledger_read','ledger_connection'):
+        for component in ('settlement','settlement_worker','ledger_read','ledger_connection'):
             if component in state['errors']:
                 errors[component] = state['errors'][component]
         state.update({'last_attempt':now,
@@ -177,7 +180,8 @@ def update_once(now=None):
         return _view_locked(now)
 
 
-def grade_once():
+def grade_once(settlement_provider=None):
+    source = settlement_provider if settlement_provider is not None else provider
     global last_grading_ticker
     now=time.time()
     attempted=[]
@@ -200,7 +204,7 @@ def grade_once():
         try:
             # The provider returns None while settlement is legitimately pending.
             # We never substitute the Coinbase spot result for an official label.
-            result=provider.settlement(ticker)
+            result=source.settlement(ticker)
             if result is not None:
                 if result not in ('yes','no'):
                     raise ValueError('Provider returned an invalid official result')
@@ -243,24 +247,47 @@ def _record_settlement_locked(now, attempted, pending):
 
 
 def worker():
-    cycle=0
+    """Keep fresh market data flowing independently of settlement grading."""
     while not shutdown.is_set():
         try:
-            update_once(); cycle+=1
-            if cycle%4==0: grade_once()
+            update_once()
         except Exception as e:
             with state_lock:
                 state['status']='ERROR'; state['errors']['worker']=f'{type(e).__name__}: {str(e)[:200]}'
         shutdown.wait(POLL_SECONDS)
 
+
+def grading_worker():
+    """Isolate potentially slow official-result reads from price/forecast updates."""
+    settlement_provider = LiveProvider() if isinstance(provider, LiveProvider) else provider
+    try:
+        while not shutdown.wait(4*POLL_SECONDS):
+            try:
+                grade_once(settlement_provider)
+            except Exception as e:
+                with state_lock:
+                    state['errors']['settlement_worker']=_error_message(e)
+                    _refresh_status_locked()
+            else:
+                with state_lock:
+                    state['errors'].pop('settlement_worker',None)
+                    _refresh_status_locked()
+    finally:
+        if settlement_provider is not provider:
+            settlement_provider.session.close()
+
+
 @asynccontextmanager
 async def lifespan(_app):
     shutdown.clear()
-    thread=threading.Thread(target=worker, name='research-data-worker',daemon=True)
-    thread.start()
+    market_thread=threading.Thread(target=worker, name='research-data-worker',daemon=True)
+    grading_thread=threading.Thread(target=grading_worker, name='research-settlement-worker',daemon=True)
+    market_thread.start()
+    grading_thread.start()
     yield
     shutdown.set()
-    thread.join(timeout=3)
+    market_thread.join(timeout=3)
+    grading_thread.join(timeout=3)
 
 app=FastAPI(title='AXIOM Multi-Engine BTC Research Bot',version='2.0.0',lifespan=lifespan, docs_url=None,redoc_url=None)
 
