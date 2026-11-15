@@ -108,3 +108,11 @@ def test_real_gap_in_latest_31_minutes_still_blocks_forecast_and_paper(env):
     assert state['opportunity']['side']=='WAIT'
     assert state['candle_quality']['status']=='UNAVAILABLE'
     assert main.ledger.data()['count']=={'calls':0,'paper':0}
+
+
+def test_mobile_dashboard_discloses_short_authentic_candle_history():
+    from pathlib import Path
+    html=(Path(__file__).resolve().parents[1]/'app/static/index.html').read_text()
+    assert "q?.status==='RECOVERED_REAL_CONTIGUOUS'" in html
+    assert 'real consecutive 1m candles; no prices invented' in html
+    assert "set('dataErrors'" in html
