@@ -48,6 +48,12 @@ jobs:
                       first=d['last_attempt']
                       print('READY',json.dumps({'time':first,'quality':payload['candle_quality'],'engines':len(payload['engines'])}),flush=True)
                       break
+                  # Startup is legitimately NOT healthy until the first fetch.
+                  # Never represent uninitialized state as a successful signal.
+                  if d['status']=='STARTING' and d['errors']=={}:
+                      assert h.status_code==503 and d['ok'] is False
+                      time.sleep(10)
+                      continue
                   # Allow only a brief, safely reported public Kalshi transition.
                   assert d['errors']=={'kalshi':'No active Kalshi BTC15M market available'},d
                   assert d['status']=='DEGRADED' and d['ok'] is False and h.status_code==503
