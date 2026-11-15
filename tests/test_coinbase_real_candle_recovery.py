@@ -116,3 +116,16 @@ def test_mobile_dashboard_discloses_short_authentic_candle_history():
     assert "q?.status==='RECOVERED_REAL_CONTIGUOUS'" in html
     assert 'real consecutive 1m candles; no prices invented' in html
     assert "set('dataErrors'" in html
+
+
+def test_exact_31_real_candle_threshold_is_not_off_by_one():
+    original=bars()
+    allowed=[x for x in original if x['t']!=original[-32]['t']]
+    usable,quality=contiguous_real_candle_suffix(allowed)
+    assert len(usable)==31
+    assert quality['status']=='RECOVERED_REAL_CONTIGUOUS'
+    denied=[x for x in original if x['t']!=original[-31]['t']]
+    usable,quality=contiguous_real_candle_suffix(denied)
+    assert quality['status']=='GAP_TOO_RECENT'
+    assert quality['recent_valid_bars']==30
+    assert usable is denied
