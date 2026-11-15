@@ -255,15 +255,19 @@ def audit_benchmark_proxy_basis(spot,markets,labels,bad_hours):
     for ticker,m in markets.items():
         result=labels.get(ticker)
         if not result:continue
-        value=result.get("coin_price_end")
-        if value is None:
-            try:value=float(result.get("expiration_value"))
-            except (TypeError,ValueError):value=None
+        # The official settled index is the source expiration_value.
+        # coin_price_end is a separately recorded underlying observation
+        # and may differ materially; NEVER use it as BRTI truth.
+        try:value=float(result.get("expiration_value"))
+        except (TypeError,ValueError):value=None
         if value is None or not math.isfinite(value) or value<=0:
             rejected["no_numerical_official_end_index"]+=1;continue
         if any(h+3600>m["open"] and h<m["close"] for h in bad_hours):
             rejected["incident_window"]+=1;continue
         official_count+=1
+        # coin_price_start is a recorder observation, NOT an official
+        # published opening 60s average. Compare only as an auxiliary
+        # source-gap diagnostic, not an index validation.
         target_index=result.get("coin_price_start")
         if target_index is not None and math.isfinite(target_index):
             target_checks.append(abs(target_index-m["floor_strike"]))
@@ -294,8 +298,8 @@ def audit_benchmark_proxy_basis(spot,markets,labels,bad_hours):
             "max_absolute_usd":round(max(abs_errors),4),
             "wrong_contract_winner_if_replaced_with_spot_average":mismatches[venue]}
     return {"official_end_index_markets_after_excluding_incidents":official_count,
-            "target_vs_official_start_index_available":len(target_checks),
-            "max_abs_target_minus_index_start_usd":round(max(target_checks),4) if target_checks else None,
+            "target_vs_recorded_coin_start_available_not_official":len(target_checks),
+            "max_abs_target_minus_recorded_coin_start_usd_not_official":round(max(target_checks),4) if target_checks else None,
             "by_exchange":stats,
             "unusable":dict(rejected),
             "interpretation":"This uses official end-of-window index only as POST-SETTLEMENT ground truth; spot quote averages must never become the official contract result."}
