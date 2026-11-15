@@ -1,4 +1,4 @@
-name: AXIOM isolated KalshiEye data suitability probe
+name: AXIOM isolated KalshiEye source schema and replay probe
 on:
   push:
     branches: [research/real-tick-replay-kalshieye-2026-11-15]
@@ -8,11 +8,15 @@ permissions:
 jobs:
   kalshieye-probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
-      - name: Read public Hugging Face data manifest (no code from source executed)
+      - name: Install isolated parquet reader (never production requirements)
+        run: python -m pip install --disable-pip-version-check pyarrow==23.0.1
+      - name: Read public Hugging Face data manifest (no source code executed)
         run: python -m research.kalshieye_probe
+      - name: Inspect authentic parquet source schemas, field types and file hashes
+        run: python -m research.kalshieye_schema
