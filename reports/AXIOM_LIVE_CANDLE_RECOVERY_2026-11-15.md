@@ -22,6 +22,13 @@ A single live integration check at approximately **2026-11-15 20:15:25 UTC** enc
 
 The live smoke test was strengthened to retry a bounded number of times, **only** when the sole error is "No active Kalshi BTC15M market available." It explicitly verifies the degraded failure state on each retry, requires a **real active contract** for success and fails if the absence persists. No fake or stale contract is substituted.
 
+
+### Live rollover evidence and bounded acceptance
+
+- An earlier strict 16-minute monitor [#43756679232](https://github.com/szmohmand/Axiom/actions/runs/43756679232) **failed** its always-healthy criterion on 1 of 32 samples. It correctly disclosed only `kalshi: No active Kalshi BTC15M market available`, status DEGRADED and no Kalshi opportunity during a short rollover. The other 31 samples were healthy and all 32 had full Coinbase candle history. This failed check is retained, not hidden or relabeled successful.
+- The improved monitor [#43757250561](https://github.com/szmohmand/Axiom/actions/runs/43757250561) distinguishes **only** a short, accurately degraded rollover immediately after a 15-minute boundary; it fails for prolonged absence or any different defect. It passed with 32 total samples, a safe rollover at 20:30:04 UTC, 2 authentic KXBTC15M tickers and no unexplained failures. The original verified application baseline remained intact until candidate acceptance.
+- An actual **live-mode FastAPI lifespan** run [#43758082462](https://github.com/szmohmand/Axiom/actions/runs/43758082462) started both market and grading worker threads, served healthy `/health` and `/api/state`, produced 4 engines using 61 current genuine bars and verified that automatic polling advanced from 1794774407 to 1794774423. No authenticated orders or external deployments were involved.
+
 ## Historical / current / foreseeable-impact review
 
 | Component and boundary | Verification | Disposition |
@@ -34,7 +41,7 @@ The live smoke test was strengthened to retry a bounded number of times, **only*
 | HTTP and mobile UI | Prior API/browser regressions; new `/api/state` quality metadata and explicit mobile source notice; degraded status still fail-closed | PASS for automated tested paths |
 | Historical exact 17:55 source absence | Separate actual Coinbase historical query and recovery assertions | PASS |
 | 12-hour current-source completeness | 719 genuine/720 expected one-minute bars | OBSERVED (not guarantee of continuity) |
-| Ongoing 15-minute real-market observation | Dedicated read-only continuity workflow including contract rollover | **PENDING until completed and inspected** |
+| Ongoing 16-minute real-market observation | 32 real snapshots across 2 contracts; 31 healthy, one safely DEGRADED at 20:30:04 UTC; successful recovery, 0 unexplained failures | **PASS for bounded observed period** |
 | True deployed production operation | No Axiom hosting or service deployment authorized/verified in this code-only audit | NOT ESTABLISHED |
 
 ## Acceptance rules
@@ -43,7 +50,7 @@ The live smoke test was strengthened to retry a bounded number of times, **only*
 - New finding `A14` has permanent synthetic and provider regression tests in `tests/test_coinbase_real_candle_recovery.py` and the non-shrinking `reports/REGRESSION_HISTORY.json`.
 - No historical test is deleted, skipped or changed to expected failure; run the complete original+new suite on the exact proposed commit, frozen source integrity checks, actual HTTP read-only feeds, full synthetic lifecycle, recovery, concurrency, idempotence and timing checks.
 - Read-only provider recovery does **not** establish forecasting accuracy, real trades, fills or official CF BRTI equality. It is impossible to guarantee that future source omissions won't happen. If the last 31 genuine minutes are not consecutive, the system correctly withholds estimates.
-- A passing clean-install or one-point API check is insufficient to certify sustained live reliability. **Decision remains BLOCKED until the live continuity observation and all proposed-commit CI checks are inspected.** If a consequential failure occurs, repair in the isolated branch and repeat the full gates; do not merge a failing candidate.
+- **Candidate engineering gate: PASS for the tested read-only research system**, supported by 72 passing automated tests, all 19 permanent regressions, the actual historical gap replay, 12-hour source audit, working live FastAPI market/grading workers, and a 16-minute live observation. The latter recorded 32 samples spanning two consecutive Kalshi contracts: 31 LIVE samples and one short safe contract rollover with health 503 and no opportunity, followed by recovery. No unexplained check failures or fabricated candles. [Long observation #43757250561](https://github.com/szmohmand/Axiom/actions/runs/43757250561), [real background worker #43758082462](https://github.com/szmohmand/Axiom/actions/runs/43758082462). All proposed-commit pull-request checks and post-merge tests must still pass before the verified recovery pointer is advanced. This is **not** a guarantee of 24/7 availability, profitable forecasts, real order safety or a deployed live service. A new genuine minute gap within the latest 31 bars still safely suspends signals until enough real candles arrive.
 
 ## Evidence links
 
