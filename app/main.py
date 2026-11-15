@@ -29,7 +29,7 @@ ledger = Ledger(DATA_PATH)
 state_lock = threading.RLock()
 state = {'mode':'DEMO' if DEMO else 'LIVE','last_attempt':None,'last_success':None,
          'market':None,'spot':None,'model':None,'engines':[],'scalp':None,'opportunity':None,'candles':[],
-         'errors':{},'paper_auto_enabled':AUTO_PAPER,'watch':None,'status':'STARTING',
+         'errors':{},'paper_auto_enabled':AUTO_PAPER,'watch':None,'candle_quality':None,'status':'STARTING',
          'settlement':{'status':'NOT_CHECKED','last_attempt':None,'last_success':None,
                        'checked':0,'failed':0}}
 shutdown = threading.Event()
@@ -174,7 +174,8 @@ def update_once(now=None):
                 errors[component] = state['errors'][component]
         state.update({'last_attempt':now,
             'market':market,'spot':spot,'candles':candles[-70:], 'model':model,'scalp':scalp,
-            'opportunity':op,'engines':model.get('engines',[]),'errors':errors,'watch':watch})
+            'opportunity':op,'engines':model.get('engines',[]),'errors':errors,'watch':watch,
+            'candle_quality':getattr(provider,'candle_quality',None)})
         _refresh_status_locked()
         if state['status'] in ('LIVE','DEMO'):
             state['last_success'] = now
