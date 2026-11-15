@@ -39,6 +39,12 @@ def download(path,cache=Path("/tmp/axiom-kalshieye")):
 
 def source_schema():
     import pyarrow.parquet as pq
+    import pyarrow as pa
+    def safe_scalar(scalar):
+        if pa.types.is_timestamp(scalar.type):
+            # Raw nanoseconds preserve the exact recorder clock integer.
+            return str(scalar.cast(pa.int64()).as_py()) + " ns"
+        return str(scalar.as_py())[:200]
     report=[]
     for d in DATES:
         for family in FAMILIES:
@@ -50,7 +56,7 @@ def source_schema():
             # timestamps to Python microsecond datetime or losing precision.
             batches=f.iter_batches(batch_size=1)
             first=next(batches,None)
-            sample=({field.name:str(first.column(i)[0])[:200]
+            sample=({field.name:safe_scalar(first.column(i)[0])[:200]
                      for i,field in enumerate(schema)}
                     if first is not None else {})
             hashes=hashlib.sha256(p.read_bytes()).hexdigest()
