@@ -35,6 +35,8 @@ jobs:
           errors=[]
           tickers=[]
           qualities={}
+          safe_rollover_events=[]
+          rollover_streak=0
           assert main.DEMO is False and main.AUTO_PAPER is False
           while True:
               elapsed=time.monotonic()-start
@@ -67,7 +69,26 @@ jobs:
                        'health_errors':state.get('errors',{}),'bars':len(candles),
                        'scalp_side':state.get('scalp',{}).get('side'),'contract_side':state.get('opportunity',{}).get('side')}
                   failures=[k for k,v in checks.items() if not v]
-                  if failures:errors.append({'index':samples,'failed':failures,'errors':row['health_errors']})
+                  if failures:
+                      # A public Kalshi gap immediately after a 15m boundary
+                      # is legitimate only if the whole app FAILS CLOSED.
+                      # Never silently count this as a healthy market sample.
+                      boundary=int(now)%900
+                      expected_rollover=(boundary<=90
+                          and state.get('errors')=={'kalshi':'No active Kalshi BTC15M market available'}
+                          and not state.get('ok') and health.status_code==503
+                          and state['opportunity']['side']=='WAIT'
+                          and not state['model'].get('available')
+                          and main.AUTO_PAPER is False)
+                      if expected_rollover:
+                          rollover_streak+=1
+                          row['safe_rollover_transient']=True
+                          safe_rollover_events.append({'index':samples,'time_utc':row['time_utc'],'boundary_seconds':boundary})
+                          if rollover_streak>2:
+                              errors.append({'index':samples,'failed':['prolonged_kalshi_rollover'],'errors':row['health_errors']})
+                      else:
+                          errors.append({'index':samples,'failed':failures,'errors':row['health_errors']})
+                  else:rollover_streak=0
               except Exception as e:
                   row={'kind':'exception','index':samples,'error':type(e).__name__+': '+str(e)[:200]}
                   errors.append(row)
@@ -78,11 +99,13 @@ jobs:
               else:break
           result={'kind':'summary','sample_count':samples,'ticker_count':len(set(tickers)),
                   'unique_tickers':sorted(set(tickers))[:8], 'quality_counts':qualities,
-                  'failed_sample_count':len(errors), 'failures':errors[:12],
+                  'failed_sample_count':len(errors),'safe_rollover_transients':safe_rollover_events,
+                  'failures':errors[:12],
                   'no_real_orders':True,'no_auto_paper':True}
           print(json.dumps(result,sort_keys=True),flush=True)
           assert samples>=30, 'insufficient 16-minute coverage'
           assert len(set(tickers))>=2, 'market rollover not observed'
+          assert len(safe_rollover_events)<=4, 'unexpectedly high Kalshi rollover downtime'
           assert not errors, 'one or more live application/health/integrity samples failed'
           PY
       - name: Preserve all observations even if check fails
