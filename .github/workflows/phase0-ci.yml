@@ -1,6 +1,7 @@
-name: AXIOM Phase 0 clean install and tests
+name: AXIOM complete regression and end-to-end checks
 on:
   push:
+  pull_request:
     branches: [main]
   workflow_dispatch:
 permissions:
@@ -24,9 +25,12 @@ jobs:
       - name: Install locked dependencies
         run: |
           python -m pip install --disable-pip-version-check -r requirements.lock.txt
-      - name: Verify transfer and secret policy
+      - name: Verify preserved sources and secrets policy
         run: |
           python phase0/verify_transfer.py --checkout . --require-archives
-      - name: Run full offline suite
+      - name: Enforce permanent regression tests
+        run: |
+          python phase0/check_regression_history.py
+      - name: Run ALL existing unit, recovery and synthetic end-to-end tests
         run: |
           python -m pytest -q

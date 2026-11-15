@@ -1,0 +1,133 @@
+{
+  "schema": "axiom.permanent-regressions.v1",
+  "purpose": "Historical defects must have collected, passing regression tests on every proposed change. Never silently delete or weaken them.",
+  "entries": [
+    {
+      "id": "H01",
+      "finding": "Settlement provider errors hidden",
+      "fixed_commit": "a9b7a03465a235081fbf8e75fe01dadd04d4b9f1",
+      "tests": [
+        "tests/test_e2e_synthetic.py::test_settlement_failure_is_exposed_in_health",
+        "tests/test_health_recovery_extra.py::test_settlement_failures_are_individually_tracked_and_retried"
+      ]
+    },
+    {
+      "id": "H02",
+      "finding": "Demo mode appeared healthy despite failed input",
+      "fixed_commit": "a9b7a03465a235081fbf8e75fe01dadd04d4b9f1",
+      "tests": [
+        "tests/test_e2e_synthetic.py::test_demo_feed_failure_degrades_health"
+      ]
+    },
+    {
+      "id": "H03",
+      "finding": "Partial grading possible during database failure",
+      "fixed_commit": "a9b7a03465a235081fbf8e75fe01dadd04d4b9f1",
+      "tests": [
+        "tests/test_health_recovery_extra.py::test_official_grading_rolls_back_if_paper_write_fails"
+      ]
+    },
+    {
+      "id": "H04",
+      "finding": "One recovery hid another outstanding error",
+      "fixed_commit": "a9b7a03465a235081fbf8e75fe01dadd04d4b9f1",
+      "tests": [
+        "tests/test_health_recovery_extra.py::test_settlement_recovery_does_not_clear_independent_feed_failure"
+      ]
+    },
+    {
+      "id": "H05",
+      "finding": "Stale or uninitialized health reported healthy",
+      "fixed_commit": "a9b7a03465a235081fbf8e75fe01dadd04d4b9f1",
+      "tests": [
+        "tests/test_health_recovery_extra.py::test_health_stale_worker_and_recovery",
+        "tests/test_health_recovery_extra.py::test_initial_health_is_not_a_false_success"
+      ]
+    },
+    {
+      "id": "A01",
+      "finding": "NO opportunity used YES spread",
+      "fixed_commit": "981eb1e727159cb350edb59dd2872ed74443c942",
+      "tests": [
+        "tests/test_audit_regressions.py::test_no_side_uses_its_own_spread_not_yes_spread",
+        "tests/test_audit_regressions.py::test_yes_spread_symmetric_and_crossed_quote_rejected"
+      ]
+    },
+    {
+      "id": "A02",
+      "finding": "Manual paper entries during source outages",
+      "fixed_commit": "981eb1e727159cb350edb59dd2872ed74443c942",
+      "tests": [
+        "tests/test_audit_regressions.py::test_paper_entries_blocked_during_failed_feed_and_recover"
+      ]
+    },
+    {
+      "id": "A03",
+      "finding": "Stale forecasts and scalps left actionable",
+      "fixed_commit": "981eb1e727159cb350edb59dd2872ed74443c942",
+      "tests": [
+        "tests/test_audit_regressions.py::test_stale_worker_does_not_show_copied_signals_or_take_paper_entry"
+      ]
+    },
+    {
+      "id": "A04",
+      "finding": "Future and gapped candles accepted",
+      "fixed_commit": "981eb1e727159cb350edb59dd2872ed74443c942",
+      "tests": [
+        "tests/test_audit_regressions.py::test_future_candles_fail_closed_and_recover",
+        "tests/test_audit_regressions.py::test_gapped_candle_timeline_cannot_be_used_as_60_one_minute_returns"
+      ]
+    },
+    {
+      "id": "A05",
+      "finding": "First-call confidence watch persisted across bad inputs",
+      "fixed_commit": "981eb1e727159cb350edb59dd2872ed74443c942",
+      "tests": [
+        "tests/test_audit_regressions.py::test_feed_failure_resets_first_call_hold_before_resuming"
+      ]
+    },
+    {
+      "id": "A06",
+      "finding": "Unresolved settlement queue starved newer contracts",
+      "fixed_commit": "981eb1e727159cb350edb59dd2872ed74443c942",
+      "tests": [
+        "tests/test_audit_regressions.py::test_settlement_batch_rotates_past_first_fifty_pending_contracts",
+        "tests/test_audit_regressions.py::test_unresolved_round_robin_wraps_without_duplicates"
+      ]
+    },
+    {
+      "id": "A07",
+      "finding": "Database API failure was hidden by green health",
+      "fixed_commit": "981eb1e727159cb350edb59dd2872ed74443c942",
+      "tests": [
+        "tests/test_audit_regressions.py::test_ledger_read_failure_is_visible_in_both_apis_and_recovers",
+        "tests/test_audit_regressions.py::test_ledger_connection_outage_health_is_not_false_green"
+      ]
+    },
+    {
+      "id": "A08",
+      "finding": "Unhealthy dashboard permitted paper controls",
+      "fixed_commit": "981eb1e727159cb350edb59dd2872ed74443c942",
+      "tests": [
+        "tests/test_audit_regressions.py::test_dashboard_disables_manual_buttons_when_unhealthy"
+      ]
+    },
+    {
+      "id": "A09",
+      "finding": "Automatic paper entries did not honor settlement health",
+      "fixed_commit": "981eb1e727159cb350edb59dd2872ed74443c942",
+      "tests": [
+        "tests/test_audit_regressions.py::test_auto_paper_is_paused_during_settlement_health_failure"
+      ]
+    },
+    {
+      "id": "A10",
+      "finding": "Unhealthy health endpoint responded HTTP 200",
+      "fixed_commit": "981eb1e727159cb350edb59dd2872ed74443c942",
+      "tests": [
+        "tests/test_audit_regressions.py::test_paper_entries_blocked_during_failed_feed_and_recover",
+        "tests/test_audit_regressions.py::test_ledger_read_failure_is_visible_in_both_apis_and_recovers"
+      ]
+    }
+  ]
+}
