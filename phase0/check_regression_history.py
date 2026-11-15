@@ -11,6 +11,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 HISTORY = ROOT / "reports" / "REGRESSION_HISTORY.json"
+# Permanent floor from the first accepted AXIOM regression inventory.
+# Future findings may be added, but these existing IDs must not disappear.
+REQUIRED_HISTORICAL_IDS = ["H01","H02","H03","H04","H05","A01","A02","A03","A04","A05","A06","A07","A08","A09","A10"]
 
 def check():
     errors = []
@@ -56,6 +59,9 @@ def check():
                     parsed[filename] = set()
             if function not in parsed[filename]:
                 errors.append(f"{ident}: regression test removed: {selector}")
+    for required_id in REQUIRED_HISTORICAL_IDS:
+        if required_id not in seen:
+            errors.append(f"permanent regression record removed: {required_id}")
     return errors
 
 if __name__ == "__main__":
