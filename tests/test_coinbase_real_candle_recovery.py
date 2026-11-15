@@ -19,7 +19,8 @@ def test_full_history_is_byte_equivalent_for_contiguous_live_bars():
     result,meta=contiguous_real_candle_suffix(original)
     assert result is original, "Normal input identity and model lookback must not change"
     assert meta['status']=='FULL'
-    assert meta['bars_used']==65
+    assert meta['bars_used']==61
+    assert meta['bars_available']==65
     assert meta['missing_candles_filled']==0
 
 
