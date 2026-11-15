@@ -4,6 +4,7 @@ Synthetic fixtures verify methodology only; they provide NO market accuracy evid
 """
 import math
 import sys
+import subprocess
 from copy import deepcopy
 
 import pytest
@@ -18,7 +19,7 @@ def one(ticker_id=0, remaining=840, market_mid=.52):
     base=90000 + 5*ticker_id
     candles=[]
     for i in range(61):
-        stamp=ts-(61-i)*60
+        stamp=(int(ts)//60)*60-(61-i)*60
         close=base + 100*math.sin((i+ticker_id)/8) + i*.75
         candles.append({"t":stamp,"close":close,"high":close+10,
                         "low":close-10,"volume":5+i*.01})
@@ -36,7 +37,12 @@ def outcome(raw, yes=None):
 
 
 def test_no_model_imports_runtime_or_auth_side_effects():
-    assert "app.main" not in sys.modules
+    # Other independent tests may have already imported app.main in this pytest
+    # process. The isolation guarantee must be tested in a clean interpreter.
+    child=subprocess.run([sys.executable,"-c",
+                          "import sys; from research import challenger_lab; assert 'app.main' not in sys.modules"],
+                         capture_output=True,text=True,check=False)
+    assert child.returncode==0, child.stderr
     assert "market_mid" not in lab.FEATURES
     assert all("kalshi" not in name for name in lab.FEATURES)
     assert all(name in lab.FEATURES for name in ("headstart","momentum5","rsi"))
