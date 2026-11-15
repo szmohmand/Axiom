@@ -1,0 +1,10 @@
+name: AXIOM Phase 0 CI (initialization)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  placeholder:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "AXIOM Phase 0 import has not yet completed."
