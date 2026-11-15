@@ -26,7 +26,7 @@ def contiguous_real_candle_suffix(candles, min_bars=MIN_REAL_ONE_MINUTE_BARS):
     """
     recent = candles[-PREFERRED_ONE_MINUTE_BARS:]
     quality = {'status': 'FULL', 'bars_available': len(candles),
-               'bars_used': len(candles), 'source': 'coinbase_exchange_real_1m',
+               'bars_used': min(len(candles), PREFERRED_ONE_MINUTE_BARS), 'source': 'coinbase_exchange_real_1m',
                'missing_candles_filled': 0}
     if len(recent) < min_bars:
         quality.update(status='INSUFFICIENT', bars_used=len(candles))
