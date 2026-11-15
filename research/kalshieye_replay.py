@@ -381,7 +381,15 @@ def make_dataset():
         # the same recorder. Exchange differences are NOT used in forecasting.
         early=[]
         start=int(datetime.fromisoformat(day).replace(tzinfo=timezone.utc).timestamp())
+        # End-of-second top-book state belongs only to this market while
+        # active. Kalshi book pressure is a SEPARATE market-derived probe.
+        ticker_by_minute={}
+        for ticker,m in markets.items():
+            for minute in range(int((m["open"]+59)//60*60),int(m["close"]),60):
+                ticker_by_minute[minute]=ticker
         for now in range(start+3600,start+86400-120,60):
+            if (now//3600)*3600 in bad_hours:
+                continue  # unknown Kalshi recorder state invalidates the test
             a=point(spot,"coinbase",now,2)
             b=point(spot,"bitstamp",now,2)
             c=point(spot,"kraken",now,2)
@@ -391,8 +399,14 @@ def make_dataset():
             spread=a["price"]-(b["price"]+c["price"])/2
             trend=a["price"]-prior["price"]
             move=future["price"]-a["price"]
+            ticker=ticker_by_minute.get(now)
+            bq=asof_book(books.get(ticker,[]),now,5) if ticker else None
+            pressure=((bq["bid_size"]-bq["ask_size"]) /
+                      (bq["bid_size"]+bq["ask_size"])
+                      if bq is not None else None)
             early.append({"date":day,"ts":now,"dislocation":spread,
-                          "trend":trend,"future_move":move})
+                          "trend":trend,"future_move":move,
+                          "market_book_pressure":pressure})
         provenance[day]={"early_move_inputs":early}
     return all_obs,summary,provenance
 
@@ -588,7 +602,8 @@ def early_test(provenance):
     train=provenance[DAYS[0]]["early_move_inputs"]
     test=provenance[DAYS[1]]["early_move_inputs"]
     def summarize(records,signal,filter_moves=0):
-        eligible=[r for r in records if abs(r["future_move"])>=filter_moves and signal(r)!=0]
+        eligible=[r for r in records if abs(r["future_move"])>=filter_moves
+                  and signal(r) is not None and signal(r)!=0]
         if not eligible:return {"n":0}
         n=len(eligible)
         good=sum(int((signal(r)>0)==(r["future_move"]>0)) for r in eligible)
@@ -597,13 +612,48 @@ def early_test(provenance):
                 "positive_future_share":round(sum(r["future_move"]>0 for r in eligible)/n,5)}
     funcs={"spot_trend_prev_60s":lambda r:r["trend"],
            "coinbase_minus_other_venues":lambda r:r["dislocation"],
+           "kalshi_yes_top_book_pressure_market_derived":lambda r:r["market_book_pressure"],
            "always_up":lambda r:1}
     scores={}
     for name,fn in funcs.items():
         scores[name]={"train_oct13_all":summarize(train,fn),
                       "holdout_oct25_all":summarize(test,fn),
                       "holdout_oct25_moves_20usd_or_more":summarize(test,fn,20)}
+    # Train ONE predeclared logistic model only on Oct 13; evaluate the
+    # completely untouched Oct 25 movements. Market price pressure cannot
+    # be relabeled as an independent BTC forecast.
+    ml={"status":"OPTIONAL_MISSING_DEPENDENCY"}
+    try:
+        from sklearn.linear_model import LogisticRegression
+        keys=("trend","dislocation","market_book_pressure")
+        train_ml=[r for r in train if r["market_book_pressure"] is not None]
+        test_ml=[r for r in test if r["market_book_pressure"] is not None]
+        if len(train_ml)>=100 and len(test_ml)>=100:
+            # Fixed USD scales chosen before inspecting test outcomes.
+            def vec(row):
+                return [row["trend"]/25,row["dislocation"]/10,
+                        row["market_book_pressure"]]
+            clf=LogisticRegression(C=1.0,random_state=19,max_iter=500)
+            clf.fit([vec(r) for r in train_ml],
+                    [int(r["future_move"]>0) for r in train_ml])
+            probs=clf.predict_proba([vec(r) for r in test_ml])[:,1].tolist()
+            actual=[int(r["future_move"]>0) for r in test_ml]
+            n=len(actual)
+            ml={"status":"TESTED_MARKET_DERIVED_BENCHMARK_NOT_INDEPENDENT",
+                "train_n":len(train_ml),"holdout_n":n,
+                "positive_outcome_rate":round(sum(actual)/n,6),
+                "holdout_brier":round(sum((p-y)**2 for p,y in zip(probs,actual))/n,6),
+                "holdout_accuracy":round(sum((p>=.5)==bool(y) for p,y in zip(probs,actual))/n,6),
+                "constant_50pct_brier":0.25,
+                "feature_coefs":dict(zip(keys,[round(x,4) for x in clf.coef_[0]])),
+                "no_live_model_promotion":True}
+        else:
+            ml={"status":"INSUFFICIENT_CLEAN_TRAIN_OR_TEST_MARKET_BOOK",
+                "train_n":len(train_ml),"holdout_n":len(test_ml)}
+    except ImportError:
+        pass
     return {"train_minute_samples":len(train),"test_minute_samples":len(test),
+            "market_derived_logistic_holdout":ml,
             "tests":scores,
             "limits":"Next-minute outcome is NOT identification of move onset. Aggregated quotes can be concurrent price action; no true pre-move lead-time is established."}
 
