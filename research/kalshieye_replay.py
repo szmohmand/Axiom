@@ -630,8 +630,8 @@ def early_test(provenance):
     try:
         from sklearn.linear_model import LogisticRegression
         keys=("trend","dislocation","market_book_pressure")
-        train_ml=[r for r in train if r["market_book_pressure"] is not None]
-        test_ml=[r for r in test if r["market_book_pressure"] is not None]
+        train_ml=[r for r in train if r.get("market_book_pressure") is not None]
+        test_ml=[r for r in test if r.get("market_book_pressure") is not None]
         if len(train_ml)>=100 and len(test_ml)>=100:
             # Fixed USD scales chosen before inspecting test outcomes.
             def vec(row):
