@@ -14,6 +14,15 @@
 - [ ] Compared the code and results against the preserved baseline; **no known regressions**
 - [ ] Attached exact CI URLs, test results, and audit evidence; updated `reports/VERIFIED_CHECKPOINTS.md` only when the new code truly qualifies
 
+
+## Historical / current / foreseeable-impact acceptance
+- [ ] Historical compatibility: relevant prior verified behavior, frozen source identity, historical regression cases and existing stored-record semantics reviewed
+- [ ] Every implemented component reviewed and all existing tests run, including components not intentionally edited
+- [ ] Full connected-system lifecycle completed; API/UI, timing, data integrity, calculations, persistence, concurrency and error/recovery behavior checked
+- [ ] Reasonably foreseeable boundary and interaction scenarios tested; explicit assumptions/known limitations recorded (unknown future changes are reviewed when proposed)
+- [ ] Known regressions or material unresolved risks: **none**; otherwise decision **BLOCKED**, do not merge or proceed
+- [ ] Evidence summary entered into `reports/CHANGE_SAFETY_GATE.md` or in the PR with equivalent historical/current/foreseeable impact analysis
+
 **Known unverified areas / limitations:**
 
 **Rollback plan:** If a regression appears, stop promotion, return to the preserved verified commit, or repair on the isolated Axiom branch and repeat all checks. Never stack new unverified fixes.
