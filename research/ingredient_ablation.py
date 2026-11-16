@@ -433,29 +433,51 @@ def early_day_rolling_validation(train):
         contract_start[row["ticker"]]=min(row["ts"],
               contract_start.get(row["ticker"],row["ts"]))
     order=sorted(contract_start,key=lambda t:(contract_start[t],t))
-    chunks=[(0,22,22,33),(0,33,33,len(order))]
+    # Treat BOTH settlement timestamp and dataset's actual received timestamp
+    # as hard as-of constraints. A day-end grade may be unavailable at the
+    # earlier training moment; never train from retrospectively known labels.
+    grades=R.outcomes(R.DAYS[0])
+    chunks=[(0,28,28,36),(0,36,36,len(order))]
+    fold_counts=[]
     all_predictions=[]
     for fold,(first,before,start,end) in enumerate(chunks,1):
         prior=set(order[first:before])
         future=set(order[start:end])
-        train_rows=[r for r in train if r["ticker"] in prior]
         test_rows=[r for r in train if r["ticker"] in future]
-        # For every training label, its last observation was earlier than
-        # the next contract's first observation; outcome only after 15m
-        # expiry. The supplied samples do not include settlement receipt
-        # timestamp, so conservative *contract* ordering is all we assert.
+        cutoff=min((r["ts"] for r in test_rows),default=None)
+        known=set()
+        if cutoff is not None:
+            for ticker in prior:
+                g=grades.get(ticker)
+                if not g or g.get("ts_recv") is None or g.get("settlement_ts") is None:
+                    continue
+                if (g["ts_recv"]/R.NSEC<cutoff and
+                    g["settlement_ts"]/R.NSEC<cutoff):
+                    known.add(ticker)
+        train_rows=[r for r in train if r["ticker"] in known]
+        fold_record={"fold":fold,"train_contracts_in_time_order":len(prior),
+                     "labels_evidenced_received_by_validation":len(known),
+                     "validation_contracts":len(future),
+                     "first_validation_ts":cutoff}
+        if len(known)<25:
+            fold_record["status"]="INSUFFICIENT_ASOF_OFFICIAL_TRAINING_LABELS"
+            fold_counts.append(fold_record)
+            continue
         fits,sigmas=prepare_train(train_rows)
-        outcome,_,_=evaluate_rows(test_rows,fits,sigmas)
+        test_eligible=[r for r in test_rows if r["checkpoint"] in sigmas]
+        outcome,_,_=evaluate_rows(test_eligible,fits,sigmas)
+        fold_record["status"]="REPLAYED_WITH_ASOF_RECEIVED_LABEL_GUARD"
+        fold_record["validation_observations"]=len(outcome)
+        fold_counts.append(fold_record)
         for r in outcome:r["fold"]=fold
         all_predictions.extend(outcome)
-    # Very small folds: corroboration/contradiction only, not robust model
-    # selection or a third statistically independent market regime.
+    # Zero internal scored rows is a meaningful label-provenance result, not a
+    # license to use retrospectively known settlements.
     return {
-        "fold_contract_counts":[{"train":22,"validation":11},
-                                {"train":33,"validation":len(order)-33}],
+        "fold_contract_counts":fold_counts,
         "validation_contracts":len({r["ticker"] for r in all_predictions}),
-        "period_scores":periods(all_predictions),
-        "note":"Exploratory within training date; external October 25 sample already inspected in prior research, so cannot be called untouched confirmatory validation.",
+        "period_scores":periods(all_predictions) if all_predictions else {},
+        "note":"Strict as-of settlement-receipt guard; absence of in-day evidence is reported as UNAVAILABLE. External Oct25 data was previously examined, so remains exploratory.",
     }
 
 
