@@ -42,7 +42,7 @@ jobs:
           keyid=os.environ['KALSHI_API_KEY_ID'].strip()
           private_key,_=load_key(os.environ['KALSHI_PRIVATE_KEY_PEM'])
           path='/cfbenchmarks/history/values'
-          auth=sign_headers(keyid,private_key,'GET','/trade-api/v2'+path)
+          # Generate a fresh request timestamp and signature for each GET.
           records=[];failures=[]
           for index,h in enumerate(hours,1):
               for attempt in (1,2):
@@ -51,7 +51,7 @@ jobs:
                   url=API+path+'?'+urllib.parse.urlencode({'id':'BRTI','timespan':'HOUR','timestamp':stamp})
                   begun=dt.datetime.now(dt.timezone.utc).isoformat()
                   try:
-                      raw=get(url,headers=auth,cap=30_000_000)
+                      raw=get(url,headers=sign_headers(keyid,private_key,'GET','/trade-api/v2'+path),cap=30_000_000)
                       done=dt.datetime.now(dt.timezone.utc).isoformat()
                       obj=json.loads(raw)
                       points=list(walk_values(obj))
