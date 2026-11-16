@@ -21,6 +21,15 @@ if __name__=="__main__":
    print("HISTORY_RANGE",json.dumps({"date":d,"status":"API_unavailable",
     "error_type":type(e).__name__}),flush=True)
   time.sleep(.2)
+ p="/cfbenchmarks/history/values"
+ try:
+  obj=json_get(p,{"id":"BRTI","timespan":"DAY","timestamp":"2026-11-13T00:00:00.000Z"},sign_headers(keyid,key,"GET","/trade-api/v2"+p))
+  pts=list(walk_values(obj))
+  print("DAY_HISTORY_CAPABILITY",json.dumps({"count":len(pts),"root_keys":list(obj),
+      "start_ms":pts[0].get("time") if pts else None,
+      "end_ms":pts[-1].get("time") if pts else None}),flush=True)
+ except Exception as e:
+  print("DAY_HISTORY_CAPABILITY",json.dumps({"status":"NOT_VERIFIED","error_type":type(e).__name__}),flush=True)
  ticker="KXBTC15M-26NOV121915-15"
  probe("BOOK_AT_SETTLED","/markets/"+ticker+"/orderbook",{"depth":10})
  probe("SERIES_METADATA","/series/KXBTC15M")
