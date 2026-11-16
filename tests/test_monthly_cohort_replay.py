@@ -166,3 +166,21 @@ def test_validation_only_model_selection_cannot_look_at_later_labels():
         assert selection["selected_from_validation"]=="kalshibot_headstart"
         assert selection["September_October_score"]["brier"]==pytest.approx(.81)
         assert selection["test_vs_constant_HeadStart"]["delta_brier_second_minus_first"]==0
+
+
+def test_fallback_glm_training_without_numpy_preserves_frozen_solver(monkeypatch):
+    # The ordinary AXIOM Python runtime does not install optional NumPy.
+    # Research code and the full original test suite must still import and
+    # behave correctly without changing production dependencies.
+    monkeypatch.setattr(M,"np",None)
+    records=[]
+    for i in range(125):
+        records.append({"ticker":str(i),"y":i%3==0,
+                        "features":{"headstart":(i-60)/15,
+                                    "momentum5":math.sin(i/7),
+                                    "rsi":math.cos(i/11)}})
+    original=R.fit_logit(records)
+    fit=M.fit_glm(records,"logit_full")
+    assert max(abs(x-y) for x,y in zip(fit["coefs"],original))<1e-8
+    p=M.predict_glm(records[:2],fit)
+    assert len(p)==2 and all(0<q<1 for q in p)
