@@ -38,6 +38,7 @@ SCORED_ABLATIONS=(
     "aaryann_no_target_distance", "headstart_no_60s_averaging",
     "headstart_fixed_train_volatility","headstart_no_target_distance",
     "schen_no_ito_correction", "schen_linear_distance",
+    "schen_clamped_like_headstart","headstart_unclamped_like_schen",
 )
 HYBRIDS=("half_headstart_half_logit","half_ensemble_half_logit",
          "half_headstart_half_ensemble","half_schen_half_logit")
@@ -50,6 +51,13 @@ def clamp(p):
 
 def cdf(z):
     return clamp(.5*(1+math.erf(z/math.sqrt(2))))
+
+
+def schen_cdf(z):
+    # Existing Schen research formula clamps at 1e-6, not .005.
+    # Never silently equate different clipping policies in parity checks.
+    raw=.5*(1+math.erf(z/math.sqrt(2)))
+    return min(1-1e-6,max(1e-6,raw))
 
 
 def extract_components(row):
@@ -110,7 +118,7 @@ def original_formula_audit(row):
     if max(errors.values())>2e-5:
         raise AssertionError(f"Formula parity mismatch: {errors}")
     if "schen_m0_minute_proxy" in mirror:
-        if abs(cdf(z["z_schen"])-mirror["schen_m0_minute_proxy"])>5e-5:
+        if abs(schen_cdf(z["z_schen"])-mirror["schen_m0_minute_proxy"])>5e-8:
             raise AssertionError("Schen formula not reproduced")
     return z,mirror,errors
 
@@ -138,8 +146,10 @@ def counterfactuals(row,z,train_sigma):
     if z["seconds"]>=60:
         sig=max(z["stdev"],1e-6)
         se=sig*math.sqrt((z["seconds"]-40)/60)
-        out["schen_no_ito_correction"]=cdf(z["logdistance"]/se)
-        out["schen_linear_distance"]=cdf(z["linear_distance"]/se)
+        out["schen_no_ito_correction"]=schen_cdf(z["logdistance"]/se)
+        out["schen_linear_distance"]=schen_cdf(z["linear_distance"]/se)
+        out["schen_clamped_like_headstart"]=cdf(z["z_schen"])
+        out["headstart_unclamped_like_schen"]=schen_cdf(z["z_head"])
     return out
 
 
@@ -313,6 +323,8 @@ def ablation_matrix(data):
         "headstart_fixed_train_volatility":"kalshibot_headstart",
         "schen_no_ito_correction":"schen_m0_minute_proxy",
         "schen_linear_distance":"schen_m0_minute_proxy",
+        "schen_clamped_like_headstart":"schen_m0_minute_proxy",
+        "headstart_unclamped_like_schen":"kalshibot_headstart",
         "logit_without_headstart":"logit_full",
         "logit_without_momentum":"logit_full",
         "logit_without_rsi":"logit_full",
