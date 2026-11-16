@@ -74,11 +74,15 @@ Within this source assumption, the best nominal Brier was the fixed sigmoid(1.7*
 | Model | First 2m | 10m left | 5m left | 60s left |
 |---|---|---|---|---|
 | Untrained adapted HeadStart | 0.230440 / 61.29% | 0.193562 / 69.25% | 0.134112 / 81.07% | 0.060260 / 91.68% |
+| Schen zero-drift 1m proxy | 0.230457 / 61.20% | 0.193556 / 69.25% | 0.134123 / 81.17% | 0.060281 / 91.68% |
+| Trained logistic, HeadStart alone | 0.230394 / 61.32% | 0.193490 / 69.13% | 0.134079 / 81.14% | 0.059378 / 91.68% |
 | Trained logistic, full features | 0.230215 / 61.36% | 0.193475 / 69.47% | 0.133910 / 81.32% | 0.059377 / 91.68% |
+| Trained logistic WITHOUT HeadStart | 0.240310 / 58.61% | 0.197227 / 69.93% | 0.170084 / 75.12% | 0.118338 / 88.55% |
 | Current AXIOM ensemble | 0.232533 / 61.17% | 0.195923 / 69.25% | 0.135609 / 80.58% | 0.059212 / 91.84% |
-| AXIOM original volatility | 0.232973 / 61.23% | 0.196? / (see raw logs) | (see raw logs) | **0.058914 / 91.84%** |
+| AXIOM original volatility | 0.232973 / 61.23% | 0.196457 / 69.25% | 0.135619 / 80.58% | **0.058914 / 91.84%** |
+| Aaryann momentum fair calculation | 0.235005 / 61.22% | 0.197795 / 69.25% | 0.141214 / 79.74% | 0.059956 / 91.65% |
 
-*No placeholder cells in the source JSON:* refer to exact per-model values in executable evidence for entries not reproduced here. Critically **AXIOM's original volatility, not the early HeadStart formula or the full logistic, had the best nominal Brier 60 seconds before expiry with this second proxy**. That unstable ranking blocks a claim that learned late calibration is generally best.
+**AXIOM's original volatility, not the early HeadStart formula or the full logistic, had the best nominal Brier 60 seconds before expiry with this second proxy**. That unstable ranking blocks a claim that learned late calibration is generally best.
 
 ## 5. Main ingredient ablation: remove HeadStart and RE-FIT momentum and RSI
 
