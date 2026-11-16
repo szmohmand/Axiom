@@ -53,4 +53,4 @@ with (K/'COVERAGE_MATRIX.csv').open('w') as f:
  for day in range(6,13):
   date=f'2026-08-{day:02d}';start=sec(date+'T00:00:00Z')
   nsec=sum(s in records for s in range(start,start+86400));contracts=sum(x['open_time'].startswith(date) for x in markets)
-  w.writerow([date, next(x['raw_ticks'] for x in m['hours_summary'] if x['hour'].startswith(date)) if False else sum(x['raw_ticks'] for x in m['hours_summary'] if x['hour'].startswith(date)),nsec,contracts,contracts*16,0,0])
+  w.writerow([date, sum(x['raw_ticks'] for x in m['hours_summary'] if x['hour'].startswith(date)),nsec,contracts,contracts*16,0,0])
