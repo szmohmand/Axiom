@@ -131,20 +131,19 @@ def source_windows():
             b-a!=900 or a%60 or b%60):
             exc["invalid_strike_clock_duration"]+=1;continue
         settlement=row.get("official_settlement_value")
+        value=None
         if settlement not in (None,""):
             try:
                 value=float(settlement)
             except (ValueError,TypeError):
                 exc["invalid_official_numeric_value"]+=1
                 continue
-            # Without exact contract tie, rounding and official precision
-            # rules, flag the disagreement but do not overwrite official
-            # YES/NO label with an inferred spot/rounded outcome.
-            if not math.isfinite(value):
+            if not math.isfinite(value) or value<=0:
                 exc["invalid_official_numeric_value"]+=1
                 continue
         kept.append({"ticker":tick,"open":a,"close":b,
                      "strike":strike,"y":int(row["result"]=="yes"),
+                     "official_expiration_value":value,
                      "date":opened.date().isoformat()})
     return kept,{"csv_sha256":digest,"raw_rows":len(seen),
                  "eligible_window_rows":len(kept),"excluded":dict(exc)}
@@ -226,6 +225,57 @@ def qualified_candles(bars,w,checkpoint,anchor):
     }
     row["features"]=R.math_features(row)
     return row,None
+
+
+def settlement_basis_audit(windows,bars,anchor):
+    """After-the-fact source-price discrepancy; NEVER forecasting input.
+
+    Kalshi official settled YES/NO and expiration_value remain the ground
+    truth. The Binance shifted last-minute OHLC4 / final trade are diagnostics,
+    not official BRTI. If proxy differs, no winner is silently overwritten.
+    """
+    exact=0;numeric=0;mismatch=0;dist=[];abs_error=[];near=collections.Counter()
+    bymonth=collections.defaultdict(lambda:{"n":0,"wrong_winner":0})
+    for w in windows:
+        pre=bars.get(w["open"]-60)
+        end=bars.get(w["close"]-60)
+        if pre is None or end is None:
+            continue
+        anchor_base=sum(pre)/4 if anchor=="ohlc4" else pre[3]
+        # A 60-second OHLC4 is only an approximation of 60-second exchange
+        # trade VWAP; final close is a separate, less-smoothed diagnostic.
+        pseudo_end_base=sum(end)/4 if anchor=="ohlc4" else end[3]
+        proxy_end=pseudo_end_base+(w["strike"]-anchor_base)
+        if proxy_end<=0:continue
+        exact+=1
+        inferred=int(proxy_end>=w["strike"])
+        wrong=(inferred!=w["y"])
+        mismatch+=int(wrong)
+        dist.append(abs(proxy_end-w["strike"]))
+        g=bymonth[w["date"][:7]]
+        g["n"]+=1;g["wrong_winner"]+=int(wrong)
+        for cutoff in (2,5,10,25,50,100):
+            if abs(proxy_end-w["strike"])<=cutoff:
+                near[f"within_{cutoff}_usd_n"]+=1
+                near[f"within_{cutoff}_usd_mismatch"]+=int(wrong)
+        official=w.get("official_expiration_value")
+        if official is not None:
+            numeric+=1
+            abs_error.append(abs(proxy_end-official))
+    if not exact:
+        raise AssertionError("cannot verify index versus proxy due missing source")
+    abs_error.sort()
+    return {
+        "anchor":anchor,"official_labeled_windows_compared":exact,
+        "official_numeric_expiration_index_available":numeric,
+        "proxy_disagreed_with_official_winner":mismatch,
+        "proxy_disagreement_fraction":round(mismatch/exact,7),
+        "official_end_index_vs_proxy_mean_abs_usd":round(statistics.mean(abs_error),4) if abs_error else None,
+        "official_end_index_vs_proxy_median_abs_usd":round(statistics.median(abs_error),4) if abs_error else None,
+        "official_end_index_vs_proxy_p95_abs_usd":round(abs_error[min(len(abs_error)-1,int(.95*len(abs_error)))],4) if abs_error else None,
+        "near_strike_count_and_disagreement":dict(near),
+        "by_month":dict(sorted(bymonth.items())),
+        "note":"The official YES/NO, not Binance proxy end, graded every model. These errors quantify why Binance cannot establish BRTI equality."}
 
 
 def build_dataset(windows,bars,anchor):
@@ -335,6 +385,7 @@ def infer(split,trained):
                 raise ValueError("Invalid forecast; do not silently impute")
             result.append({"ticker":row["ticker"],"date":row["date"],
                            "cp":cp,"y":row["y"],"p":pred,
+                           "abs_headstart_z":abs(row["features"]["headstart"]),
                            "close":row["ts"]+row["remaining"]})
     return result
 
@@ -431,6 +482,50 @@ def grade(result):
     return summary
 
 
+def validation_selection_and_regimes(result):
+    """Select a restricted 4-model per-period candidate on validation ONLY.
+
+    Compares that already-locked selection on the later research test.
+    Price-subgroup results are descriptive and post-hoc.
+    """
+    candidates=("kalshibot_headstart","logit_headstart_only",
+                "logit_full","axiom_ensemble")
+    val=result["validation"];test=result["test"]
+    selected={}
+    for period in PERIODS:
+        val_scores={m:score(val,period,m) for m in candidates}
+        choice=min(candidates,key=lambda name:val_scores[name]["brier"])
+        selected[period]={
+            "selection_basis":"lowest July-August Brier within four frozen candidates",
+            "selected_from_validation":choice,
+            "validation_brier":val_scores[choice]["brier"],
+            "September_October_score":score(test,period,choice),
+            "test_vs_constant_HeadStart":paired_day_uncertainty(
+                test,period,choice,"kalshibot_headstart"),
+            "test_vs_existing_AXIOM_ensemble":paired_day_uncertainty(
+                test,period,choice,"axiom_ensemble"),
+        }
+    stratified={}
+    for split in ("validation","test"):
+        for cp in ("five_minutes_left","last_60s"):
+            rows=[r for r in result[split] if r["cp"]==cp]
+            for name,pred in (
+              ("near_target_abs_z_lt_0_5",lambda v:v<.5),
+              ("intermediate_z_0_5_to_1_5",lambda v:.5<=v<1.5),
+              ("far_target_abs_z_ge_1_5",lambda v:v>=1.5)):
+                subset=[r for r in rows if pred(r["abs_headstart_z"])]
+                stratified[f"{split}::{cp}::{name}"]={
+                    "n_contracts":len(subset),
+                    "results":{model:score(subset,
+                        "5min_left" if cp=="five_minutes_left" else "last_60s_only",model)
+                        for model in ("kalshibot_headstart","logit_headstart_only",
+                                      "logit_full","axiom_ensemble",
+                                      "logit_without_headstart") } if subset else {}
+                }
+    return {"frozen_four_candidate_validation_choice":selected,
+            "posthoc_target_distance_subgroups":stratified}
+
+
 def main():
     windows,wm=source_windows()
     bars,ex_manifest=load_klines()
@@ -453,7 +548,9 @@ def main():
             raise AssertionError("numpy logistic optimizer does not reproduce prior reference")
         evaluated={name:infer(rows,trains) for name,rows in splits.items()}
         out[anchor]=grade(evaluated)
+        out[anchor]["chronological_selection_and_regimes"]=validation_selection_and_regimes(evaluated)
         anchor_summary[anchor]={
+            "post_settlement_BRTI_index_vs_Binance_price_proxy":settlement_basis_audit(windows,bars,anchor),
             "excluded_checkpoint_events":excluded,
             "contract_counts":{name:len(rows)//len(POINTS) for name,rows in splits.items()},
             "checkpoint_rows":{name:len(rows) for name,rows in splits.items()},
@@ -464,6 +561,10 @@ def main():
                 for cp in POINTS},
         }
         print("ANCHOR_COMPLETED",anchor,json.dumps(anchor_summary[anchor]["contract_counts"]),flush=True)
+        # Free multi-million dictionary candle objects before allocating the
+        # second anchor scenario; avoids artificial runner OOM and removes
+        # hidden state coupling between the two research worlds.
+        del splits, evaluated, trains
     output={
         "status":"RETROSPECTIVE_PROXY_STRESS_TEST_NOT_STRICT_ASOF_BRTI",
         "data_source_official_outcomes":"DegenHedge/kalshi-btc-15m v2026.10.1, Kalshi historical market facts",
