@@ -1,0 +1,47 @@
+name: Research archive – August Kalshi terms and minute candles
+on:
+  push:
+    branches: [research/historical-data-completion-2026-11-16]
+    paths: ['.github/workflows/axiom-august-kalshi-package.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: august-kalshi-archive
+  cancel-in-progress: false
+jobs:
+  archive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      PYTHONPATH: '.'
+      DEMO_MODE: '1'
+      AUTO_PAPER: '0'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: python -m pip install cryptography==46.0.3
+      - name: Public historical GET-only archive, no credentials
+        run: python -u -m research.export_august_archived_kalshi
+      - name: Add handoff, collector and checksums
+        if: always()
+        run: |
+          mkdir -p august_KALSHI
+          cp research/export_august_archived_kalshi.py august_KALSHI/
+          cp reports/HISTORICAL_DATA_HANDOFF_2026-11-16.md august_KALSHI/README_START_HERE.md
+          python - <<'PY'
+          import pathlib,hashlib,json
+          r=pathlib.Path('august_KALSHI')
+          index={str(p.relative_to(r)):{'sha256':hashlib.file_digest(p.open('rb'),'sha256').hexdigest(),'bytes':p.stat().st_size} for p in r.rglob('*') if p.is_file()}
+          (r/'MASTER_INDEX.json').write_text(json.dumps(index,indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: BTC_Kalshi_2026-08-06_to_2026-08-12_Terms_Quotes_Original_JSON_v1
+          path: august_KALSHI/
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 20

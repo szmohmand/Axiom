@@ -1,0 +1,41 @@
+name: Research package – independently verified 30-day BRTI
+on:
+  push:
+    branches: [research/historical-data-completion-2026-11-16]
+    paths: ['.github/workflows/axiom-brti-verified-package.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Retrieve existing artifact without rerunning collection
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run download 43802326178 --repo szmohmand/Axiom --name 30DAY_OFFICIAL_BRTI_5HZ_AND_1HZ --dir verified_package/01_OFFICIAL_BRTI
+      - name: Independently verify every tick and derived second
+        run: python research/verify_brti_archive.py verified_package/01_OFFICIAL_BRTI
+      - name: Add verification, handoff and file index
+        run: |
+          cp research/verify_brti_archive.py verified_package/
+          cp reports/HISTORICAL_DATA_HANDOFF_2026-11-16.md verified_package/README_START_HERE.md
+          python - <<'PY'
+          import pathlib,json,hashlib
+          root=pathlib.Path('verified_package')
+          index={'files':{str(p.relative_to(root)):{'bytes':p.stat().st_size,'sha256':hashlib.file_digest(p.open('rb'),'sha256').hexdigest()} for p in root.rglob('*') if p.is_file()}}
+          (root/'MASTER_INDEX.json').write_text(json.dumps(index,indent=2)+'\n')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BTC_Official_BRTI_2026-10-17_to_2026-11-15_Independent_Verification_v1
+          path: verified_package/
+          compression-level: 0
+          retention-days: 20
+          if-no-files-found: error

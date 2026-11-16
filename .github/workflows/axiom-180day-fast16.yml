@@ -1,0 +1,258 @@
+name: Research – fast remaining Kalshi groups at measured public-IP pacing
+on:
+  push:
+    branches: [research/historical-data-completion-2026-11-16]
+    paths: ['.github/workflows/axiom-180day-fast16.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: public-180-fast16
+  cancel-in-progress: false
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      main: ${{ steps.plan.outputs.main }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Reuse exact official index and preserve both running collection inventories
+        run: |
+          gh run download 43817684448 --repo szmohmand/Axiom --name ACCEL_CONTRACT_INDEX --dir contract_index
+          gh run download 43817684448 --repo szmohmand/Axiom --name ACCEL_PLAN --dir prior_plan
+          gh run view 43808575205 --repo szmohmand/Axiom --json jobs > legacy_jobs.json
+          gh run view 43817684448 --repo szmohmand/Axiom --json jobs > accelerated_jobs.json
+          gh api --paginate 'repos/szmohmand/Axiom/actions/runs/43808575205/artifacts?per_page=100' --jq '.artifacts[] | {id,name,size_in_bytes,digest,created_at} | @json' > legacy_artifacts.jsonl
+          gh api --paginate 'repos/szmohmand/Axiom/actions/runs/43817684448/artifacts?per_page=100' --jq '.artifacts[] | {id,name,size_in_bytes,digest,created_at} | @json' > accelerated_artifacts.jsonl
+      - id: plan
+        run: |
+          python - <<'PYCODE'
+          import json,re,os,pathlib
+          old=json.load(open('prior_plan/OWNERSHIP.json'))
+          reserved=set(old['completed_legacy_dates'])|set(old['active_legacy_dates_preserved'])|set(old['pilot_dates'])
+          for file in ['legacy_jobs.json','accelerated_jobs.json']:
+              for job in json.load(open(file))['jobs']:
+                  match=re.search(r'\((\d{4}-\d{2}-\d{2})',job['name'])
+                  if match and (job['status']=='in_progress' or job['conclusion']=='success'):reserved.add(match[1])
+          plan=[p for p in json.load(open('prior_plan/PLAN.json')) if p['day'] not in reserved]
+          pathlib.Path('preservation').mkdir()
+          json.dump({'reserved_dates':sorted(reserved),'optimized_dates':[p['day'] for p in plan],'rate_policy':'measured sustained public-IP throughput ~4 requests/s; adaptive 429 backoff retained'},open('preservation/OWNERSHIP.json','w'),indent=2)
+          for file in ['legacy_artifacts.jsonl','accelerated_artifacts.jsonl']:pathlib.Path('preservation',file).write_bytes(pathlib.Path(file).read_bytes())
+          with open(os.environ['GITHUB_OUTPUT'],'a') as f:f.write('main='+json.dumps(plan,separators=(',',':'))+'\n')
+          print('Preserved or actively reserved dates',len(reserved),'fast remaining dates',len(plan))
+          PYCODE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FAST16_CONTRACT_INDEX
+          path: contract_index/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FAST16_PRESERVATION_PLAN
+          path: preservation/
+  collect:
+
+    needs: plan
+    strategy:
+      max-parallel: 16
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.main) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    env:
+      GH_TOKEN: ${{ github.token }}
+      DAY: ${{ matrix.day }}
+      QUOTES: ${{ matrix.quotes }}
+      TRADES: ${{ matrix.trades }}
+      RESEARCH_GZIP_LEVEL: '1'
+      RESEARCH_INITIAL_RPS: '3.5'
+      RESEARCH_MAX_RPS: '4'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: python -m pip install --disable-pip-version-check requests==2.32.5
+      - name: Restore index and reuse verified pilot responses
+        run: |
+          gh run download "$GITHUB_RUN_ID" --repo szmohmand/Axiom --name FAST16_CONTRACT_INDEX --dir contract_index
+          gh run download 43817684448 --repo szmohmand/Axiom --name "ACCEL_PILOT_${DAY}_DATA" --dir pilot_cache || true
+          python - <<'PYCODE'
+          import time,os
+          with open(os.environ['GITHUB_ENV'],'a') as f:f.write('COLLECTION_DEADLINE='+str(time.time()+43*60)+'\n')
+          PYCODE
+      - name: Collect contract group 1 of 6 with deadline reserve
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: |
+          args=()
+          if [ "$QUOTES" != true ]; then args+=(--no-quotes); fi
+          if [ "$TRADES" != true ]; then args+=(--no-trades); fi
+          python -u -m research.accelerate_historical_180 --root chunks/00 --index contract_index --day "$DAY" --offset 0 --limit 16 --deadline "$COLLECTION_DEADLINE" --cache-root pilot_cache/ORIGINAL_RESPONSES "${args[@]}"
+      - name: Independently verify group 1
+        if: always()
+        continue-on-error: true
+        run: python -m research.verify_public_180_day chunks/00
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: FAST16_${{ matrix.day }}_GROUP_00_DATA
+          path: chunks/00/
+          compression-level: 0
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: FAST16_${{ matrix.day }}_GROUP_00_SUMMARY
+          path: |
+            chunks/00/PERFORMANCE.json
+            chunks/00/COLLECTION_STATUS.json
+            chunks/00/INDEPENDENT_AUDIT.json
+          retention-days: 30
+      - name: Collect contract group 2 of 6 with deadline reserve
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: |
+          args=()
+          if [ "$QUOTES" != true ]; then args+=(--no-quotes); fi
+          if [ "$TRADES" != true ]; then args+=(--no-trades); fi
+          python -u -m research.accelerate_historical_180 --root chunks/01 --index contract_index --day "$DAY" --offset 16 --limit 16 --deadline "$COLLECTION_DEADLINE" --cache-root pilot_cache/ORIGINAL_RESPONSES "${args[@]}"
+      - name: Independently verify group 2
+        if: always()
+        continue-on-error: true
+        run: python -m research.verify_public_180_day chunks/01
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: FAST16_${{ matrix.day }}_GROUP_01_DATA
+          path: chunks/01/
+          compression-level: 0
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: FAST16_${{ matrix.day }}_GROUP_01_SUMMARY
+          path: |
+            chunks/01/PERFORMANCE.json
+            chunks/01/COLLECTION_STATUS.json
+            chunks/01/INDEPENDENT_AUDIT.json
+          retention-days: 30
+      - name: Collect contract group 3 of 6 with deadline reserve
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: |
+          args=()
+          if [ "$QUOTES" != true ]; then args+=(--no-quotes); fi
+          if [ "$TRADES" != true ]; then args+=(--no-trades); fi
+          python -u -m research.accelerate_historical_180 --root chunks/02 --index contract_index --day "$DAY" --offset 32 --limit 16 --deadline "$COLLECTION_DEADLINE" --cache-root pilot_cache/ORIGINAL_RESPONSES "${args[@]}"
+      - name: Independently verify group 3
+        if: always()
+        continue-on-error: true
+        run: python -m research.verify_public_180_day chunks/02
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: FAST16_${{ matrix.day }}_GROUP_02_DATA
+          path: chunks/02/
+          compression-level: 0
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: FAST16_${{ matrix.day }}_GROUP_02_SUMMARY
+          path: |
+            chunks/02/PERFORMANCE.json
+            chunks/02/COLLECTION_STATUS.json
+            chunks/02/INDEPENDENT_AUDIT.json
+          retention-days: 30
+      - name: Collect contract group 4 of 6 with deadline reserve
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: |
+          args=()
+          if [ "$QUOTES" != true ]; then args+=(--no-quotes); fi
+          if [ "$TRADES" != true ]; then args+=(--no-trades); fi
+          python -u -m research.accelerate_historical_180 --root chunks/03 --index contract_index --day "$DAY" --offset 48 --limit 16 --deadline "$COLLECTION_DEADLINE" --cache-root pilot_cache/ORIGINAL_RESPONSES "${args[@]}"
+      - name: Independently verify group 4
+        if: always()
+        continue-on-error: true
+        run: python -m research.verify_public_180_day chunks/03
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: FAST16_${{ matrix.day }}_GROUP_03_DATA
+          path: chunks/03/
+          compression-level: 0
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: FAST16_${{ matrix.day }}_GROUP_03_SUMMARY
+          path: |
+            chunks/03/PERFORMANCE.json
+            chunks/03/COLLECTION_STATUS.json
+            chunks/03/INDEPENDENT_AUDIT.json
+          retention-days: 30
+      - name: Collect contract group 5 of 6 with deadline reserve
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: |
+          args=()
+          if [ "$QUOTES" != true ]; then args+=(--no-quotes); fi
+          if [ "$TRADES" != true ]; then args+=(--no-trades); fi
+          python -u -m research.accelerate_historical_180 --root chunks/04 --index contract_index --day "$DAY" --offset 64 --limit 16 --deadline "$COLLECTION_DEADLINE" --cache-root pilot_cache/ORIGINAL_RESPONSES "${args[@]}"
+      - name: Independently verify group 5
+        if: always()
+        continue-on-error: true
+        run: python -m research.verify_public_180_day chunks/04
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: FAST16_${{ matrix.day }}_GROUP_04_DATA
+          path: chunks/04/
+          compression-level: 0
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: FAST16_${{ matrix.day }}_GROUP_04_SUMMARY
+          path: |
+            chunks/04/PERFORMANCE.json
+            chunks/04/COLLECTION_STATUS.json
+            chunks/04/INDEPENDENT_AUDIT.json
+          retention-days: 30
+      - name: Collect contract group 6 of 6 with deadline reserve
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: |
+          args=()
+          if [ "$QUOTES" != true ]; then args+=(--no-quotes); fi
+          if [ "$TRADES" != true ]; then args+=(--no-trades); fi
+          python -u -m research.accelerate_historical_180 --root chunks/05 --index contract_index --day "$DAY" --offset 80 --limit 16 --deadline "$COLLECTION_DEADLINE" --cache-root pilot_cache/ORIGINAL_RESPONSES "${args[@]}"
+      - name: Independently verify group 6
+        if: always()
+        continue-on-error: true
+        run: python -m research.verify_public_180_day chunks/05
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: FAST16_${{ matrix.day }}_GROUP_05_DATA
+          path: chunks/05/
+          compression-level: 0
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: FAST16_${{ matrix.day }}_GROUP_05_SUMMARY
+          path: |
+            chunks/05/PERFORMANCE.json
+            chunks/05/COLLECTION_STATUS.json
+            chunks/05/INDEPENDENT_AUDIT.json
+          retention-days: 30

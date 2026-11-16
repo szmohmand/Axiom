@@ -1,0 +1,44 @@
+name: Research package – August matched BRTI and official Kalshi audit
+on:
+  push:
+    branches: [research/historical-data-completion-2026-11-16]
+    paths: ['.github/workflows/axiom-august-matched-package.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Fetch existing BRTI and await Kalshi archive; no source recollection
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run download 43804623416 --repo szmohmand/Axiom --name AUG06_12_OFFICIAL_BRTI_ORIGINAL_JSON_5HZ_1HZ --dir august_matched/01_OFFICIAL_BRTI
+          gh run watch 43805271303 --repo szmohmand/Axiom --exit-status --interval 20
+          gh run download 43805271303 --repo szmohmand/Axiom --name BTC_Kalshi_2026-08-06_to_2026-08-12_Terms_Quotes_Original_JSON_v1 --dir august_matched/02_KALSHI
+      - name: Independently reconcile source gaps, quote identities and 60-second references
+        run: python research/verify_august_matched_archive.py august_matched/01_OFFICIAL_BRTI august_matched/02_KALSHI
+      - name: Include reproducible script and file index
+        run: |
+          cp research/verify_august_matched_archive.py august_matched/
+          cp reports/HISTORICAL_DATA_HANDOFF_2026-11-16.md august_matched/README_START_HERE.md
+          python - <<'PY'
+          import pathlib,json,hashlib
+          r=pathlib.Path('august_matched')
+          index={str(p.relative_to(r)):{'bytes':p.stat().st_size,'sha256':hashlib.file_digest(p.open('rb'),'sha256').hexdigest()} for p in r.rglob('*') if p.is_file()}
+          (r/'MASTER_INDEX.json').write_text(json.dumps(index,indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BTC_BRTI_Kalshi_2026-08-06_to_2026-08-12_Matched_Audit_v1
+          path: august_matched/
+          compression-level: 0
+          retention-days: 20
+          if-no-files-found: error

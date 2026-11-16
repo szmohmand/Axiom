@@ -1,0 +1,36 @@
+{
+  "schema": "axiom.historical-archive-index.v1",
+  "library_destination": "/BTC Historical Research/",
+  "library_upload_status": "PENDING",
+  "archives": [
+    {
+      "name": "BTC_Official_BRTI_2026-10-17_to_2026-11-15_Independent_Verification_v1",
+      "url": "https://github.com/szmohmand/Axiom/actions/runs/43805072835/artifacts/14198031781",
+      "bytes": 149787705,
+      "sha256": "b4112c64b53b6b7b718ca86f7f4a00a5033f4a854b0d2a1a46b71d85291c5af7",
+      "ticks_5hz": 12978000,
+      "derived_seconds": 2595600,
+      "includes_warmup_hour": true
+    },
+    {
+      "name": "BTC_BRTI_Kalshi_2026-08-06_to_2026-08-12_Matched_Audit_v1",
+      "url": "https://github.com/szmohmand/Axiom/actions/runs/43805387494/artifacts/14198151467",
+      "bytes": 53287663,
+      "sha256": "01802052f5cf3c896209c91a306e5cc7d334dd52cc7ba278a6e600c75c49aee9",
+      "ticks_5hz": 3041325,
+      "derived_seconds": 608270,
+      "selected_contracts": 663,
+      "minute_candles": 10608,
+      "in_window_minute_candles": 9945,
+      "full_window_and_boundary_comparisons": 651,
+      "actual_transactions": 0,
+      "orderbook_snapshots": 0,
+      "original_response_json": true
+    }
+  ],
+  "active_unverified_runs": [
+    43802346611,
+    43805221470
+  ],
+  "previous_library_archives": "User-confirmed; not independently inspected by this session"
+}

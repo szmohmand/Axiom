@@ -1,0 +1,205 @@
+{
+  "status": "PASS",
+  "raw_rows": 12978000,
+  "derived_second_rows": 2595600,
+  "files": [
+    {
+      "file": "BRTI_5HZ_2026-10-16.csv.gz",
+      "rows": 18000,
+      "first_ms": 1792191600000,
+      "last_ms": 1792195199800
+    },
+    {
+      "file": "BRTI_5HZ_2026-10-17.csv.gz",
+      "rows": 432000,
+      "first_ms": 1792195200000,
+      "last_ms": 1792281599800
+    },
+    {
+      "file": "BRTI_5HZ_2026-10-18.csv.gz",
+      "rows": 432000,
+      "first_ms": 1792281600000,
+      "last_ms": 1792367999800
+    },
+    {
+      "file": "BRTI_5HZ_2026-10-19.csv.gz",
+      "rows": 432000,
+      "first_ms": 1792368000000,
+      "last_ms": 1792454399800
+    },
+    {
+      "file": "BRTI_5HZ_2026-10-20.csv.gz",
+      "rows": 432000,
+      "first_ms": 1792454400000,
+      "last_ms": 1792540799800
+    },
+    {
+      "file": "BRTI_5HZ_2026-10-21.csv.gz",
+      "rows": 432000,
+      "first_ms": 1792540800000,
+      "last_ms": 1792627199800
+    },
+    {
+      "file": "BRTI_5HZ_2026-10-22.csv.gz",
+      "rows": 432000,
+      "first_ms": 1792627200000,
+      "last_ms": 1792713599800
+    },
+    {
+      "file": "BRTI_5HZ_2026-10-23.csv.gz",
+      "rows": 432000,
+      "first_ms": 1792713600000,
+      "last_ms": 1792799999800
+    },
+    {
+      "file": "BRTI_5HZ_2026-10-24.csv.gz",
+      "rows": 432000,
+      "first_ms": 1792800000000,
+      "last_ms": 1792886399800
+    },
+    {
+      "file": "BRTI_5HZ_2026-10-25.csv.gz",
+      "rows": 432000,
+      "first_ms": 1792886400000,
+      "last_ms": 1792972799800
+    },
+    {
+      "file": "BRTI_5HZ_2026-10-26.csv.gz",
+      "rows": 432000,
+      "first_ms": 1792972800000,
+      "last_ms": 1793059199800
+    },
+    {
+      "file": "BRTI_5HZ_2026-10-27.csv.gz",
+      "rows": 432000,
+      "first_ms": 1793059200000,
+      "last_ms": 1793145599800
+    },
+    {
+      "file": "BRTI_5HZ_2026-10-28.csv.gz",
+      "rows": 432000,
+      "first_ms": 1793145600000,
+      "last_ms": 1793231999800
+    },
+    {
+      "file": "BRTI_5HZ_2026-10-29.csv.gz",
+      "rows": 432000,
+      "first_ms": 1793232000000,
+      "last_ms": 1793318399800
+    },
+    {
+      "file": "BRTI_5HZ_2026-10-30.csv.gz",
+      "rows": 432000,
+      "first_ms": 1793318400000,
+      "last_ms": 1793404799800
+    },
+    {
+      "file": "BRTI_5HZ_2026-10-31.csv.gz",
+      "rows": 432000,
+      "first_ms": 1793404800000,
+      "last_ms": 1793491199800
+    },
+    {
+      "file": "BRTI_5HZ_2026-11-01.csv.gz",
+      "rows": 432000,
+      "first_ms": 1793491200000,
+      "last_ms": 1793577599800
+    },
+    {
+      "file": "BRTI_5HZ_2026-11-02.csv.gz",
+      "rows": 432000,
+      "first_ms": 1793577600000,
+      "last_ms": 1793663999800
+    },
+    {
+      "file": "BRTI_5HZ_2026-11-03.csv.gz",
+      "rows": 432000,
+      "first_ms": 1793664000000,
+      "last_ms": 1793750399800
+    },
+    {
+      "file": "BRTI_5HZ_2026-11-04.csv.gz",
+      "rows": 432000,
+      "first_ms": 1793750400000,
+      "last_ms": 1793836799800
+    },
+    {
+      "file": "BRTI_5HZ_2026-11-05.csv.gz",
+      "rows": 432000,
+      "first_ms": 1793836800000,
+      "last_ms": 1793923199800
+    },
+    {
+      "file": "BRTI_5HZ_2026-11-06.csv.gz",
+      "rows": 432000,
+      "first_ms": 1793923200000,
+      "last_ms": 1794009599800
+    },
+    {
+      "file": "BRTI_5HZ_2026-11-07.csv.gz",
+      "rows": 432000,
+      "first_ms": 1794009600000,
+      "last_ms": 1794095999800
+    },
+    {
+      "file": "BRTI_5HZ_2026-11-08.csv.gz",
+      "rows": 432000,
+      "first_ms": 1794096000000,
+      "last_ms": 1794182399800
+    },
+    {
+      "file": "BRTI_5HZ_2026-11-09.csv.gz",
+      "rows": 432000,
+      "first_ms": 1794182400000,
+      "last_ms": 1794268799800
+    },
+    {
+      "file": "BRTI_5HZ_2026-11-10.csv.gz",
+      "rows": 432000,
+      "first_ms": 1794268800000,
+      "last_ms": 1794355199800
+    },
+    {
+      "file": "BRTI_5HZ_2026-11-11.csv.gz",
+      "rows": 432000,
+      "first_ms": 1794355200000,
+      "last_ms": 1794441599800
+    },
+    {
+      "file": "BRTI_5HZ_2026-11-12.csv.gz",
+      "rows": 432000,
+      "first_ms": 1794441600000,
+      "last_ms": 1794527999800
+    },
+    {
+      "file": "BRTI_5HZ_2026-11-13.csv.gz",
+      "rows": 432000,
+      "first_ms": 1794528000000,
+      "last_ms": 1794614399800
+    },
+    {
+      "file": "BRTI_5HZ_2026-11-14.csv.gz",
+      "rows": 432000,
+      "first_ms": 1794614400000,
+      "last_ms": 1794700799800
+    },
+    {
+      "file": "BRTI_5HZ_2026-11-15.csv.gz",
+      "rows": 432000,
+      "first_ms": 1794700800000,
+      "last_ms": 1794787199800
+    }
+  ],
+  "checks": [
+    "all manifest hashes and sizes",
+    "200ms cadence across all rows",
+    "positive finite values",
+    "UTC/native timestamps agree",
+    "independent first tick per second matches all derived rows"
+  ],
+  "limitations": [
+    "Original JSON envelopes and native value strings were not retained by existing collector",
+    "Per-request retrieval times and provider revisions are absent",
+    "Settlement comparisons pending Kalshi artifact"
+  ]
+}
