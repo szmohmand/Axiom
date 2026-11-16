@@ -223,6 +223,41 @@
         "tests/test_ingredient_ablation.py::test_calibration_only_changes_are_distinguished_from_actual_direction_flips",
         "tests/test_ingredient_ablation.py::test_holm_adjustment_not_less_conservative_than_raw_p"
       ]
+    },
+    {
+      "id": "A20",
+      "finding": "Isolated historical day-cluster bootstrap incorrectly summed individual floating-point deltas as iterables and used hard-coded 2000-draw quantile indices, breaking the model-comparison research test and misrepresenting variable-run uncertainty.",
+      "fixed_commit": "610b86ee9d879ec99e1635a7bb59ad21e76d996d",
+      "tests": [
+        "tests/test_monthly_cohort_replay.py::test_day_bootstrap_same_contract_population_and_direction_of_delta"
+      ]
+    },
+    {
+      "id": "A21",
+      "finding": "NumPy was imported at research-module/test-collection time, breaking the complete AXIOM suite in its existing deployment dependency environment; optional research-only numerical acceleration must never become an app runtime dependency.",
+      "fixed_commit": "c2df31beda8ef5b5c4b3b0ac5a28df21c52ce16e",
+      "tests": [
+        "tests/test_monthly_cohort_replay.py::test_fallback_glm_training_without_numpy_preserves_frozen_solver",
+        "tests/test_monthly_cohort_replay.py::test_mini_batch_logistic_fit_matches_frozen_source_optimizer"
+      ]
+    },
+    {
+      "id": "A22",
+      "finding": "Large historical source Kalshi BRTI official outcome can disagree with Binance BTCUSDT opening-rebased proxy: separate post-settlement basis diagnostics must never replace official YES/NO labels.",
+      "fixed_commit": "36980a3c2c2d71a7d9d4585f05447609a09b6d09",
+      "tests": [
+        "tests/test_monthly_cohort_replay.py::test_actual_official_winner_never_replaced_by_proxy_classification",
+        "tests/test_monthly_cohort_replay.py::test_btc_settlement_is_label_only_and_never_model_feature"
+      ]
+    },
+    {
+      "id": "A23",
+      "finding": "Selecting an adaptive time-of-expiration forecast from historical results requires validation-only model choice and a separate later-date evaluation; a later test label must not influence which model is chosen.",
+      "fixed_commit": "36980a3c2c2d71a7d9d4585f05447609a09b6d09",
+      "tests": [
+        "tests/test_monthly_cohort_replay.py::test_validation_only_model_selection_cannot_look_at_later_labels",
+        "tests/test_monthly_cohort_replay.py::test_no_market_quote_ever_enters_candidate_feature_vector"
+      ]
     }
   ]
 }
