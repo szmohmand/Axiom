@@ -67,3 +67,7 @@ Across the nonoverlapping 30-day and August BRTI exports: 16,019,325 source-expo
 Latest research-only recovery test adds R01 to the permanent regression inventory, covering restoration of shared GET helpers after source failure. The complete local tests/ plus research/ suite now passes 78 tests; permanent regression inventory is 20. Frozen source checks continue to pass. No preexisting test assertion was changed.
 
 Still active: original Kalshi run 43802346611. No artifact was available at last inspection, so its row counts and transactions remain unverified. No duplicate large run or restart was issued. BRTI extension run 43805221470 has August 18–September 16 collecting and September 17–October 16 queued sequentially. These active jobs are not delivered/verified coverage yet. Extending beyond 90 days and date-specific execution evidence remain unfinished work.
+
+## Final research CI correction
+
+CI on 8842804/7f9d068 exposed an optional signing dependency imported by the new research regression test. Fixed on 86f9c7b689a8a62e5ea7eb1ba86404809371206d by loading signing helpers only inside authenticated BRTI functions. No runtime dependencies or lockfiles changed. A fresh-process regression deliberately blocks cryptography imports and verifies public research imports still work. Local full tests/ plus research/ now pass 79 tests; 21 permanent regression records retained and frozen sources verified. These supersede earlier local test counts. Latest Python 3.13 CI remains the acceptance source of truth.

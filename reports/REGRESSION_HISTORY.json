@@ -178,6 +178,14 @@
       "tests": [
         "tests/test_research_august_archive.py::test_empty_archived_source_is_preserved_and_shared_helpers_restore"
       ]
+    },
+    {
+      "id": "R02",
+      "finding": "Public research imports required optional BRTI signing dependency and broke locked production CI test collection",
+      "fixed_commit": "86f9c7b689a8a62e5ea7eb1ba86404809371206d",
+      "tests": [
+        "tests/test_research_august_archive.py::test_public_research_helpers_import_without_signing_dependency"
+      ]
     }
   ]
 }
