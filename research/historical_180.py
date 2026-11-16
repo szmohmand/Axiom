@@ -4,10 +4,11 @@ No credentials, account endpoints, order submissions or live orderbook calls.
 Raw JSON is preserved independently from normalized research tables.
 """
 from __future__ import annotations
-import argparse,csv,datetime as dt,decimal,gzip,hashlib,json,pathlib,time,urllib.parse,shutil
+import argparse,csv,datetime as dt,decimal,gzip,hashlib,json,pathlib,time,urllib.parse,shutil,os
 from collections import Counter
 from research.export_shared_historical import API,get
 
+GZIP_LEVEL=int(os.environ.get("RESEARCH_GZIP_LEVEL","4"))
 UTC=dt.timezone.utc
 BEGIN=dt.date(2026,5,20)
 END=dt.date(2026,11,16)
@@ -30,19 +31,28 @@ def iter_jsonl(path):
             if line.strip():yield json.loads(line)
 def write_jsonl(path,rows):
     path.parent.mkdir(parents=True,exist_ok=True)
-    with gzip.open(path,'wt',compresslevel=4) as f:
+    with gzip.open(path,'wt',compresslevel=GZIP_LEVEL) as f:
         for row in rows:f.write(json.dumps(row,separators=(',',':'))+'\n')
 
 class PublicSource:
-    def __init__(self,root,delay=1.0):
+    def __init__(self,root,delay=1.0,getter=None,cache_roots=()):
         self.root=pathlib.Path(root);self.root.mkdir(parents=True,exist_ok=True)
         self.delay=delay;self.last=0.0;self.network_requests=0;self.cache_hits=0
+        self.getter=getter or get;self.cache_roots=[pathlib.Path(p) for p in cache_roots]
     def fetch(self,path,params=None):
         if not any(path==p or path.startswith(p+'/') for p in ALLOWED):
             raise ValueError('Endpoint outside authorized public research scope')
         url=API+path+('?' + urllib.parse.urlencode(sorted(params.items())) if params else '')
         key=hashlib.sha256(url.encode()).hexdigest()
         data=self.root/(key+'.json.gz');meta=self.root/(key+'.provenance.json')
+        if not (data.exists() and meta.exists()):
+            for prior in self.cache_roots:
+                old_data=prior/data.name;old_meta=prior/meta.name
+                if old_data.exists() and old_meta.exists():
+                    info=json.loads(old_meta.read_text());raw=gzip.decompress(old_data.read_bytes())
+                    if info['url']!=url or hashlib.sha256(raw).hexdigest()!=info['original_sha256']:
+                        raise ValueError('Imported source response failed integrity check')
+                    shutil.copyfile(old_data,data);shutil.copyfile(old_meta,meta);break
         if data.exists() and meta.exists():
             info=json.loads(meta.read_text());raw=gzip.decompress(data.read_bytes())
             if info['url']!=url or hashlib.sha256(raw).hexdigest()!=info['original_sha256']:
@@ -50,8 +60,8 @@ class PublicSource:
             self.cache_hits+=1
         else:
             time.sleep(max(0,self.delay-(time.monotonic()-self.last)))
-            started=stamp();self.last=time.monotonic();raw=get(url,cap=30_000_000)
-            with gzip.open(data,'wb',compresslevel=4) as f:f.write(raw)
+            started=stamp();self.last=time.monotonic();raw=self.getter(url,cap=30_000_000)
+            with gzip.open(data,'wb',compresslevel=GZIP_LEVEL) as f:f.write(raw)
             info={'url':url,'request_started_utc':started,'retrieval_completed_utc':stamp(),
                   'original_sha256':hashlib.sha256(raw).hexdigest(),'original_bytes':len(raw)}
             write_json(meta,info);self.network_requests+=1
@@ -142,20 +152,24 @@ def build_index(root,seed):
     return report
 
 
-def collect_day(root,index,day,quotes=True,trades=True,max_contracts=None):
+def collect_day(root,index,day,quotes=True,trades=True,max_contracts=None,contract_offset=0,contract_limit=None,deadline_epoch=None):
     day=dt.date.fromisoformat(day)
     if not BEGIN<=day<END:raise ValueError('Day outside authorized 180-day interval')
     root=pathlib.Path(root);source=PublicSource(root/'ORIGINAL_RESPONSES');root.mkdir(parents=True,exist_ok=True)
     contracts=list(iter_jsonl(pathlib.Path(index)/'BY_DAY'/(day.isoformat()+'.jsonl.gz')))
+    total_day_contracts=len(contracts)
+    if contract_offset<0 or (contract_limit is not None and contract_limit<=0):raise ValueError('Invalid contract partition')
+    contracts=contracts[contract_offset:contract_offset+contract_limit if contract_limit else None]
     if max_contracts:contracts=contracts[:max_contracts]
     cutoff=json.loads((pathlib.Path(index)/'HISTORICAL_CUTOFF.json').read_text())
     market_cut=sec(cutoff['market_settled_ts']);trade_cut=sec(cutoff['trades_created_ts'])
     summary={'date_utc':day.isoformat(),'contracts_requested':len(contracts),'quotes_requested':quotes,
              'trades_requested':trades,'contract_results':[],'collection_completed':False,
-             'limited_validation_sample':bool(max_contracts)}
+             'limited_validation_sample':bool(max_contracts),'contract_offset':contract_offset,'contract_limit':contract_limit,'total_day_contracts':total_day_contracts}
     write_json(root/'COLLECTION_STATUS.json',summary)
     errors=[]
     for i,m in enumerate(contracts,1):
+        if deadline_epoch and time.time()+45>=deadline_epoch:break
         ticker=m['ticker'];start=sec(m['open_time']);close=sec(m['close_time'])
         result={'ticker':ticker,'opening_utc':m['open_time'],'closing_utc':m['close_time']}
         try:
@@ -195,7 +209,7 @@ def collect_day(root,index,day,quotes=True,trades=True,max_contracts=None):
                 endpoint='/historical/trades' if close<trade_cut else '/markets/trades'
                 seen_ids=set();trade_count=0;pages=0;total_size=decimal.Decimal(0)
                 trade_path=root/'TRADES'/(ticker+'.jsonl.gz');trade_path.parent.mkdir(parents=True,exist_ok=True)
-                with gzip.open(trade_path,'wt',compresslevel=4) as destination:
+                with gzip.open(trade_path,'wt',compresslevel=GZIP_LEVEL) as destination:
                     for page,provenance in paginated(source,endpoint,
                           {'ticker':ticker,'min_ts':start-1,'max_ts':close+1,'limit':1000},'trades'):
                         pages+=1
@@ -226,7 +240,8 @@ def collect_day(root,index,day,quotes=True,trades=True,max_contracts=None):
         summary['contract_results'].append(result)
         write_json(root/'COLLECTION_STATUS.json',summary)
         if i%8==0:print('PUBLIC_DAY_PROGRESS',day.isoformat(),i,'of',len(contracts),'failures',len(errors),flush=True)
-    summary['collection_completed']=not errors
+    summary['collection_completed']=not errors and len(summary['contract_results'])==len(contracts)
+    summary['deferred_contracts']=[m['ticker'] for m in contracts[len(summary['contract_results']):]]
     summary['failed_contracts']=errors
     summary['source_network_requests']=source.network_requests
     summary['replayed_source_requests']=source.cache_hits
@@ -235,7 +250,7 @@ def collect_day(root,index,day,quotes=True,trades=True,max_contracts=None):
         'No original quote receipt latency or strike publication time proven']
     write_json(root/'COLLECTION_STATUS.json',summary)
     print('PUBLIC_DAY_SUMMARY',json.dumps({k:v for k,v in summary.items() if k!='contract_results'}),flush=True)
-    if errors:raise RuntimeError('Incomplete contracts; original responses and checkpoints retained')
+    if not summary['collection_completed']:raise RuntimeError('Incomplete contracts; original responses and checkpoints retained')
     return summary
 
 
