@@ -278,6 +278,10 @@ def main():
     candles=candle_sources(markets)
     spot=binance(days)
     prior=source_historical_windows()
+    if not markets or not candles["candle_rows"]:
+        raise RuntimeError("No usable Kalshi markets or priced candles; reject incomplete export")
+    if candles["errors_by_ticker"]:
+        raise RuntimeError("At least one Kalshi market candle fetch failed; reject incomplete export")
     manifest={
         "package_name":"AXIOM_Shared_Kalshi_BRTI_Historical_Research",
         "created_utc":dt.datetime.now(dt.timezone.utc).isoformat(),
@@ -330,7 +334,11 @@ availability from the historical event timestamp alone.
 
 02_Kalshi_contracts:
 - market_terms_and_official_outcomes.csv, per-contract strike, open/close,
-  expiration, official result, expiration index value if provider supplied.
+  official result, expiration index value if provider supplied. The market
+  `close_time` is the contract's 15m end; `expected_expiration_time`
+  may be later administrative processing time. Listed yes_bid/ask snapshot
+  fields were requested after settlement and MUST NOT be used as historical
+  entry prices. Use timestamped 1-minute market candles below instead.
 - yes_bid_ask_trade_1minute_candles.csv.gz, historical last bid/ask and
   traded-price OHLC, volume per minute. A bid/ask candle close is not a
   guarantee an order could be executed there.
