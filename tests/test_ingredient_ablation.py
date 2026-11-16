@@ -164,3 +164,30 @@ def test_schen_equal_clipping_counterfactual_controls_are_explicit():
     assert v["schen_clamped_like_headstart"]==pytest.approx(A.cdf(z["z_schen"]))
     assert v["headstart_unclamped_like_schen"]==pytest.approx(A.schen_cdf(z["z_head"]))
     assert v["schen_clamped_like_headstart"]<=.995
+
+
+def test_same_day_rolling_training_refuses_official_labels_not_yet_received(monkeypatch):
+    records=[row(i,600) for i in range(44)]
+    # Every official label exists in the archive but was recorded later.
+    last_ts=max(x["ts"] for x in records)+900
+    monkeypatch.setattr(R,"outcomes",lambda day:{
+        x["ticker"]:{"ts_recv":int(last_ts*R.NSEC),
+                     "settlement_ts":int(last_ts*R.NSEC)}
+        for x in records})
+    result=A.early_day_rolling_validation(records)
+    assert result["validation_contracts"]==0
+    assert result["period_scores"]=={}
+    assert all(x["status"]=="INSUFFICIENT_ASOF_OFFICIAL_TRAINING_LABELS"
+               for x in result["fold_contract_counts"])
+
+
+def test_same_day_rolling_uses_only_received_past_labels(monkeypatch):
+    records=[row(i,600) for i in range(44)]
+    monkeypatch.setattr(R,"outcomes",lambda day:{
+        x["ticker"]:{"ts_recv":int((x["ts"]+20)*R.NSEC),
+                     "settlement_ts":int((x["ts"]+10)*R.NSEC)}
+        for x in records})
+    result=A.early_day_rolling_validation(records)
+    assert result["validation_contracts"]==16
+    assert all(x["status"]=="REPLAYED_WITH_ASOF_RECEIVED_LABEL_GUARD"
+               for x in result["fold_contract_counts"])
