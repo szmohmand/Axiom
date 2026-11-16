@@ -1,0 +1,50 @@
+name: AXIOM user-owned historical research data export (read-only)
+on:
+  push:
+    branches: [research/brti-secret-access-check-2026-11-15]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  historical-export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      DEMO_MODE: '1'
+      AUTO_PAPER: '0'
+      PYTHONPATH: '.'
+      RESEARCH_DATES: '2026-11-13,2026-11-14'
+      KALSHI_API_KEY_ID: ${{ secrets.KALSHI_API_KEY_ID }}
+      KALSHI_PRIVATE_KEY_PEM: ${{ secrets.KALSHI_PRIVATE_KEY_PEM }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install only ephemeral offline export authentication support
+        run: python -m pip install --disable-pip-version-check cryptography==46.0.3 websockets==15.0.1
+      - name: Export official BRTI + BTC15m contracts + historical prices + spot source
+        run: python -u -m research.export_shared_historical
+      - name: Ensure no keys or private data exist in export
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import os
+          out=Path("data_export")
+          assert out.is_dir()
+          assert (out/"MANIFEST.json").is_file()
+          for file in out.rglob("*"):
+              if not file.is_file() or file.suffix==".gz": continue
+              text=file.read_text(encoding="utf-8")
+              assert os.environ["KALSHI_API_KEY_ID"] not in text
+              assert "BEGIN PRIVATE KEY" not in text
+          print("SECRET_EXCLUSION_CHECK_PASS")
+          PY
+      - name: Upload user-private historical data artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BTC_Kalshi_Official_BRTI_Historical_Research_2026-11-13_to_14
+          path: data_export/
+          compression-level: 6
+          if-no-files-found: error
+          retention-days: 30
