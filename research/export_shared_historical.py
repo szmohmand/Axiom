@@ -198,9 +198,17 @@ def candle_sources(markets):
                         v=c.get(node)
                         if isinstance(v,dict):
                             for key in ("open","high","low","close"):
-                                item[node+"_"+key]=v.get(key)
-                            if node=="price":item["price_mean"]=v.get("mean")
-                    item["volume"]=c.get("volume");item["open_interest"]=c.get("open_interest")
+                                # Active Kalshi candle fields use *_dollars;
+                                # archived API fields may use unsuffixed names.
+                                item[node+"_"+key]=v.get(key+"_dollars",
+                                                             v.get(key))
+                            if node=="price":
+                                item["price_mean"]=v.get("mean_dollars",
+                                                          v.get("mean"))
+                    item["volume"]=c.get("volume_fp",c.get("volume"))
+                    item["open_interest"]=c.get("open_interest_fp",c.get("open_interest"))
+                    if not (item.get("yes_bid_close") or item.get("yes_ask_close")):
+                        raise ValueError("historical candle lacks both market bid/ask; no silent blank-price rows")
                     w.writerow(item);rows+=1
             except Exception:
                 errors[ticker]="data_unavailable_or_api_rejected"
