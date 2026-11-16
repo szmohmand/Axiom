@@ -33,3 +33,11 @@ The three existing ZIPs in /BTC Historical Research/ are user-confirmed; no Libr
 ## Tests
 
 77 local tests passed across tests/ and research/ in isolated workspace dependencies; 19 permanent regression records and frozen-source checks passed. Python 3.13 CI: https://github.com/szmohmand/Axiom/actions/runs/43804623288 (success). Live read-only smoke: https://github.com/szmohmand/Axiom/actions/runs/43804623405 (success). No orders, production changes, deployment or other repositories.
+
+## August completion and extension checkpoint
+
+August BRTI job succeeded and its artifact contains 3,041,325 5Hz observations and 608,270 first-tick seconds (including August 5 warmup hour). The manifest flags eight incomplete hours, with 675 missing 200ms slots and 130 missing seconds relative to theoretical coverage. These gaps must remain visible. Independent reconciliation is in progress; do not describe the August series as gap-free.
+
+August Kalshi minute collection completed locally: 10,608 candles including 9,945 within-contract candles; all 663 contracts have 15 in-window bars, no crossed quotes reported. The raw historical listing preserved 26,021 unique terms across December 10–September 15. No August transaction ticks or depth have yet been collected.
+
+A separate sequential two-batch workflow extends BRTI from August 18 through October 16, excluding previously collected complete-day ranges. Combined with October 17–November 15 this targets 90 consecutive days; this is a target, not a completeness claim. Boundary warmup hours intentionally overlap for reconstruction. Raw JSON response preservation and retrieval timestamps remain enabled. Existing Kalshi run is not restarted.
