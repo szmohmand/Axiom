@@ -148,3 +148,19 @@ def test_all_model_ingredients_are_original_or_explicitly_ablated():
     assert set(A.SCORED_ABLATIONS).issubset(altered)
     assert all(0<=p<=1 for p in altered.values())
     assert max(errs.values())<.00003
+
+
+def test_audited_probability_clipping_is_not_falsely_treated_as_same_signal():
+    assert A.cdf(8.)==.995
+    assert A.schen_cdf(8.)>.999
+    assert A.schen_cdf(-8.)<.001
+    assert A.schen_cdf(0.)==A.cdf(0.)==.5
+
+
+def test_schen_equal_clipping_counterfactual_controls_are_explicit():
+    r=row(4,600)
+    z=A.extract_components(r)
+    v=A.counterfactuals(r,z,.001)
+    assert v["schen_clamped_like_headstart"]==pytest.approx(A.cdf(z["z_schen"]))
+    assert v["headstart_unclamped_like_schen"]==pytest.approx(A.schen_cdf(z["z_head"]))
+    assert v["schen_clamped_like_headstart"]<=.995
