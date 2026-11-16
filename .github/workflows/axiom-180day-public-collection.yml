@@ -1,0 +1,203 @@
+name: Research – complete 180-day official Kalshi quotes and transactions
+on:
+  push:
+    branches: [research/historical-data-completion-2026-11-16]
+    paths: ['.github/workflows/axiom-180day-public-collection.yml']
+  workflow_dispatch:
+    inputs:
+      resume_run_id:
+        description: Prior run containing preserved daily source checkpoints
+        required: false
+        default: ''
+      attempt:
+        description: Bounded automatic continuation attempt
+        required: false
+        default: '1'
+permissions:
+  contents: read
+  actions: write
+concurrency:
+  group: public-180day-${{ github.run_id }}
+  cancel-in-progress: false
+jobs:
+  index:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RESUME_RUN_ID: ${{ inputs.resume_run_id }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Reuse original term archive or restore prior collection index
+        run: |
+          if [ -n "$RESUME_RUN_ID" ]; then
+            gh run download "$RESUME_RUN_ID" --repo szmohmand/Axiom --name PUBLIC_180_CONTRACT_INDEX --dir contract_index
+            gh run download "$RESUME_RUN_ID" --repo szmohmand/Axiom --name PUBLIC_180_MASTER --dir previous_master
+          else
+            gh run download 43805271303 --repo szmohmand/Axiom --name BTC_Kalshi_2026-08-06_to_2026-08-12_Terms_Quotes_Original_JSON_v1 --dir seed
+            python -u -m research.historical_180 index --root contract_index --seed seed
+          fi
+      - name: Inspect original 30-day run before choosing missing collection
+        if: ${{ !inputs.resume_run_id }}
+        id: legacy
+        run: |
+          status=$(gh run view 43802346611 --repo szmohmand/Axiom --json status --jq .status)
+          conclusion=$(gh run view 43802346611 --repo szmohmand/Axiom --json conclusion --jq .conclusion)
+          echo "Original 30-day job: $status / $conclusion"
+          if [ "$conclusion" = success ]; then
+            gh run download 43802346611 --repo szmohmand/Axiom --name 30DAY_KALSHI_CONTRACT_QUOTES_AND_ACTUAL_TRADE_TICKS --dir reused30
+            echo 'reuse=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'reuse=false' >> "$GITHUB_OUTPUT"
+          fi
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+      - name: Generate exact missing-day plan
+        id: plan
+        env:
+          REUSE_THIRTY: ${{ steps.legacy.outputs.reuse }}
+          LEGACY_STATUS: ${{ steps.legacy.outputs.status }}
+        run: |
+          if [ -n "$RESUME_RUN_ID" ]; then
+            cp previous_master/NEXT_PLAN.json contract_index/CONTINUATION_PLAN.json
+            python - <<'PY'
+          import json,os
+          matrix=json.load(open('contract_index/CONTINUATION_PLAN.json'))
+          with open(os.environ['GITHUB_OUTPUT'],'a') as f:f.write('matrix='+json.dumps(matrix,separators=(',',':'))+'\n')
+          PY
+          else
+            python -m research.plan_public_180 contract_index seed reused30 > plan.json
+            python - <<'PY'
+          import json,os
+          matrix=json.load(open('plan.json'))
+          # Active legacy collection is preserved; do not duplicate its trade downloads.
+          if os.environ.get('LEGACY_STATUS')!='completed':
+              for r in matrix:
+                  if r['day']>='2026-10-17':r['quotes']=False
+                  if r['day'] in ('2026-11-13','2026-11-14'):r['trades']=False
+              matrix=[r for r in matrix if r['quotes'] or r['trades']]
+              reuse=json.load(open('contract_index/REUSE_MANIFEST.json'));reuse['pending_legacy_30day_run']=43802346611
+              open('contract_index/REUSE_MANIFEST.json','w').write(json.dumps(reuse,indent=2))
+          open('contract_index/DAY_PLAN.json','w').write(json.dumps(matrix,indent=2))
+          with open(os.environ['GITHUB_OUTPUT'],'a') as f:f.write('matrix='+json.dumps(matrix,separators=(',',':'))+'\n')
+          PY
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PUBLIC_180_CONTRACT_INDEX
+          path: contract_index/
+          retention-days: 30
+  daily:
+    needs: index
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        include: ${{ fromJSON(needs.index.outputs.matrix) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RESUME_RUN_ID: ${{ inputs.resume_run_id }}
+      DAY: ${{ matrix.day }}
+      NEED_QUOTES: ${{ matrix.quotes }}
+      NEED_TRADES: ${{ matrix.trades }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Restore official contract index and any preserved daily responses
+        run: |
+          gh run download "$GITHUB_RUN_ID" --repo szmohmand/Axiom --name PUBLIC_180_CONTRACT_INDEX --dir contract_index
+          if [ -n "$RESUME_RUN_ID" ]; then
+            gh run download "$RESUME_RUN_ID" --repo szmohmand/Axiom --name "PUBLIC_180_${DAY}_DATA" --dir daily || true
+          fi
+      - name: Full cursor-exhausted public collection with raw checkpoints
+        id: collect
+        continue-on-error: true
+        run: |
+          args=()
+          if [ "$NEED_QUOTES" != true ]; then args+=(--no-quotes); fi
+          if [ "$NEED_TRADES" != true ]; then args+=(--no-trades); fi
+          timeout --signal=TERM 43m python -u -m research.historical_180 day --root daily --index contract_index --day "$DAY" "${args[@]}"
+      - name: Independent raw fingerprint, native-record and population audit
+        if: always()
+        continue-on-error: true
+        run: python -m research.verify_public_180_day daily
+      - name: Include verifier, provenance index and limitations
+        if: always()
+        run: |
+          mkdir -p daily
+          cp research/verify_public_180_day.py daily/
+          cp reports/HISTORICAL_DATA_HANDOFF_2026-11-16.md daily/README_START_HERE.md
+          python - <<'PY'
+          import pathlib,hashlib,json
+          r=pathlib.Path('daily');m={str(p.relative_to(r)):{'bytes':p.stat().st_size,'sha256':hashlib.file_digest(p.open('rb'),'sha256').hexdigest()} for p in r.rglob('*') if p.is_file()}
+          (r/'MASTER_INDEX.json').write_text(json.dumps(m,indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: PUBLIC_180_${{ matrix.day }}_DATA
+          path: daily/
+          compression-level: 0
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: PUBLIC_180_${{ matrix.day }}_SUMMARY
+          path: |
+            daily/COLLECTION_STATUS.json
+            daily/INDEPENDENT_AUDIT.json
+          retention-days: 30
+      - name: Reject incomplete or unaudited day
+        if: always()
+        run: |
+          python - <<'PY'
+          import json
+          r=json.load(open('daily/COLLECTION_STATUS.json'))
+          assert r.get('collection_completed')
+          assert r.get('independent_audit',{}).get('independent_complete_population_audit_passed')
+          PY
+  master:
+    if: always()
+    needs: [index,daily]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RESUME_RUN_ID: ${{ inputs.resume_run_id }}
+      ATTEMPT: ${{ inputs.attempt || '1' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Assemble source coverage and immutable archive references
+        run: |
+          gh run download "$GITHUB_RUN_ID" --repo szmohmand/Axiom --name PUBLIC_180_CONTRACT_INDEX --dir contract_index
+          gh run download "$GITHUB_RUN_ID" --repo szmohmand/Axiom --pattern 'PUBLIC_180_*_SUMMARY' --dir summaries || true
+          if [ -n "$RESUME_RUN_ID" ]; then
+            gh run download "$RESUME_RUN_ID" --repo szmohmand/Axiom --name PUBLIC_180_MASTER --dir previous_master
+          fi
+          gh api --paginate "repos/szmohmand/Axiom/actions/runs/$GITHUB_RUN_ID/artifacts?per_page=100" --jq '.artifacts[] | {id,name,size_in_bytes,digest} | @json' > current_artifacts.jsonl
+          python -m research.summarize_public_180 contract_index summaries master
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PUBLIC_180_MASTER
+          path: master/
+          retention-days: 30
+      - name: Continue failed daily checkpoints with bounded retries
+        run: |
+          python - <<'PY'
+          import json,os,subprocess
+          pending=json.load(open('master/NEXT_PLAN.json'))
+          attempt=int(os.environ['ATTEMPT'])
+          if pending and attempt<6:
+              subprocess.run(['gh','workflow','run','axiom-180day-public-collection.yml','--repo','szmohmand/Axiom','--ref','research/historical-data-completion-2026-11-16','-f','resume_run_id='+os.environ['GITHUB_RUN_ID'],'-f','attempt='+str(attempt+1)],check=True)
+          PY
