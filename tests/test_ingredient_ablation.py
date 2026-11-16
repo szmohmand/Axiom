@@ -209,3 +209,39 @@ def test_calibration_only_changes_are_distinguished_from_actual_direction_flips(
     assert r["first_helped"]==pytest.approx(1/3,abs=1e-6)
     assert r["first_hurt"]==pytest.approx(1/3,abs=1e-6)
     assert r["mean_abs_probability_change"]>0
+
+
+def test_partial_last_minute_schen_cannot_masquerade_as_whole_minute():
+    records=[]
+    for cp,seconds in A.PERIODS["final_minute"]:
+        forecasts={"axiom_ensemble":.8,"kalshibot_headstart":.8,
+                   "logit_full":.8}
+        if seconds==60:
+            forecasts["schen_m0_minute_proxy"]=.81
+            forecasts["schen_no_ito_correction"]=.81
+        records.append({"ticker":"C","checkpoint":cp,"remaining":seconds,
+                        "y":1,"predictions":forecasts})
+    matrix=A.ablation_matrix(records)
+    final=matrix["final_minute"]
+    assert all(item["variant"] not in ("schen_no_ito_correction",
+                     "schen_linear_distance","half_schen_half_logit")
+               for item in final)
+
+
+def test_holm_adjustment_not_less_conservative_than_raw_p():
+    records=[]
+    for cp,seconds in A.PERIODS["ten_minutes_left"]:
+        for i in range(12):
+            records.append({"ticker":f"C{i}","checkpoint":cp,
+                            "remaining":seconds,"y":i%2,
+                            "predictions":{
+                                "axiom_volatility":.8 if i%2 else .2,
+                                "axiom_v1_no_momentum":.7 if i%2 else .3,
+                                "aaryann_fair":.8 if i%2 else .2,
+                                "aaryann_no_momentum":.7 if i%2 else .3,
+                            }})
+    results=A.ablation_matrix(records)
+    for item in results["ten_minutes_left"]:
+        p=item["improvement_over_parent"]
+        assert 0<=p["approx_two_sided_signflip_p"]<=p["holm_familywise_adjusted_p"]<=1
+        assert p["multiple_comparisons_count"]>=2
