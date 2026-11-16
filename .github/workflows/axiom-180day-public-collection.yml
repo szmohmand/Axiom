@@ -1,8 +1,5 @@
 name: Research – complete 180-day official Kalshi quotes and transactions
 on:
-  push:
-    branches: [research/historical-data-completion-2026-11-16]
-    paths: ['.github/workflows/axiom-180day-public-collection.yml']
   workflow_dispatch:
     inputs:
       resume_run_id:
@@ -21,6 +18,9 @@ concurrency:
   cancel-in-progress: false
 jobs:
   index:
+    # Retired for new dispatches; the active original run keeps its pinned source.
+    # Accelerated checkpoints and missing-group continuations own remaining data.
+    if: ${{ false }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     outputs:
@@ -165,7 +165,7 @@ jobs:
           assert r.get('independent_audit',{}).get('independent_complete_population_audit_passed')
           PY
   master:
-    if: always()
+    if: ${{ always() && needs.index.result == 'success' }}
     needs: [index,daily]
     runs-on: ubuntu-latest
     timeout-minutes: 20

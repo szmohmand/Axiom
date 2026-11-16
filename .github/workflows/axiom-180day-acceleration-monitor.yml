@@ -1,0 +1,55 @@
+name: Research – preserve acceleration progress and finish missing groups automatically
+on:
+  push:
+    branches: [research/historical-data-completion-2026-11-16]
+    paths: ['.github/workflows/axiom-180day-acceleration-monitor.yml']
+  workflow_dispatch:
+    inputs:
+      state_run:
+        required: false
+        default: ''
+      generation:
+        required: false
+        default: '1'
+permissions:
+  contents: read
+  actions: write
+concurrency:
+  group: acceleration-monitor
+  cancel-in-progress: false
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    env:
+      GH_TOKEN: ${{ github.token }}
+      STATE_RUN: ${{ inputs.state_run }}
+      GENERATION: ${{ inputs.generation || '1' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Reuse official contract index and prior monitoring state
+        run: |
+          gh run download 43808575205 --repo szmohmand/Axiom --name PUBLIC_180_CONTRACT_INDEX --dir contract_index
+          if [ -n "$STATE_RUN" ]; then
+            gh run download "$STATE_RUN" --repo szmohmand/Axiom --name ACCELERATION_MASTER --dir previous
+          fi
+      - name: Preserve all source archives and continue only incomplete groups
+        run: python -u -m research.monitor_acceleration
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ACCELERATION_MASTER
+          path: monitor/
+          retention-days: 30
+      - name: Continue monitor without keeping a runner past its deadline
+        run: |
+          python - <<'PY'
+          import json,os,subprocess
+          report=json.load(open('monitor/MASTER_COLLECTION.json'))
+          generation=int(os.environ['GENERATION'])
+          if not report['public_contract_quote_trade_collection_complete'] and generation<12:
+              subprocess.run(['gh','workflow','run','axiom-180day-acceleration-monitor.yml','--repo','szmohmand/Axiom','--ref','research/historical-data-completion-2026-11-16','-f','state_run='+os.environ['GITHUB_RUN_ID'],'-f','generation='+str(generation+1)],check=True)
+          PY

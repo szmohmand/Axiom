@@ -1,0 +1,87 @@
+name: Research – resume only incomplete accelerated contract groups
+on:
+  push:
+    branches: [research/historical-data-completion-2026-11-16]
+    paths: ['.github/workflows/axiom-180day-group-resume.yml']
+  workflow_dispatch:
+    inputs:
+      groups:
+        required: false
+        default: '[]'
+      index_run:
+        required: false
+        default: ''
+permissions:
+  contents: read
+  actions: read
+jobs:
+  resume:
+    if: ${{ inputs.groups && inputs.groups != '[]' }}
+    strategy:
+      max-parallel: 16
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(inputs.groups) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RESEARCH_GZIP_LEVEL: '1'
+      RESEARCH_INITIAL_RPS: '3.5'
+      RESEARCH_MAX_RPS: '4'
+      INDEX_RUN: ${{ inputs.index_run }}
+      SEED_ID: ${{ matrix.seed_id }}
+      SEED_SHA: ${{ matrix.seed_sha }}
+      SEED_BYTES: ${{ matrix.seed_bytes }}
+      DAY: ${{ matrix.day }}
+      OFFSET: ${{ matrix.offset }}
+      QUOTES: ${{ matrix.quotes }}
+      TRADES: ${{ matrix.trades }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: python -m pip install --disable-pip-version-check requests==2.32.5
+      - name: Restore exact index and checksum-verified partial group
+        run: |
+          gh run download "$INDEX_RUN" --repo szmohmand/Axiom --name FAST16_CONTRACT_INDEX --dir contract_index
+          python - <<'PY'
+          import os,subprocess,hashlib,io,zipfile,pathlib
+          if int(os.environ['SEED_ID']):
+              raw=subprocess.check_output(['gh','api','repos/szmohmand/Axiom/actions/artifacts/'+os.environ['SEED_ID']+'/zip'])
+              assert len(raw)==int(os.environ['SEED_BYTES'])
+              assert hashlib.sha256(raw).hexdigest()==os.environ['SEED_SHA']
+              zipfile.ZipFile(io.BytesIO(raw)).extractall('daily')
+          PY
+      - name: Resume missing pages with forty-minute collection reserve
+        continue-on-error: true
+        run: |
+          args=()
+          if [ "$QUOTES" != true ]; then args+=(--no-quotes); fi
+          if [ "$TRADES" != true ]; then args+=(--no-trades); fi
+          deadline=$(python -c 'import time;print(time.time()+40*60)')
+          python -u -m research.accelerate_historical_180 --root daily --index contract_index --day "$DAY" --offset "$OFFSET" --limit 16 --deadline "$deadline" "${args[@]}"
+      - name: Independent source population audit
+        if: always()
+        continue-on-error: true
+        run: python -m research.verify_public_180_day daily
+      - name: Set stable group identity
+        if: always()
+        run: echo "GROUP=$(printf '%02d' $((OFFSET / 16)))" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: FAST16_${{ matrix.day }}_GROUP_${{ env.GROUP }}_DATA
+          path: daily/
+          compression-level: 0
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: FAST16_${{ matrix.day }}_GROUP_${{ env.GROUP }}_SUMMARY
+          path: |
+            daily/COLLECTION_STATUS.json
+            daily/INDEPENDENT_AUDIT.json
+            daily/PERFORMANCE.json
+          retention-days: 30

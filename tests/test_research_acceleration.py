@@ -27,3 +27,27 @@ def test_imported_raw_cache_is_verified_and_reused_without_request(tmp_path,monk
     target=H.PublicSource(tmp_path/'new',delay=0,getter=lambda *_a,**_k:pytest.fail('Cached response must not be requested again'),cache_roots=[tmp_path/'old'])
     assert target.fetch('/historical/trades',{'ticker':'KXBTC15M-TEST'})[0]==obj
     assert target.network_requests==0 and target.cache_hits==1
+
+
+def test_completed_contract_group_cannot_hide_missing_or_duplicate_contracts():
+    from research.monitor_acceleration import complete_group
+    status={'collection_completed':True,'contract_offset':16,'limited_validation_sample':False,
+            'independent_audit':{'independent_complete_population_audit_passed':True},
+            'contract_results':[{'ticker':'a'},{'ticker':'b'}]}
+    assert complete_group(status,['a','b'],16)
+    assert not complete_group(status,['a','b','c'],16)
+    assert not complete_group(status,['a','b'],0)
+    status['contract_results']=[{'ticker':'a'},{'ticker':'a'},{'ticker':'b'}]
+    assert not complete_group(status,['a','b'],16)
+
+
+def test_day_cutoff_marks_uncollected_contracts_incomplete(tmp_path,monkeypatch):
+    index=tmp_path/'index';(index/'BY_DAY').mkdir(parents=True)
+    H.write_jsonl(index/'BY_DAY/2026-05-20.jsonl.gz',[{'ticker':'KXBTC15M-A','open_time':'2026-05-20T00:00:00Z','close_time':'2026-05-20T00:15:00Z'}])
+    H.write_json(index/'HISTORICAL_CUTOFF.json',{'market_settled_ts':'2026-09-16T00:00:00Z','trades_created_ts':'2026-09-16T00:00:00Z'})
+    monkeypatch.setattr(H,'get',lambda *_a,**_k:pytest.fail('Deadline must prevent requests'))
+    with pytest.raises(RuntimeError,match='Incomplete'):
+        H.collect_day(tmp_path/'day',index,'2026-05-20',deadline_epoch=time.time())
+    status=json.loads((tmp_path/'day/COLLECTION_STATUS.json').read_text())
+    assert not status['collection_completed']
+    assert status['deferred_contracts']==['KXBTC15M-A']
