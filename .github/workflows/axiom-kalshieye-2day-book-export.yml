@@ -1,0 +1,37 @@
+name: Research export – historical Kalshi 10-level book snapshots
+on:
+  push:
+    branches: [research/extended-historical-data-export-2026-11-16]
+    paths:
+      - 'research/export_kalshieye_2day_book.py'
+      - '.github/workflows/axiom-kalshieye-2day-book-export.yml'
+  workflow_dispatch:
+concurrency:
+  group: axiom-kalshieye-sample-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  book-snapshots:
+    runs-on: ubuntu-latest
+    timeout-minutes: 28
+    env:
+      DEMO_MODE: '1'
+      AUTO_PAPER: '0'
+      PYTHONPATH: '.'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Ephemeral source-read tools
+        run: python -m pip install --disable-pip-version-check pyarrow==23.0.1
+      - name: Read and check genuine October Kalshi book snapshot source fingerprints
+        run: python -u -m research.export_kalshieye_2day_book
+      - uses: actions/upload-artifact@v4
+        with:
+          name: KALSHI_EYE_OCT_13_25_2026_10_LEVEL_BOOK_SAMPLES
+          path: kalshieye_orderbook_sample/
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 20
