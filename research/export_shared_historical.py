@@ -12,7 +12,6 @@ from __future__ import annotations
 import csv,datetime as dt,gzip,hashlib,io,json,math,os,pathlib,sys,time
 import urllib.error,urllib.parse,urllib.request,zipfile
 from collections import Counter,defaultdict
-from research.brti_access_probe import load_key,sign_headers
 
 API="https://external-api.kalshi.com/trade-api/v2"
 PUBLIC="https://external-api.kalshi.com/trade-api/v2"
@@ -82,6 +81,7 @@ def hour_iter(days):
         for h in range(24):yield base+dt.timedelta(hours=h)
 
 def brti_history(days,keyid,key):
+    from research.brti_access_probe import sign_headers
     (OUT/"01_BRTI_official").mkdir(parents=True,exist_ok=True)
     p=OUT/"01_BRTI_official"/"brti_5hz_historical.csv.gz"
     hlog=[];raw_count=0;invalid=0;repeated=0;seen=set()
@@ -263,6 +263,7 @@ def source_historical_windows():
             "file":str(out)}
 
 def main():
+    from research.brti_access_probe import load_key
     days=tuple(os.getenv("RESEARCH_DATES","2026-11-13,2026-11-14").split(","))
     for d in days:dt.date.fromisoformat(d)
     if not(1<=len(days)<=4 and len(set(days))==len(days)):
