@@ -22,4 +22,6 @@ jobs:
           python-version: '3.13'
       - run: python -m pip install --disable-pip-version-check cryptography==46.0.3
       - name: Probe source access without logging any secrets
-        run: python -u -m research.historical_access_capabilities_probe
+        run: |
+          python -u -m research.historical_access_capabilities_probe
+          python -u -m research.brti_retention_probe
