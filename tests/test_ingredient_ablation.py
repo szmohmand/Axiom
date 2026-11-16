@@ -191,3 +191,21 @@ def test_same_day_rolling_uses_only_received_past_labels(monkeypatch):
     assert result["validation_contracts"]==16
     assert all(x["status"]=="REPLAYED_WITH_ASOF_RECEIVED_LABEL_GUARD"
                for x in result["fold_contract_counts"])
+
+
+def test_calibration_only_changes_are_distinguished_from_actual_direction_flips():
+    observations=[
+        {"ticker":"A","checkpoint":"ten_min","y":1,
+         "predictions":{"logit_full":.8,"kalshibot_headstart":.7}},
+        {"ticker":"B","checkpoint":"ten_min","y":1,
+         "predictions":{"logit_full":.7,"kalshibot_headstart":.3}},
+        {"ticker":"C","checkpoint":"ten_min","y":0,
+         "predictions":{"logit_full":.8,"kalshibot_headstart":.2}},
+    ]
+    result=A.direction_vs_probability_diagnostics(observations)
+    r=result["ten_minutes_left::logit_full_vs_kalshibot_headstart"]
+    assert r["matched_contracts"]==3
+    assert r["different_direction"]==pytest.approx(2/3,abs=1e-6)
+    assert r["first_helped"]==pytest.approx(1/3,abs=1e-6)
+    assert r["first_hurt"]==pytest.approx(1/3,abs=1e-6)
+    assert r["mean_abs_probability_change"]>0
