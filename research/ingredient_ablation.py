@@ -304,7 +304,20 @@ def paired_comparison(data,period,first,second,draws=1000,seed=RANDOM_SEED):
     rng=random.Random(seed)
     boot=sorted(sum(per_contract[rng.randrange(n)] for _ in range(n))/n
                 for _ in range(draws))
+    # Approximate two-sided sign-flip null, then family-wise Holm correction
+    # across ALL reported ablation comparisons. Assumes exchangeable
+    # contract-level paired errors; neighboring contracts violate perfect
+    # independence, so this is a conservative research diagnostic, not
+    # confirmatory market evidence.
+    threshold=abs(mean)
+    exceed=0
+    for _ in range(draws):
+        null_mean=sum(value*(1 if rng.randrange(2) else -1)
+                      for value in per_contract)/n
+        exceed+=abs(null_mean)>=threshold-1e-14
+    pvalue=(1+exceed)/(draws+1)
     return {"n_contracts":n,"delta_brier_second_minus_first":round(mean,8),
+            "approx_two_sided_signflip_p":round(pvalue,6),
             "approx_95pct_contract_bootstrap_ci":[
                 round(boot[int(draws*.025)],8),
                 round(boot[int(draws*.975)],8)],
@@ -357,6 +370,18 @@ def ablation_matrix(data):
             entries.append({"parent":origin,"variant":ablated,
                             "improvement_over_parent":pair})
         report[period]=entries
+    # Family-wise Holm-Bonferroni over every ablation and time window,
+    # rather than treating nominal unadjusted intervals as discoveries.
+    flat=[e["improvement_over_parent"] for entries in report.values()
+          for e in entries]
+    ranked=sorted(enumerate(flat),key=lambda x:x[1]["approx_two_sided_signflip_p"])
+    highwater=0.
+    for rank,(idx,item) in enumerate(ranked):
+        adjusted=min(1.,item["approx_two_sided_signflip_p"]*(len(flat)-rank))
+        highwater=max(highwater,adjusted)
+        item["holm_familywise_adjusted_p"]=round(highwater,6)
+        item["holm_familywise_5pct_pass"]=bool(highwater<.05)
+        item["multiple_comparisons_count"]=len(flat)
     return report
 
 
