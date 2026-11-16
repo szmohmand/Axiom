@@ -351,6 +351,55 @@ def ablation_matrix(data):
     return report
 
 
+def direction_vs_probability_diagnostics(data):
+    """Separate changes in WHICH SIDE wins from confidence calibration shifts.
+
+    Per-contract weighting avoids inflating precision from five same-label
+    checkpoints. Zero reflects no evidence of extra directional information.
+    """
+    comparisons=(
+        ("logit_full","kalshibot_headstart"),
+        ("logit_full","axiom_ensemble"),
+        ("logit_without_headstart","logit_full"),
+        ("logit_without_momentum","logit_full"),
+        ("logit_without_rsi","logit_full"),
+        ("headstart_fixed_train_volatility","kalshibot_headstart"),
+        ("schen_m0_minute_proxy","kalshibot_headstart"),
+    )
+    out={}
+    for period,cps in PERIODS.items():
+        cp_names={c for c,_ in cps}
+        subset=[r for r in data if r["checkpoint"] in cp_names]
+        for first,second in comparisons:
+            contract=collections.defaultdict(list)
+            for row in subset:
+                p=row["predictions"]
+                if first not in p or second not in p:
+                    continue
+                a,b=p[first],p[second]
+                correct_a=int((a>=.5)==bool(row["y"]))
+                correct_b=int((b>=.5)==bool(row["y"]))
+                contract[row["ticker"]].append({
+                    "different_direction":int((a>=.5)!=(b>=.5)),
+                    "first_helped":int(correct_a>correct_b),
+                    "first_hurt":int(correct_a<correct_b),
+                    "mean_abs_probability_change":abs(a-b),
+                })
+            if not contract:continue
+            per_contract={key:statistics.mean(
+                statistics.mean(item[name] for item in record)
+                for record in contract.values())
+                for key in ("different_direction","first_helped","first_hurt",
+                            "mean_abs_probability_change")}
+            out[f"{period}::{first}_vs_{second}"]={
+                "matched_contracts":len(contract),
+                "matched_snapshots":sum(len(x) for x in contract.values()),
+                **{key:round(value,6) for key,value in per_contract.items()},
+                "interpretation":"Different-direction fraction distinguishes directional change from probability recalibration; these exploratory results cannot establish market causality.",
+            }
+    return out
+
+
 def model_coefficients(fits):
     result={}
     for cp in CP:
@@ -503,6 +552,7 @@ def main():
         "frozen_source_equation_parity_and_similarity":source_mechanism_summary(
             parity,mechanics),
         "train_day_model_coefficients":model_coefficients(fits),
+        "direction_vs_probability_diagnostics":direction_vs_probability_diagnostics(data),
         "all_ablations_compared_to_their_frozen_parent":ablation_matrix(data),
         "all_period_model_scores_contract_weighted":periods(data),
         "regime_stratification_posthoc":regime_scores(data,train),
