@@ -1,0 +1,50 @@
+name: Research export – 30 consecutive days real 5Hz BRTI
+on:
+  push:
+    branches: [research/extended-historical-data-export-2026-11-16]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  brti-history:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    env:
+      PYTHONPATH: '.'
+      DEMO_MODE: '1'
+      AUTO_PAPER: '0'
+      KALSHI_API_KEY_ID: ${{ secrets.KALSHI_API_KEY_ID }}
+      KALSHI_PRIVATE_KEY_PEM: ${{ secrets.KALSHI_PRIVATE_KEY_PEM }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install isolated signing requirement only
+        run: python -m pip install --disable-pip-version-check cryptography==46.0.3
+      - name: Fetch and verify official historical BRTI without saving keys
+        run: python -u -m research.export_brti_30day
+      - name: Verify all raw archive files are credentials-free
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json,os
+          root=Path("extended_BRTI")
+          assert root.is_dir()
+          man=json.loads((root/"AUDIT"/"BRTI_30DAY_MANIFEST.json").read_text())
+          assert man["hours_requested"]==721
+          assert man["5hz_ticks_exported"]>0
+          for p in root.rglob("*"):
+              if p.is_file() and p.suffix==".json":
+                  body=p.read_text()
+                  assert os.environ["KALSHI_API_KEY_ID"] not in body
+                  assert "BEGIN PRIVATE KEY" not in body
+          print("BRTI_NO_SECRET_AND_COVERAGE_CHECK_PASS")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: 30DAY_OFFICIAL_BRTI_5HZ_AND_1HZ
+          path: extended_BRTI/
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 20
