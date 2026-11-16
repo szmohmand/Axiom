@@ -194,6 +194,35 @@
         "tests/test_kalshieye_replay.py::test_official_expiration_value_is_ground_truth_not_recorded_coin_end",
         "tests/test_kalshieye_replay.py::test_unavailable_official_expiration_value_never_substitutes_coin_price_end"
       ]
+    },
+    {
+      "id": "A17",
+      "finding": "Research formula parity incorrectly compared Schen's epsilon probability cap against AXIOM's 0.5-percent cap, falsely failing source-reproduction checks and potentially misattributing tiny Brier differences to distinct market intelligence.",
+      "fixed_commit": "12c107853f1c0ba38489e5e2f92c19f00c2f0a96",
+      "tests": [
+        "tests/test_ingredient_ablation.py::test_exact_source_equations_parity_for_each_forecast_horizon",
+        "tests/test_ingredient_ablation.py::test_audited_probability_clipping_is_not_falsely_treated_as_same_signal",
+        "tests/test_ingredient_ablation.py::test_schen_equal_clipping_counterfactual_controls_are_explicit"
+      ]
+    },
+    {
+      "id": "A18",
+      "finding": "Within-day retrospective model training could use historical official outcomes before their actual settlement or source-receipt timestamps; enforce both clocks before any earlier-contract label enters a rolling fit.",
+      "fixed_commit": "8f053dde39cfc549f33e9306e14783b6f9f34723",
+      "tests": [
+        "tests/test_ingredient_ablation.py::test_same_day_rolling_training_refuses_official_labels_not_yet_received",
+        "tests/test_ingredient_ablation.py::test_same_day_rolling_uses_only_received_past_labels"
+      ]
+    },
+    {
+      "id": "A19",
+      "finding": "A model available only at the start of the last minute was incorrectly eligible for comparisons labeled as covering the whole last minute; direction-only changes were also not distinguished from probability calibration, and ablation results needed family-wide multiple-test correction.",
+      "fixed_commit": "ddf6601524870a3375f55a8ee9ed0754e37d1206",
+      "tests": [
+        "tests/test_ingredient_ablation.py::test_partial_last_minute_schen_cannot_masquerade_as_whole_minute",
+        "tests/test_ingredient_ablation.py::test_calibration_only_changes_are_distinguished_from_actual_direction_flips",
+        "tests/test_ingredient_ablation.py::test_holm_adjustment_not_less_conservative_than_raw_p"
+      ]
     }
   ]
 }
