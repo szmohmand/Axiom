@@ -422,7 +422,7 @@ def direction_vs_probability_diagnostics(data):
                 })
             if not contract:continue
             per_contract={key:statistics.mean(
-                statistics.mean(item[name] for item in record)
+                statistics.mean(item[key] for item in record)
                 for record in contract.values())
                 for key in ("different_direction","first_helped","first_hurt",
                             "mean_abs_probability_change")}
