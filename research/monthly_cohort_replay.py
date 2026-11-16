@@ -441,7 +441,12 @@ def main():
             raise AssertionError(f"missing source months in {anchor}: {dict((k,len(v)) for k,v in splits.items())}")
         trains=fit_all(splits["train"])
         # Exact dense solver parity to research small reference case:
-        sample=splits["train"][:40]
+        # Compare the optimizer to the prior implementation on a sizeable,
+        # SAME-checkpoint cohort. The fitted model enforces >=100 observations;
+        # never bypass that safeguard for a small parity fixture.
+        sample=[r for r in splits["train"] if r["checkpoint"]=="ten_minutes_left"][:160]
+        if len(sample)<100 or len({r["y"] for r in sample})<2:
+            raise AssertionError("insufficient 160-row original-solver parity sample")
         reference=R.fit_logit(sample)
         testfit=fit_glm(sample,"logit_full")
         if max(abs(a-b) for a,b in zip(reference,testfit["coefs"]))>1e-7:
