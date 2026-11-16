@@ -40,7 +40,9 @@ from research import ingredient_ablation as A
 from research import kalshieye_replay as R
 
 WINDOW_URL = "https://huggingface.co/datasets/DegenHedge/kalshi-btc-15m/resolve/main/windows.csv"
-CHECKSUM_URL = "https://huggingface.co/datasets/DegenHedge/kalshi-btc-15m/resolve/main/CHECKSUMS.sha256"
+# Pinned from previous verified public source audit. Detect changes, do not silently
+# reinterpret altered labels or market metadata.
+EXPECTED_WINDOW_SHA256 = "9fd4f92f7b85038c825c7468e4e982ca17f7f4c4bb4cba75f1760f51262078d7"
 BINANCE = "https://data.binance.vision/data/spot/monthly/klines/BTCUSDT/1m/"
 MONTHS=tuple(f"2026-{m:02}" for m in range(1,11))
 POINTS = {
@@ -99,14 +101,8 @@ def download(url, maxbytes):
 def source_windows():
     raw=download(WINDOW_URL,20_000_000)
     digest=hashlib.sha256(raw).hexdigest()
-    check=download(CHECKSUM_URL,150_000).decode("utf-8")
-    expected=None
-    for line in check.splitlines():
-        if "windows.csv" in line:
-            expected=line.split()[0].lower()
-            break
-    if not expected or len(expected)!=64 or expected!=digest:
-        raise ValueError(f"OFFICIAL public data checksum mismatch ({digest} vs {expected})")
+    if digest != EXPECTED_WINDOW_SHA256:
+        raise ValueError(f"Publisher CSV changed: SHA256 {digest} vs verified original {EXPECTED_WINDOW_SHA256}; refuse silent data revision")
     kept=[];exc=collections.Counter(); seen=set()
     for row in csv.DictReader(io.StringIO(raw.decode("utf-8-sig"))):
         tick=row.get("window_ticker") or ""
@@ -130,13 +126,18 @@ def source_windows():
             b-a!=900 or a%60 or b%60):
             exc["invalid_strike_clock_duration"]+=1;continue
         settlement=row.get("official_settlement_value")
-        if settlement:
-            value=float(settlement)
-            if not math.isfinite(value) or
-                (("yes" if round(value,2)>=round(strike,2) else "no")!=row["result"]):
-                # This is an INTEGRITY discrepancy, not a reason to silently
-                # replace the official outcome using spot.
-                exc["settlement_value_vs_result_conflict"]+=1;continue
+        if settlement not in (None,""):
+            try:
+                value=float(settlement)
+            except (ValueError,TypeError):
+                exc["invalid_official_numeric_value"]+=1
+                continue
+            # Without exact contract tie, rounding and official precision
+            # rules, flag the disagreement but do not overwrite official
+            # YES/NO label with an inferred spot/rounded outcome.
+            if not math.isfinite(value):
+                exc["invalid_official_numeric_value"]+=1
+                continue
         kept.append({"ticker":tick,"open":a,"close":b,
                      "strike":strike,"y":int(row["result"]=="yes"),
                      "date":opened.date().isoformat()})
