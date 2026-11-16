@@ -1,0 +1,30 @@
+name: AXIOM ingredient ablation, model-formula audit and real historical stress tests
+on:
+  push:
+    branches: [research/feature-ablation-and-audit-2026-11-15]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  research-ingredients:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      DEMO_MODE: '1'
+      AUTO_PAPER: '0'
+      PYTHONPATH: '.'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install pinned AXIOM dependencies and separate ML research-only packages
+        run: |
+          python -m pip install --disable-pip-version-check -r requirements.lock.txt
+          python -m pip install --disable-pip-version-check pyarrow==23.0.1 xgboost==3.4.1 scikit-learn==1.7.2
+      - name: Audit original and challenger regression checks and no-leakage feature interventions
+        run: |
+          python phase0/check_regression_history.py
+          python -m pytest -q tests/test_ingredient_ablation.py tests/test_window_specific_rerun.py tests/test_kalshieye_replay.py tests/test_challenger_lab.py
+      - name: Authentic read-only held-out ingredient ablation and audit
+        run: python -m research.ingredient_ablation
