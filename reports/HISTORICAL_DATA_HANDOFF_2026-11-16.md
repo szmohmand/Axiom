@@ -71,3 +71,11 @@ Still active: original Kalshi run 43802346611. No artifact was available at last
 ## Final research CI correction
 
 CI on 8842804/7f9d068 exposed an optional signing dependency imported by the new research regression test. Fixed on 86f9c7b689a8a62e5ea7eb1ba86404809371206d by loading signing helpers only inside authenticated BRTI functions. No runtime dependencies or lockfiles changed. A fresh-process regression deliberately blocks cryptography imports and verifies public research imports still work. Local full tests/ plus research/ now pass 79 tests; 21 permanent regression records retained and frozen sources verified. These supersede earlier local test counts. Latest Python 3.13 CI remains the acceptance source of truth.
+
+## 180-day continuation
+
+The precise target is May 20–November 15, 2026 (180 complete UTC dates). Existing October 17–November 15 and August 6–12 exports are preserved. The August 18–September 16 extension now has source artifact 14198776854 (217,098,418 bytes, SHA256 f2f24b266859151a21cb401379d52d9dd41d00a1920270ea352d2b2a92bebaa6), pending independent audit. September 17–October 16 remains in the existing sequential job.
+
+New older BRTI batches request May 20–June 18, June 19–July 18, July 19–August 5, and August 13–17. Full-day ranges do not overlap existing collection; each retains a warmup hour for boundary comparisons. The wrapper can replay preserved original responses by URL and verified SHA256, fetching only missing requests after an interruption. Completion status and expected request counts are written separately; empty source hours remain visible and are not fabricated. No 180-day completeness claim until final source and settlement audit.
+
+User will arrange ChatGPT Library placement if needed. Deliver actual ZIPs, exact download links, checksums and transfer manifest; Library status remains PENDING until confirmed.

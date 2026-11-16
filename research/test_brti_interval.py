@@ -48,3 +48,24 @@ def test_raw_response_precision_and_retrieval_provenance_without_headers(tmp_pat
         assert m['utc_complete_days_covered_through']=='2026-08-12'
     finally:
         for k,v in old.items():setattr(C,k,v)
+
+
+def test_resumption_replays_original_bytes_without_new_source_requests(tmp_path, monkeypatch):
+    import json
+    from research import export_shared_historical as S
+    monkeypatch.chdir(tmp_path)
+    for name in ('BEGIN','END','FIRST_HOUR','ROOT','INDEX_DIR'):
+        monkeypatch.setattr(C,name,getattr(C,name))
+    calls=[]
+    raw=b'{"data":[{"time":1,"value":"2.123456789"}]}'
+    monkeypatch.setattr(S,'get',lambda *a,**k:(calls.append(a[0]) or raw))
+    def fake_run():
+        assert S.get(S.API+'/cfbenchmarks/history/values?id=BRTI')==raw
+        p=C.ROOT/'AUDIT';p.mkdir(exist_ok=True)
+        (p/'BRTI_30DAY_MANIFEST.json').write_text('{}')
+    monkeypatch.setattr(C,'run',fake_run)
+    I.run();I.run()
+    assert len(calls)==1
+    status=json.loads((C.ROOT/'COLLECTION_STATUS.json').read_text())
+    assert status['collection_completed'] is True
+    assert status['original_responses_preserved']==1
