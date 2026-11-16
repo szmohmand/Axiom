@@ -23,6 +23,8 @@ jobs:
           python-version: '3.13'
       - name: Install only ephemeral offline export authentication support
         run: python -m pip install --disable-pip-version-check cryptography==46.0.3 websockets==15.0.1
+      - name: Verify exact historical price-schema and missing-data regression tests
+        run: python -m unittest -v research.test_shared_historical_export
       - name: Export official BRTI + BTC15m contracts + historical prices + spot source
         run: python -u -m research.export_shared_historical
       - name: Ensure no keys or private data exist in export
