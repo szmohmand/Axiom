@@ -2,7 +2,13 @@ name: Research export – 30 consecutive days real 5Hz BRTI
 on:
   push:
     branches: [research/extended-historical-data-export-2026-11-16]
+    paths:
+      - 'research/export_brti_30day.py'
+      - '.github/workflows/axiom-brti-30day-export.yml'
   workflow_dispatch:
+concurrency:
+  group: axiom-brti-30day-single-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
