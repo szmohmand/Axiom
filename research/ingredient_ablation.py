@@ -311,11 +311,12 @@ def paired_comparison(data,period,first,second,draws=1000,seed=RANDOM_SEED):
     # confirmatory market evidence.
     threshold=abs(mean)
     exceed=0
-    for _ in range(draws):
+    perm_draws=max(5000,draws)
+    for _ in range(perm_draws):
         null_mean=sum(value*(1 if rng.randrange(2) else -1)
                       for value in per_contract)/n
         exceed+=abs(null_mean)>=threshold-1e-14
-    pvalue=(1+exceed)/(draws+1)
+    pvalue=(1+exceed)/(perm_draws+1)
     return {"n_contracts":n,"delta_brier_second_minus_first":round(mean,8),
             "approx_two_sided_signflip_p":round(pvalue,6),
             "approx_95pct_contract_bootstrap_ci":[
