@@ -33,7 +33,12 @@ import time
 import urllib.request
 import zipfile
 
-import numpy as np
+# Fast numerical backend exists only on the isolated research runner.
+# The ordinary AXIOM deployment/test environment must never need it.
+try:
+    import numpy as np
+except ImportError:
+    np=None
 
 from app.ensemble import engine_pack
 from research import ingredient_ablation as A
@@ -250,6 +255,23 @@ def build_dataset(windows,bars,anchor):
 def fit_glm(rows,group):
     """Exact normalized prior-gradient specification; numpy speeds batch fit."""
     cols=GLMS[group]
+    if np is None:
+        if len(rows)<100 or len({r["y"] for r in rows})<2:
+            raise ValueError("not enough labeled training contracts")
+        prior=[0.]+[1.7 if name=="headstart" else 0. for name in cols]
+        weights=prior[:]
+        for _ in range(400):
+            grad=[0.]*(len(cols)+1)
+            for r in rows:
+                xx=[1.]+[r["features"][name] for name in cols]
+                z=max(-40.,min(40.,sum(a*b for a,b in zip(weights,xx))))
+                residual=1/(1+math.exp(-z))-r["y"]
+                for j in range(len(grad)):
+                    grad[j]+=residual*xx[j]
+            for j in range(len(grad)):
+                weights[j]-=.12*(grad[j]/len(rows)+.08*(weights[j]-prior[j]))
+        return {"features":list(cols),"coefs":weights,
+                "train_windows":len(rows)}
     X=np.ones((len(rows),len(cols)+1),dtype=np.float64)
     for i,name in enumerate(cols,1):
         X[:,i]=[r["features"][name] for r in rows]
@@ -279,6 +301,10 @@ def fit_all(train):
 
 def predict_glm(rows,fitted):
     features=fitted["features"]
+    if np is None:
+        return [R.sigmoid(sum(a*b for a,b in zip(
+            fitted["coefs"],[1.]+[r["features"][name] for name in features])))
+            for r in rows]
     X=np.ones((len(rows),len(features)+1),dtype=np.float64)
     for i,name in enumerate(features,1):
         X[:,i]=[r["features"][name] for r in rows]
@@ -363,7 +389,7 @@ def paired_day_uncertainty(rows,period,first,second,seed=20261115,draws=2000):
                 for _ in range(len(dayitems))]
         boot.append(sum(sum(x) for x in chosen)/sum(len(x) for x in chosen))
     boot.sort()
-    exact=sum(sum(x) for _,xs in dayitems for x in xs)/sum(len(xs) for _,xs in dayitems)
+    exact=sum(sum(xs) for _,xs in dayitems)/sum(len(xs) for _,xs in dayitems)
     return {"days":len(days),"contracts":sum(len(v) for _,v in dayitems),
             "delta_brier_second_minus_first":round(exact,7),
             "approx_day_cluster_bootstrap95":[round(boot[49],7),
