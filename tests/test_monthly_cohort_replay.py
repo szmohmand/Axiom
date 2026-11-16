@@ -5,7 +5,6 @@ claims of actual out-of-sample market skill.
 """
 import math
 from copy import deepcopy
-import numpy as np
 import pytest
 from research import monthly_cohort_replay as M
 from research import kalshieye_replay as R
@@ -85,7 +84,7 @@ def test_mini_batch_logistic_fit_matches_frozen_source_optimizer():
         records.append({"ticker":str(i),"features":f,"y":i%3==0})
     reference=R.fit_logit(records)
     modeled=M.fit_glm(records,"logit_full")["coefs"]
-    assert np.allclose(reference,modeled,rtol=0,atol=1e-8)
+    assert len(reference)==len(modeled) and max(abs(a-b) for a,b in zip(reference,modeled))<1e-8
 
 def test_ablated_logistic_does_not_use_removed_headstart_term():
     records=[]
