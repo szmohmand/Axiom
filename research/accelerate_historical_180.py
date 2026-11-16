@@ -51,7 +51,7 @@ class AdaptiveClient:
 
 
 def run(root,index,day,offset,limit,quotes,trades,deadline=None,cache_roots=()):
-    client=AdaptiveClient(root,deadline)
+    client=AdaptiveClient(root,deadline,initial_rps=float(os.environ.get("RESEARCH_INITIAL_RPS","4")),max_rps=float(os.environ.get("RESEARCH_MAX_RPS","6")))
     original_source=H.PublicSource
     class FastSource(original_source):
         def __init__(self,path,delay=0):super().__init__(path,delay=0,getter=client.get,cache_roots=cache_roots)
