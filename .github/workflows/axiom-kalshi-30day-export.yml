@@ -1,0 +1,44 @@
+name: Research export – 30 days official Kalshi contracts, quotes, trade ticks
+on:
+  push:
+    branches: [research/extended-historical-data-export-2026-11-16]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  kalshi-history:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    env:
+      PYTHONPATH: '.'
+      DEMO_MODE: '1'
+      AUTO_PAPER: '0'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Export historic Kalshi contracts, minute bid/ask candles and trades
+        run: python -u -m research.export_kalshi_30day
+      - name: Assert index and source docs contain no private keys
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          root=Path("extended_KALSHI")
+          m=json.loads((root/"AUDIT"/"KALSHI_30DAY_MANIFEST.json").read_text())
+          assert m["market_contract_terms"]["markets"]>0
+          assert m["one_minute_price_quote_candles"]["candles_all_rows"]>0
+          for p in root.rglob("*.json"):
+              s=p.read_text()
+              assert "BEGIN PRIVATE KEY" not in s
+              assert "KALSHI-ACCESS-SIGNATURE" not in s
+          print("KALSHI_NO_SECRET_AND_SOURCE_CHECK_PASS")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: 30DAY_KALSHI_CONTRACT_QUOTES_AND_ACTUAL_TRADE_TICKS
+          path: extended_KALSHI/
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 20
