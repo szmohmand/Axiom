@@ -120,3 +120,48 @@ def test_no_market_quote_ever_enters_candidate_feature_vector():
     assert "kalshi_yes_mid_benchmark" not in M.COMPARATORS
     for names in M.GLMS.values():
         assert all(x in ("headstart","momentum5","rsi") for x in names)
+
+
+def test_actual_official_winner_never_replaced_by_proxy_classification():
+    t=1800000000-(1800000000%60)
+    w=contract(t)
+    w["official_expiration_value"]=85265.2
+    bars={t-60:(85000,85005,84995,85001),
+          t+840:(84920,84923,84915,84918)}
+    audit=M.settlement_basis_audit([w],bars,"ohlc4")
+    assert audit["official_labeled_windows_compared"]==1
+    assert audit["proxy_disagreed_with_official_winner"]==1
+    assert audit["official_numeric_expiration_index_available"]==1
+    assert audit["official_end_index_vs_proxy_mean_abs_usd"]>0
+    # Official result is immutable even when a proxy would declare NO.
+    assert w["y"]==1
+
+
+def test_validation_only_model_selection_cannot_look_at_later_labels():
+    # Four prechosen model names, test labels deliberately favor a DIFFERENT
+    # option. The chosen model must remain the validation winner.
+    def make(split_y,day,idx):
+        out=[]
+        for cp in M.POINTS:
+            if cp=="opening_plus_60s" or cp=="opening_plus_120s":
+                a=.9 if split_y else .1
+            else:a=.9 if split_y else .1
+            # Val picks direct HeadStart; test retrospectively prefers
+            # logistic. The selector must not use the latter.
+            ps={
+               "kalshibot_headstart":a if day.startswith("2026-08") else 1-a,
+               "logit_headstart_only":.6 if split_y else .4,
+               "logit_full":.5,
+               "axiom_ensemble":.5,
+            }
+            out.append({"ticker":f"x{idx}","date":day,"cp":cp,
+                        "y":split_y,"abs_headstart_z":0.2,
+                        "p":ps})
+        return out
+    v=make(1,"2026-08-01",1)+make(0,"2026-08-02",2)
+    t=make(1,"2026-09-01",3)+make(0,"2026-09-02",4)
+    got=M.validation_selection_and_regimes({"validation":v,"test":t})
+    for period,selection in got["frozen_four_candidate_validation_choice"].items():
+        assert selection["selected_from_validation"]=="kalshibot_headstart"
+        assert selection["September_October_score"]["brier"]==pytest.approx(.81)
+        assert selection["test_vs_constant_HeadStart"]["delta_brier_second_minus_first"]==0
