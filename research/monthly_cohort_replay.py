@@ -392,8 +392,9 @@ def paired_day_uncertainty(rows,period,first,second,seed=20261115,draws=2000):
     exact=sum(sum(xs) for _,xs in dayitems)/sum(len(xs) for _,xs in dayitems)
     return {"days":len(days),"contracts":sum(len(v) for _,v in dayitems),
             "delta_brier_second_minus_first":round(exact,7),
-            "approx_day_cluster_bootstrap95":[round(boot[49],7),
-                                               round(boot[1950],7)],
+            "approx_day_cluster_bootstrap95":[
+                round(boot[max(0,int(.025*(draws-1)))],7),
+                round(boot[min(draws-1,int(.975*(draws-1)))],7)],
             "descriptive_one_proxy_only":True}
 
 
