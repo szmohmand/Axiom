@@ -1,0 +1,103 @@
+name: Research only - targeted BRTI source gap recovery
+on:
+  push:
+    branches:
+      - research/brti-38-gap-recovery-2026-11-16
+    paths:
+      - .github/workflows/brti-38-minute-source-recovery.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: research-brti-38-source-recovery
+  cancel-in-progress: false
+jobs:
+  historical-get-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PYTHONPATH: .
+      DEMO_MODE: '1'
+      AUTO_PAPER: '0'
+      KALSHI_API_KEY_ID: ${{ secrets.KALSHI_API_KEY_ID }}
+      KALSHI_PRIVATE_KEY_PEM: ${{ secrets.KALSHI_PRIVATE_KEY_PEM }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install isolated historical-GET signing dependency
+        run: python -m pip install --disable-pip-version-check cryptography==46.0.3
+      - name: Retrieve the 34 affected official BRTI hours twice (read only)
+        continue-on-error: true
+        run: |
+          timeout --signal=TERM 22m python -u - <<'PY'
+          from __future__ import annotations
+          import datetime as dt,gzip,hashlib,json,math,os,pathlib,time,urllib.parse
+          from research.export_shared_historical import get,API,walk_values
+          from research.brti_access_probe import load_key,sign_headers
+          root=pathlib.Path('brti_gap_recovery')
+          (root/'ORIGINAL_RETRIEVALS').mkdir(parents=True,exist_ok=True)
+          hours=["2026-08-18T09:00:00Z","2026-08-18T20:00:00Z","2026-08-20T20:00:00Z","2026-08-21T20:00:00Z","2026-08-24T10:00:00Z","2026-08-25T20:00:00Z","2026-08-26T20:00:00Z","2026-08-27T20:00:00Z","2026-08-28T11:00:00Z","2026-08-28T20:00:00Z","2026-08-31T20:00:00Z","2026-08-31T21:00:00Z","2026-09-01T20:00:00Z","2026-09-01T21:00:00Z","2026-09-01T23:00:00Z","2026-09-02T20:00:00Z","2026-09-02T21:00:00Z","2026-09-02T23:00:00Z","2026-09-03T20:00:00Z","2026-09-03T21:00:00Z","2026-09-03T23:00:00Z","2026-09-04T21:00:00Z","2026-09-06T13:00:00Z","2026-09-07T09:00:00Z","2026-09-09T20:00:00Z","2026-09-10T20:00:00Z","2026-09-12T08:00:00Z","2026-09-13T13:00:00Z","2026-09-14T21:00:00Z","2026-09-14T23:00:00Z","2026-09-15T20:00:00Z","2026-09-15T21:00:00Z","2026-09-16T20:00:00Z","2026-09-16T21:00:00Z"]
+          keyid=os.environ['KALSHI_API_KEY_ID'].strip()
+          private_key,_=load_key(os.environ['KALSHI_PRIVATE_KEY_PEM'])
+          path='/cfbenchmarks/history/values'
+          auth=sign_headers(keyid,private_key,'GET','/trade-api/v2'+path)
+          records=[];failures=[]
+          for index,h in enumerate(hours,1):
+              for attempt in (1,2):
+                  start=dt.datetime.fromisoformat(h.replace('Z','+00:00'))
+                  stamp=h.replace('Z','.000Z')
+                  url=API+path+'?'+urllib.parse.urlencode({'id':'BRTI','timespan':'HOUR','timestamp':stamp})
+                  begun=dt.datetime.now(dt.timezone.utc).isoformat()
+                  try:
+                      raw=get(url,headers=auth,cap=30_000_000)
+                      done=dt.datetime.now(dt.timezone.utc).isoformat()
+                      obj=json.loads(raw)
+                      points=list(walk_values(obj))
+                      begin_ms=int(start.timestamp()*1000)
+                      end_ms=begin_ms+3600000
+                      timestamps=set();valid=0;outside=0;duplicates=0
+                      for point in points:
+                          ms=int(point['time'])
+                          price=float(point['value'])
+                          if not (begin_ms<=ms<end_ms and 100<price<1000000 and math.isfinite(price)):
+                              outside+=1
+                              continue
+                          valid+=1
+                          if ms in timestamps:duplicates+=1
+                          timestamps.add(ms)
+                      seconds={x//1000 for x in timestamps}
+                      filename='ORIGINAL_RETRIEVALS/hour_%02d_pass_%d.json.gz'%(index,attempt)
+                      with gzip.open(root/filename,'wb',compresslevel=6) as out:out.write(raw)
+                      row={'hour_utc':h,'attempt':attempt,'filename':filename,'query_url':url,
+                        'request_started_utc':begun,'retrieval_finished_utc':done,
+                        'original_response_sha256':hashlib.sha256(raw).hexdigest(),
+                        'original_response_bytes':len(raw),'raw_points':len(points),
+                        'valid_points':valid,'unique_timestamps_ms':len(timestamps),
+                        'first_tick_seconds':len(seconds),'missing_full_seconds':3600-len(seconds),
+                        'invalid_or_outside_hour_points':outside,'duplicate_timestamps':duplicates}
+                      records.append(row)
+                      print('RECOVERED_HOUR',index,'/',len(hours),'pass',attempt,'5hz',len(timestamps),'sec',len(seconds),flush=True)
+                  except Exception as e:
+                      failure={'hour_utc':h,'attempt':attempt,'failure_type':type(e).__name__,'detail':str(e)[:160]}
+                      failures.append(failure)
+                      print('FAILED_HOUR',index,'pass',attempt,type(e).__name__,flush=True)
+                  (root/'RETRIEVAL_MANIFEST.json').write_text(json.dumps({
+                   'purpose':'Re-request only 34 historical BRTI source hours containing 38 incomplete UTC research minutes',
+                   'hours':hours,'attempted_requests':len(records)+len(failures),
+                   'successful_requests':len(records),'failures':failures,'responses':records,
+                   'all_requests_read_only':'GET','credentials_never_written':True,
+                   'historical_event_time_not_asof_receipt_time':True},indent=2)+'\n')
+              time.sleep(.08)
+          print('RECOVERY_RETRIEVAL_END',len(records),'successful',len(failures),'failed',flush=True)
+          
+          PY
+      - name: Upload raw historical responses and evidence even after a request error
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRTI_38_MINUTES_TARGETED_SOURCE_REREQUEST_2026-11-16
+          path: brti_gap_recovery/
+          if-no-files-found: warn
+          retention-days: 20
