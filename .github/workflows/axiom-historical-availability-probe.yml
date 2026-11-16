@@ -1,0 +1,25 @@
+name: AXIOM historical source availability probe (read-only)
+on:
+  push:
+    branches: [research/extended-historical-data-export-2026-11-16]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    env:
+      KALSHI_API_KEY_ID: ${{ secrets.KALSHI_API_KEY_ID }}
+      KALSHI_PRIVATE_KEY_PEM: ${{ secrets.KALSHI_PRIVATE_KEY_PEM }}
+      PYTHONPATH: '.'
+      DEMO_MODE: '1'
+      AUTO_PAPER: '0'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: python -m pip install --disable-pip-version-check cryptography==46.0.3
+      - name: Probe source access without logging any secrets
+        run: python -u -m research.historical_access_capabilities_probe
