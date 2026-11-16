@@ -342,7 +342,16 @@ def ablation_matrix(data):
     report={}
     for period in PERIODS:
         entries=[]
+        expected_cps={cp for cp,_ in PERIODS[period]}
         for ablated,origin in parent.items():
+            # A 'last minute' result must cover all five requested instants,
+            # never covertly represent only the 60-seconds-left snapshot.
+            present_cps={r["checkpoint"] for r in data
+                         if r["checkpoint"] in expected_cps
+                         and ablated in r["predictions"] and
+                         origin in r["predictions"]}
+            if present_cps!=expected_cps:
+                continue
             pair=paired_comparison(data,period,ablated,origin)
             if not pair.get("n_contracts"):continue
             entries.append({"parent":origin,"variant":ablated,
