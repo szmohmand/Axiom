@@ -152,6 +152,7 @@ def test_validation_only_model_selection_cannot_look_at_later_labels():
                "kalshibot_headstart":a if day.startswith("2026-08") else 1-a,
                "logit_headstart_only":.6 if split_y else .4,
                "logit_full":.5,
+               "logit_without_headstart":.55 if split_y else .45,
                "axiom_ensemble":.5,
             }
             out.append({"ticker":f"x{idx}","date":day,"cp":cp,
