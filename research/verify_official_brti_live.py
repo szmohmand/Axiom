@@ -133,6 +133,8 @@ def audit():
         "verified_live_asof_delivery": False,
         "verified_trade_profit": False,
         "tried_contracts": 0,
+        "pending_index_publication": [],
+        "pending_official_fields": [],
     }
     if not key_id or not secret:
         summary["reason"] = "Required read-only BRTI GitHub Secrets not configured"
@@ -171,6 +173,7 @@ def audit():
                 if (not detail.get("open_time") or not detail.get("close_time") or
                         detail.get("floor_strike") is None or
                         detail.get("expiration_value") is None):
+                    summary["pending_official_fields"].append(ticker)
                     continue
                 ticks, hours = _load_hours(session, key_id, secret, detail)
                 result = reconcile_contract(detail, ticks)
@@ -183,14 +186,34 @@ def audit():
                                    for tag in ("opening", "closing")},
                                result_consistent=result["winner_verified"],
                                reason=result["reason"])
-                # A mismatch is consequential, not a reason to choose a
-                # different contract and silently claim a later success.
+                # A real disagreement is consequential: never skip it to
+                # cherry-pick an older market that happens to match.
+                if result["status"] == "CONFLICT":
+                    return summary
+                # Newly settled contracts can precede release of their last
+                # BRTI historical HOUR. Preserve the missing evidence and
+                # check an older fully published contract. Never fabricate
+                # absent index ticks or claim the newest contract was checked.
+                if (result["status"] == "INCOMPLETE"
+                        and result["reason"] == "Missing true BRTI seconds in a reference window"):
+                    summary["pending_index_publication"].append({
+                        "ticker": ticker,
+                        "opening_seconds": summary["opening_seconds"],
+                        "closing_seconds": summary["closing_seconds"],
+                    })
+                    summary["status"] = "NOT_VERIFIED"
+                    continue
                 return summary
             except (requests.RequestException, ValueError, KeyError, TypeError) as exc:
                 summary.update(status="SOURCE_ERROR", ticker=ticker,
                                reason=type(exc).__name__ + " during official read-only audit")
                 return summary
-    summary["reason"] = "No recent finalized contract with complete official reference fields"
+    summary["status"] = ("PENDING_INDEX_PUBLICATION"
+                         if summary["pending_index_publication"] else "NOT_VERIFIED")
+    summary["result_consistent"] = False
+    summary["reason"] = ("Newest available contracts lacked complete historical index windows"
+                         if summary["pending_index_publication"]
+                         else "No recent finalized contract with complete official reference fields")
     return summary
 
 
