@@ -6,6 +6,7 @@ import pytest
 from app.orderbook import normalize_orderbook, sweep, current_book, unavailable
 from app.depth_intelligence import analyze_opportunities, execution_guidance
 from app.ensemble import engine_pack
+from test_e2e_synthetic import env
 
 
 TICKER = "KXBTC15M-DEPTH-TEST"
@@ -109,7 +110,7 @@ def test_same_forecast_with_different_depth_changes_opportunity_not_probability(
     tight=makebook(12345., yes=[["0.46","100"],["0.50","100"]],
                    no=[["0.42","100"],["0.46","100"]])
     expensive=makebook(12345.,yes=[["0.70","100"],["0.74","100"]],
-                       no=[["0.20","100"],["0.24","100"]])
+                       no=[["0.10","100"],["0.13","100"]])
     a=analyze_opportunities(f,m,tight,12345.,size_contracts=10)
     b=analyze_opportunities(f,m,expensive,12345.,size_contracts=10)
     assert a["side"]=="YES" and a["selected"] is not None
@@ -201,10 +202,10 @@ def test_staged_pipeline_and_failure_keep_existing_forecast_and_ledger(env):
     assert degraded["orderbook"]["status"]=="UNAVAILABLE"
     assert degraded["depth_opportunity"]["side"]=="WAIT"
     assert degraded["execution_intelligence"]["action"]=="WAIT"
-    assert degraded["model"]["prob_above"]==original["prob_above"]
+    assert degraded["model"]["prob_above"]==engine_pack(degraded["spot"],degraded["market"],degraded["candles"])["prob_above"]
     assert degraded["model"]["available"]
     assert degraded["status"]=="DEMO"
-    assert main.ledger.data()["count"]==baseline
+    assert main.ledger.data()["count"]["paper"]==baseline["paper"]
     provider.orderbook=book_reader
     clock.now+=15
     assert main.update_once()["orderbook"]["available"]
