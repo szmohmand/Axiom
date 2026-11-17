@@ -70,6 +70,9 @@ def market_snapshot(raw: dict, now: float | None = None) -> dict:
     mids = [(yb + ya) / 2] if yb is not None and ya is not None and yb <= ya else []
     if not mids and ya is not None and na is not None:
         mids = [(ya + (1 - na)) / 2]
+    # The midpoint is computed from participating traders' resting quotes.
+    # It is a market price, NOT Kalshi's own predictive-model output and NOT
+    # the objective probability of settlement. Keep it separate from forecasts.
     mid = round(mids[0], 5) if mids else None
     return {
         'ticker': ticker, 'title': raw.get('title') or 'BTC up in 15 minutes?',
@@ -77,6 +80,9 @@ def market_snapshot(raw: dict, now: float | None = None) -> dict:
         'seconds_left': max(0, round(end - now)),
         'target': target, 'target_source': 'Kalshi floor_strike' if target else 'Not yet published',
         'yes_bid': yb, 'yes_ask': ya, 'no_bid': nb, 'no_ask': na, 'market_mid': mid,
+        'market_price_source': 'participant_order_book',
+        'market_mid_role': 'yes_quote_midpoint_not_objective_probability',
+        'market_price_is_forecast': False,
         'result': str(raw.get('result') or '').lower(),
     }
 
