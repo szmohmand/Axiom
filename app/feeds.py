@@ -93,7 +93,9 @@ class LiveProvider:
             raise ValueError('Invalid order-book ticker')
         raw=self.get(f'{KALSHI}/markets/{urlquote(ticker,safe="")}/orderbook', {'depth':0})
         # Timestamp after successful GET: no false claim about exchange event time.
-        received=time.time() if now is None else float(now)
+        # True local receipt AFTER successful network response, never the
+        # poll-start timestamp passed from the main worker.
+        received=time.time()
         return normalize_orderbook(raw,ticker,received)
     def price(self):
         raw = self.get(f'{COINBASE}/products/BTC-USD/ticker')
