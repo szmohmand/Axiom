@@ -69,17 +69,33 @@ class LiveProvider:
         return response.json()
     def market(self, now=None):
         now = time.time() if now is None else now
-        payload = self.get(f'{KALSHI}/markets', {'series_ticker':'KXBTC15M','status':'open','limit':30})
-        markets = []
-        for obj in payload.get('markets', []):
+        params={'series_ticker':'KXBTC15M','status':'open','limit':30}
+        def eligible(payload):
+            markets=[]
+            for obj in payload.get('markets', []):
+                try:
+                    m=market_snapshot(obj, now)
+                    if m['seconds_left'] > 0: markets.append(m)
+                except (TypeError, ValueError):
+                    pass
+            # Never reuse an expired contract or invent a future strike.
+            return min(markets,key=lambda m:m['seconds_left']) if markets else None
+        active=eligible(self.get(f'{KALSHI}/markets',params))
+        if active:
+            return active
+        # Kalshi sometimes publishes the replacement contract after the clock
+        # boundary. One SHORT, bounded retry can bridge a temporary listing
+        # gap, but it must never turn unavailable data into a LIVE signal.
+        # Restrict this to the actual present, not synthetic/historic replays.
+        if 0 <= (now % 900) <= 90 and abs(time.time()-now) < 30:
+            time.sleep(.4)
             try:
-                m = market_snapshot(obj, now)
-                if m['seconds_left'] > 0: markets.append(m)
-            except (TypeError, ValueError):
-                pass
-        if not markets: return None
-        # Prefer current active window with nearest imminent close.
-        return sorted(markets, key=lambda m:m['seconds_left'])[0]
+                return eligible(self.get(f'{KALSHI}/markets',params))
+            except requests.RequestException:
+                # First successful empty list remains the authoritative
+                # fail-closed result; later polling attempts may recover.
+                return None
+        return None
     def orderbook(self, market, now=None):
         """Request ALL available aggregated levels (depth=0), no account key.
 
@@ -125,9 +141,17 @@ class LiveProvider:
                 data = self.get(f'{KALSHI}{path}')
                 m = data.get('market') or {}
                 result = str(m.get('result') or '').lower()
-                if result in ('yes','no') and str(m.get('status') or '').lower() in ('settled','finalized'):
+                status=str(m.get('status') or '').lower()
+                if result in ('yes','no') and status in ('settled','finalized'):
                     return result
-                return None
+                if status == 'open':
+                    # Never grade an open contract, even if a stray result
+                    # field appears. Preserve prior ungraded behavior.
+                    return None
+                # A closed/pending live-market record may lag the historical
+                # finalized record. Continue to the historical endpoint
+                # instead of prematurely returning None.
+                continue
             except requests.HTTPError as e:
                 if e.response is not None and e.response.status_code == 404: continue
                 raise

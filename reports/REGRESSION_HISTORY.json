@@ -183,6 +183,39 @@
         "tests/test_full_depth_lanes.py::test_staged_pipeline_and_failure_keep_existing_forecast_and_ledger",
         "tests/test_full_depth_lanes.py::test_mobile_ui_exposes_separate_depth_lanes"
       ]
+    },
+    {
+      "id": "A24",
+      "finding": "At a BTC15m rollover, the public open-market listing can transiently contain no eligible replacement contract; add a strictly bounded live-only retry and fail closed without reusing expired target or allowing paper/entry signals.",
+      "fixed_commit": "64b5ab4d9ed983f473b08604b524852bed2e4d4c",
+      "tests": [
+        "tests/test_rollover_brti_execution_integrity.py::test_live_provider_bounded_rollover_retry_finds_actual_new_published_market",
+        "tests/test_rollover_brti_execution_integrity.py::test_rollover_retry_stays_fail_closed_when_market_still_not_published",
+        "tests/test_rollover_brti_execution_integrity.py::test_no_rollover_retry_outside_boundary_or_for_replayed_history"
+      ]
+    },
+    {
+      "id": "A25",
+      "finding": "Settlement verification must distinguish authoritative CF Benchmarks BRTI reference windows and official Kalshi result from Coinbase proxies, and preserve pending/conflicted/missing reference data instead of inventing labels.",
+      "fixed_commit": "64b5ab4d9ed983f473b08604b524852bed2e4d4c",
+      "tests": [
+        "tests/test_rollover_brti_execution_integrity.py::test_official_5hz_brti_reconstructs_both_sixty_second_windows_without_proxy",
+        "tests/test_rollover_brti_execution_integrity.py::test_official_result_conflict_never_becomes_a_verified_winner",
+        "tests/test_rollover_brti_execution_integrity.py::test_no_invented_index_values_if_one_real_second_is_missing",
+        "tests/test_rollover_brti_execution_integrity.py::test_closed_but_not_finalized_primary_uses_historical_finalized_source",
+        "tests/test_rollover_brti_execution_integrity.py::test_authenticated_index_check_does_not_claim_success_without_credentials"
+      ]
+    },
+    {
+      "id": "A26",
+      "finding": "Gross simulated paper P&L and independently graded forecast accuracy must never be presented as executed or fee-adjusted trading profit without authenticated fill/fee evidence; quote-depth sweeps remain hypothetical.",
+      "fixed_commit": "64b5ab4d9ed983f473b08604b524852bed2e4d4c",
+      "tests": [
+        "tests/test_rollover_brti_execution_integrity.py::test_same_snapshot_walk_never_claims_genuine_trade_profit_or_fee_knowledge",
+        "tests/test_rollover_brti_execution_integrity.py::test_missing_or_wrong_contract_book_cannot_yield_executable_return",
+        "tests/test_rollover_brti_execution_integrity.py::test_paper_profit_cannot_be_mistaken_for_exchange_fill_performance",
+        "tests/test_rollover_brti_execution_integrity.py::test_dashboard_labels_real_net_as_unmeasured_and_paper_as_assumed"
+      ]
     }
   ]
 }
