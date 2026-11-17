@@ -222,3 +222,81 @@ def test_official_market_detail_prefers_finalized_historical_over_lagging_live_d
     assert m["status"] == "settled" and m["result"] == "yes"
     assert len(s.urls) == 2
     assert all(url.startswith(API + "/") for url in s.urls)
+
+
+def test_newest_unpublished_brti_hour_is_recorded_while_older_complete_contract_is_reconciled(monkeypatch):
+    from research import verify_official_brti_live as verifier
+
+    latest = _terms(ticker="KXBTC15M-26NOV171815-15",
+                    open_time="2026-11-17T18:00:00Z",
+                    close_time="2026-11-17T18:15:00Z")
+    older = _terms()
+    monkeypatch.setenv("KALSHI_API_KEY_ID", "synthetic-id-not-used")
+    monkeypatch.setenv("KALSHI_PRIVATE_KEY_PEM", "synthetic-secret-not-used")
+
+    class Session:
+        def __init__(self):
+            self.headers = {}
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            return False
+
+    monkeypatch.setattr(verifier.requests, "Session", Session)
+    monkeypatch.setattr(verifier, "_get", lambda *a, **kw: {"markets": [older, latest]})
+    monkeypatch.setattr(verifier, "_public_market",
+                        lambda session, ticker: latest if ticker == latest["ticker"] else older)
+    def hours(session, keyid, key, market):
+        if market["ticker"] == latest["ticker"]:
+            # Latest contract is finalized but current-hour index publication
+            # has no closing seconds yet. This is not a fake settlement match.
+            return [x for x in _ticks() if x["time"] // 1000 < _sec(CLOSE)], ["2026-11-17T18:00:00Z"]
+        return _ticks(), ["2026-11-17T17:00:00Z"]
+    monkeypatch.setattr(verifier, "_load_hours", hours)
+    report = verifier.audit()
+    assert report["status"] == "RECONCILED"
+    assert report["ticker"] == older["ticker"]
+    assert report["tried_contracts"] == 2
+    assert report["pending_index_publication"][0]["ticker"] == latest["ticker"]
+    assert report["pending_index_publication"][0]["closing_seconds"] < 60
+    assert report["result_consistent"] is True
+
+
+def test_actual_index_conflict_is_not_skipped_to_later_passing_contract(monkeypatch):
+    from research import verify_official_brti_live as verifier
+    latest = _terms(ticker="KXBTC15M-26NOV171815-15",
+                    open_time="2026-11-17T18:00:00Z",
+                    close_time="2026-11-17T18:15:00Z")
+    older = _terms()
+    monkeypatch.setenv("KALSHI_API_KEY_ID", "synthetic-id")
+    monkeypatch.setenv("KALSHI_PRIVATE_KEY_PEM", "synthetic-secret")
+    class Session:
+        def __init__(self):
+            self.headers={}
+        def __enter__(self):
+            return self
+        def __exit__(self,*a):
+            return False
+    monkeypatch.setattr(verifier.requests,"Session",Session)
+    monkeypatch.setattr(verifier,"_get",lambda *a,**k:{"markets":[older,latest]})
+    monkeypatch.setattr(verifier,"_public_market",
+                        lambda s,t:latest if t==latest["ticker"] else older)
+    # Complete data for the newer contract's own time windows but
+    # an official outcome that conflicts with the BRTI reconstruction.
+    later_ticks=[]
+    start=_sec(latest["open_time"])
+    stop=_sec(latest["close_time"])
+    for boundary,value in ((start,"90000"),(stop,"90100")):
+        for second in range(boundary-60,boundary):
+            later_ticks.extend({"time":second*1000+i*200,"value":value} for i in range(5))
+    called=[]
+    def hours(s,k,p,m):
+        called.append(m["ticker"])
+        return later_ticks,["2026-11-17T18:00:00Z"]
+    monkeypatch.setattr(verifier,"_load_hours",hours)
+    monkeypatch.setattr(verifier,"reconcile_contract",
+                        lambda m,t:{**reconcile_contract(m,t),"status":"CONFLICT",
+                                    "winner_verified":False,"reason":"Deliberate official conflict"})
+    result=verifier.audit()
+    assert result["status"]=="CONFLICT"
+    assert called==[latest["ticker"]]
