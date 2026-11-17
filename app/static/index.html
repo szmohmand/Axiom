@@ -85,7 +85,8 @@ button,input{font:inherit}button{cursor:pointer}button:disabled{opacity:.4;curso
       <div class="card"><div class="card-head"><div class="card-title">Execution intelligence</div><span class="pill">NO REAL ORDERS</span></div>
         <div class="label">Manual execution guidance</div><div class="signal" id="execAction">WAIT</div>
         <div class="explain" id="execReason">ENTER / WAIT guidance requires a fresh order-book snapshot. HOLD / EXIT analysis requires an explicit hypothetical position, not just a market price.</div>
-        <div class="explain">This panel does not submit trades. Estimated entry and exit prices are book-walk simulations; actual fills, fees and available size can differ.</div>
+        <div class="label">Open paper-position review (one simulated contract only)</div><div class="signal" id="paperExecAction">WAIT</div><div class="explain" id="paperExecReason">No matching open simulated position</div>
+        <div class="explain">No real orders are placed. This panel does not submit trades. Estimated entry and exit prices are book-walk simulations; actual fills, fees and available size can differ.</div>
       </div>
             <div class="card"><div class="card-head"><div class="card-title">Legacy top-quote paper screen</div><span class="submark">Top quotes only · NOT depth-gated</span></div><div class="label">Paper contract suggestion</div><div class="signal" id="opSide">WAIT</div>
         <div class="pair"><div class="info-cell"><div class="label">YES ask</div><b id="yesAsk">—</b></div><div class="info-cell"><div class="label">NO ask</div><b id="noAsk">—</b></div></div>
@@ -151,6 +152,7 @@ function view(s){latest=s;const m=s.market, f=s.model||{},o=s.opportunity||{},sc
  $('bookAskRows').innerHTML=book.available?(book.asks?.YES||[]).map(row).join('')||'<tr><td colspan="2">No YES asks</td></tr>':'<tr><td colspan="2">No reliable full depth</td></tr>';
  set('depthSide',dp.side||'WAIT','signal '+directionClass(dp.side));set('depthCost',cents(sel.ask_sweep?.average_price));set('depthEdge',pct(sel.net_estimated_model_minus_cost));
  set('depthReason',dp.reason||'Waiting for fresh independently assessed depth');set('execAction',ex.action||'WAIT','signal '+directionClass(ex.side));set('execReason',ex.reason||'No qualified order-book execution guidance');
+ const pex=s.paper_position_execution||{};set('paperExecAction',pex.action||'WAIT','signal '+directionClass(pex.side));set('paperExecReason',pex.reason||'No open simulated paper position; this does not track real Kalshi holdings');
  set('scalpSide',sc.side||'WAIT','signal '+directionClass(sc.side));set('scalpEntry',money(sc.entry));set('scalpAtr',money(sc.atr));set('scalpStop',money(sc.stop));set('scalpTarget',money(sc.target));set('scalpReason',sc.reason||'No spot setup');
  let call=(s.calls||[]).find(x=>x.ticker===m?.ticker);set('firstCall',call?`${call.side} ${pct(call.probability)}`:'WATCHING','direction '+directionClass(call?.side));set('holdTime',call?'LOCKED':s.watch?`${s.watch.held_seconds}s / 10s`:'—');
  set('gateExplanation',call?'First call is frozen for this market and will be scored against the official result.':s.watch?`Threshold crossed for ${s.watch.side}. The signal must remain over 85% for 10 seconds across fresh polls.`:'A first call is recorded only after the model stays at least 85% confident on the same side for 10 seconds.');
