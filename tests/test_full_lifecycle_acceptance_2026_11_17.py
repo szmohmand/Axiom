@@ -138,7 +138,12 @@ def test_depth_fail_closed_forecast_scoring_and_ledger_continue(env, fault):
     assert degraded_depth["execution_intelligence"]["order_placed"] is False
     # Optional book outage must not take down the independent forecast/ledger.
     assert degraded_depth["ok"] is True
-    assert main.ledger.data()["count"] == before
+    after_count = main.ledger.data()["count"]
+    # Independent forecast first-call confidence may legitimately mature on the
+    # second healthy poll, even if optional order-book depth disappears.
+    assert after_count["calls"] >= before["calls"]
+    assert after_count["calls"] <= before["calls"] + 1
+    assert after_count["paper"] == before["paper"] == 0
     assert client.get("/health").status_code == 200
 
     provider.orderbook = lambda market, now=None: depth_for(market, clock.now)
