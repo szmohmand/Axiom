@@ -68,6 +68,22 @@ After **official Kalshi settlement** is available, predictions are graded and th
 
 These scorecards do **not** automatically verify predictive alpha or choose weights. They are prerequisites for later chronological out-of-sample testing. A small winning streak or a backtest is insufficient.
 
+## Full aggregated Kalshi order book and three independent decision lanes
+
+**Forecasting is separate from contract pricing.** AXIOM's preexisting consensus of BTC spot/volatility-derived research engines is unchanged. Kalshi's trader-set quote midpoint and the full order book are NOT inputs to the winner estimate. Contract pricing cannot override or vote in the forecasting models.
+
+**Full market depth:** LiveProvider uses the public GET `/markets/{ticker}/orderbook?depth=0` REST endpoint with no API key or real order placement. It retrieves all **currently available aggregated bid price levels** and their fixed-point contract quantities for YES and NO. The server independently constructs YES asks from `1 - NO bid` and NO asks from `1 - YES bid`. It does not provide every individual order, trader identity, cancellation/trade event, or guaranteed available liquidity. The book has local received-at timestamp and market ticker; missing, malformed, crossed, stale, or mismatched books cause the new opportunity and execution lanes to WAIT.
+
+**Opportunity detection (new, read-only):** `app/depth_intelligence.py` compares AXIOM's independent estimate to the participant order book, using a hypothetical **10-contract book walk** by default instead of presuming all contracts can be bought at best ask. Computes size-adjusted average/worst entry price, spread, displayed size, estimated fees, potential model-price discrepancy, and explicit WAIT/YES/NO candidate. Unvalidated forecast probabilities, unverified execution costs and unobservable future fills prevent any proven-alpha claim. Price/quote inputs affect the opportunity, not the forecast.
+
+**Execution intelligence (new, read-only):** Separate `execution_intelligence` describes ENTER or WAIT for fresh, sized entry candidates. `paper_position_execution` separately assesses a **one-contract simulated paper position**, if present, to show HOLD or a hypothetical EXIT at size-adjusted resting bids. This cannot read personal/real Kalshi portfolio positions, and it **never** creates/updates real orders. The offline demo includes a clearly labeled synthetic depth feed.
+
+**Dashboard/API:** `GET /api/state` includes `orderbook` with all available levels (plus `best`, level counts, volumes, 5-cent bid imbalance), `depth_opportunity`, `execution_intelligence`, and optional `paper_position_execution`. Mobile UI shows full available YES bid and implied YES ask ladders, the new sized opportunity, and separated execution advice.
+
+**Backward compatibility:** Existing `opportunity` and existing one-contract automatic/manual **paper ledger** remain unchanged and are explicitly labeled a *legacy top-quote paper screen*. No existing positions, historical grades, forecasts, or scoring records were rewritten. The new depth execution recommendations do **not** drive those legacy simulated entries; their entry/exit prices remain hypothetical. This distinction prevents accidentally claiming historical paper trades were full-depth matched.
+
+**Latency and future work:** REST book is a point-in-time snapshot re-polled by AXIOM; it is not a WebSocket update stream and cannot attribute net level changes to cancellations versus trades. Before real or high-speed trading, separately validate authenticated/live exchange connectivity and rate limits, WebSocket snapshot/delta continuity, actual fee schedule, fill availability, risk limits and out-of-sample signal performance. No auto-trading authorization exists.
+
 ## Paper trade handling
 
 - Automatic paper entries are optional (`AUTO_PAPER=1`) and capped to one synthetic entry per market. Default in the sample configuration remains enabled, but no actual orders are placed.
