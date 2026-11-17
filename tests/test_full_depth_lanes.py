@@ -142,6 +142,9 @@ def test_position_exit_hold_and_no_depth_failure():
     assert aligned["action"]=="HOLD" and not aligned["order_placed"]
     assert reversed_["action"]=="EXIT" and not reversed_["order_placed"]
     assert aligned["estimated_exit_price"]==pytest.approx(.60)
+    neutral=execution_guidance(None,{"available":True,"side":"WAIT","prob_above":.5},m,b,12345.,
+                               position={"side":"YES","contracts":10})
+    assert neutral["action"]=="WAIT" and not neutral["order_placed"]
     denied=execution_guidance(None,forecast(.10),m,b,12345.,
                                position={"side":"NO","contracts":1000})
     assert denied["action"]=="WAIT"
@@ -172,6 +175,7 @@ def test_full_depth_endpoint_is_GET_only_without_authentication():
     book=p.orderbook(market(),now=12345.)
     assert requests==[(f"{KALSHI}/markets/{TICKER}/orderbook",{"depth":0})]
     assert book["available"] and book["levels"]=={"YES":1,"NO":1}
+    assert book["received_at"]!=12345., "Receipt time must be AFTER the real HTTP response"
     p.session.close()
 
 
