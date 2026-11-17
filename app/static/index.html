@@ -69,7 +69,25 @@ button,input{font:inherit}button{cursor:pointer}button:disabled{opacity:.4;curso
         <div class="pair"><div class="info-cell"><div class="label">Distance / volatility (z)</div><b id="shadowZ">—</b></div><div class="info-cell"><div class="label">Real 1m bars used</div><b id="shadowBars">—</b></div></div>
         <div id="shadowReason" class="explain">Experimental reference only. Does not affect the forecast or trade decisions.</div>
       </div>
-      <div class="card"><div class="card-head"><div class="card-title">Contract opportunity</div><span class="submark">Compare model vs quote</span></div><div class="label">Paper contract suggestion</div><div class="signal" id="opSide">WAIT</div>
+<div class="card"><div class="card-head"><div class="card-title">Kalshi · full available order-book depth</div><span class="pill">AGGREGATED BIDS</span></div>
+        <div class="label" id="bookStatus">Waiting for full order book</div>
+        <div class="pair"><div class="info-cell"><div class="label">YES bid levels</div><b id="bookYesLevels">—</b></div><div class="info-cell"><div class="label">NO bid levels</div><b id="bookNoLevels">—</b></div></div>
+        <div class="pair"><div class="info-cell"><div class="label">Bid volume imbalance · within 5¢</div><b id="bookImbalance">—</b></div><div class="info-cell"><div class="label">Snapshot source</div><b>Kalshi order book</b></div></div>
+        <div class="label">YES bids · all levels</div><div class="table-wrap" style="max-height:145px;overflow-y:auto"><table class="data-table"><thead><tr><th>Price</th><th>Contracts</th></tr></thead><tbody id="bookBidRows"><tr><td colspan="2">No depth yet</td></tr></tbody></table></div>
+        <div class="label">YES asks · derived from NO bids, all levels</div><div class="table-wrap" style="max-height:145px;overflow-y:auto"><table class="data-table"><thead><tr><th>Price</th><th>Contracts</th></tr></thead><tbody id="bookAskRows"><tr><td colspan="2">No depth yet</td></tr></tbody></table></div>
+        <div class="explain">Kalshi publishes aggregated resting YES/NO bids per price. Asks are the opposite bid's $1 complement. Individual order identities and between-poll changes are not visible. Displayed volume can disappear before a manual trade.</div>
+      </div>
+      <div class="card"><div class="card-head"><div class="card-title">Depth-based opportunity detection</div><span class="pill">NOT THE FORECAST</span></div>
+        <div class="label">Independent model vs participant asking prices</div><div class="signal" id="depthSide">WAIT</div>
+        <div class="pair"><div class="info-cell"><div class="label">Size-adjusted hypothetical entry</div><b id="depthCost">—</b></div><div class="info-cell"><div class="label">Estimated after-fee discrepancy</div><b id="depthEdge">—</b></div></div>
+        <div class="explain" id="depthReason">Waiting for complete, fresh aggregated liquidity and independent forecast.</div>
+      </div>
+      <div class="card"><div class="card-head"><div class="card-title">Execution intelligence</div><span class="pill">NO REAL ORDERS</span></div>
+        <div class="label">Manual execution guidance</div><div class="signal" id="execAction">WAIT</div>
+        <div class="explain" id="execReason">ENTER / WAIT guidance requires a fresh order-book snapshot. HOLD / EXIT analysis requires an explicit hypothetical position, not just a market price.</div>
+        <div class="explain">This panel does not submit trades. Estimated entry and exit prices are book-walk simulations; actual fills, fees and available size can differ.</div>
+      </div>
+            <div class="card"><div class="card-head"><div class="card-title">Legacy top-quote paper screen</div><span class="submark">Top quotes only · NOT depth-gated</span></div><div class="label">Paper contract suggestion</div><div class="signal" id="opSide">WAIT</div>
         <div class="pair"><div class="info-cell"><div class="label">YES ask</div><b id="yesAsk">—</b></div><div class="info-cell"><div class="label">NO ask</div><b id="noAsk">—</b></div></div>
         <div class="pair"><div class="info-cell"><div class="label">Estimated edge after illustrative fee</div><b id="edge">—</b></div><div class="info-cell"><div class="label">Paper mode</div><b id="autoPaper">—</b></div></div>
         <div class="explain" id="opReason">AXIOM compares its estimate with participant ask prices; apparent value is unverified and fills are not guaranteed.</div>
@@ -124,6 +142,15 @@ function view(s){latest=s;const m=s.market, f=s.model||{},o=s.opportunity||{},sc
  const above=f.available?f.prob_above:null;set('forecastSide',f.available?f.side:'WAIT','direction '+directionClass(f.side));set('above',pct(above));set('below',pct(f.available?f.prob_below:null));$('probBar').style.width=f.available?(100*above).toFixed(1)+'%':'50%';set('forecastReason',f.reason||'Insufficient data');
  set('yesAsk',cents(m?.yes_ask));set('noAsk',cents(m?.no_ask));set('opSide',o.side||'WAIT','signal '+directionClass(o.side));set('edge',pct(o.edge));set('autoPaper',s.paper_auto_enabled?'ON':'OFF');set('opReason',o.reason||'No available research opportunity');
  const sh=s.research_shadow||{};set('shadowSide',sh.available?sh.side:'WAIT','signal '+directionClass(sh.side));set('shadowZ',fmt(sh.z_score,3));set('shadowBars',sh.vol_minutes??'—');set('shadowReason',sh.reason||'Research model unavailable; not used for trading decisions');
+ const book=s.orderbook||{},dp=s.depth_opportunity||{},ex=s.execution_intelligence||{},sel=dp.selected||{};
+ set('bookStatus',book.available?`Current aggregated price levels · ${(book.received_at?new Date(book.received_at*1000).toLocaleTimeString():'time unavailable')}`:`WAIT · ${book.reason||'No valid order-book depth'}`);
+ set('bookYesLevels',book.available?(book.levels?.YES??0):'—');set('bookNoLevels',book.available?(book.levels?.NO??0):'—');
+ set('bookImbalance',book.available?pct(book.book_imbalance_5c):'—');
+ const row=(x)=>`<tr><td>${cents(x.price)}</td><td>${fmt(x.size,2)}</td></tr>`;
+ $('bookBidRows').innerHTML=book.available?(book.bids?.YES||[]).map(row).join('')||'<tr><td colspan="2">No YES bids</td></tr>':'<tr><td colspan="2">No reliable full depth</td></tr>';
+ $('bookAskRows').innerHTML=book.available?(book.asks?.YES||[]).map(row).join('')||'<tr><td colspan="2">No YES asks</td></tr>':'<tr><td colspan="2">No reliable full depth</td></tr>';
+ set('depthSide',dp.side||'WAIT','signal '+directionClass(dp.side));set('depthCost',cents(sel.ask_sweep?.average_price));set('depthEdge',pct(sel.net_estimated_model_minus_cost));
+ set('depthReason',dp.reason||'Waiting for fresh independently assessed depth');set('execAction',ex.action||'WAIT','signal '+directionClass(ex.side));set('execReason',ex.reason||'No qualified order-book execution guidance');
  set('scalpSide',sc.side||'WAIT','signal '+directionClass(sc.side));set('scalpEntry',money(sc.entry));set('scalpAtr',money(sc.atr));set('scalpStop',money(sc.stop));set('scalpTarget',money(sc.target));set('scalpReason',sc.reason||'No spot setup');
  let call=(s.calls||[]).find(x=>x.ticker===m?.ticker);set('firstCall',call?`${call.side} ${pct(call.probability)}`:'WATCHING','direction '+directionClass(call?.side));set('holdTime',call?'LOCKED':s.watch?`${s.watch.held_seconds}s / 10s`:'—');
  set('gateExplanation',call?'First call is frozen for this market and will be scored against the official result.':s.watch?`Threshold crossed for ${s.watch.side}. The signal must remain over 85% for 10 seconds across fresh polls.`:'A first call is recorded only after the model stays at least 85% confident on the same side for 10 seconds.');
