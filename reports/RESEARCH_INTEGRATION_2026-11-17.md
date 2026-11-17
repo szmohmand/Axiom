@@ -36,3 +36,17 @@ Neither success establishes statistically validated alpha, real-life fill assump
 - Shadow signals cannot vote or drive trades without a separate evidence-based change and complete regression verification.
 
 This is a first incremental research integration, not an assertion of a completed or profitable bot, or exhaustive review of every research archive.
+
+
+## Additional exact-paired 180-day volatility study (2026-11-17)
+
+The earlier 16-setting summaries had *different* sample coverage for each volatility horizon. A follow-up read-only comparison used the archived minute-end BRTI records and separately archived Kalshi official settlement labels, counting each contract once per stage and comparing candidate histories on EXACT same contracts. Each estimate used fully observed completed minute returns before the target time. The stage remaining times were 13, 10, 5 and 2 minutes. Day-block bootstrap: 1,000 resamples, UTC calendar-day blocks; these results still do not certify actual strike first-publication or real-time index delivery.
+
+Paired Brier gain for the 60-minute memory relative to the 15-minute version:
+- 13m: n=16,305; +0.000164, 95% day-block CI [-0.000427,+0.000775], not established.
+- 10m: n=16,331; +0.001498, 95% CI [+0.000728,+0.002186], favorable in this retrospective experiment.
+- 5m: n=16,318; +0.000917, 95% CI [+0.000184,+0.001640], favorable in this retrospective experiment.
+- 2m: n=16,314; +0.000118, 95% CI [-0.000384,+0.000618], not established.
+
+Comparisons of 60 versus 30 minutes had intervals overlapping zero at all four stages, so no claim of superiority to the 30-minute option is justified. These are 16 paired config comparisons on reused outcome periods; multiple comparisons and target/publication timing remain limitations. The serialized reproducible numerical results are in companion local artifact AXIOM_Paired_180Day_Volatility_Memory_2026-11-17.json. No candidate has been promoted into voting or trading.
+
