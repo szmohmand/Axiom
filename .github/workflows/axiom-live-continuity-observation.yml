@@ -32,6 +32,7 @@ jobs:
           duration=16*60
           interval=30
           samples=0
+          depth_available_samples=0
           errors=[]
           tickers=[]
           qualities={}
@@ -46,6 +47,12 @@ jobs:
                   state=main.update_once(now)
                   health=main.health()
                   api=main.get_state()
+                  presented=json.loads(api.body)
+                  book=state.get('orderbook') or {}
+                  depth=state.get('depth_opportunity') or {}
+                  execution=state.get('execution_intelligence') or {}
+                  if book.get('available'):
+                      depth_available_samples+=1
                   quality=state.get('candle_quality') or {}
                   status=quality.get('status','MISSING')
                   qualities[status]=qualities.get(status,0)+1
@@ -59,6 +66,8 @@ jobs:
                       'health_http':health.status_code==200,
                       'state_http':api.status_code==200,
                       'no_auto_paper':main.AUTO_PAPER is False,
+                      'actual_profit_not_fabricated':(presented.get('execution_evidence',{}).get('realized_net_profit_usd') is None and presented.get('execution_evidence',{}).get('authenticated_fill_records')==0),
+                      'depth_integrity':(book.get('ticker')==state['market']['ticker'] if book.get('available') and state.get('market') else (not book.get('available') and depth.get('status')=='WAIT' and execution.get('action')=='WAIT')),
                       'scalp':state.get('scalp',{}).get('side') in ('LONG','SHORT','WAIT'),
                       'opportunity':state.get('opportunity',{}).get('side') in ('YES','NO','WAIT'),
                   }
@@ -78,6 +87,8 @@ jobs:
                           and state.get('errors')=={'kalshi':'No active Kalshi BTC15M market available'}
                           and not state.get('ok') and health.status_code==503
                           and state['opportunity']['side']=='WAIT'
+                          and depth.get('status')=='WAIT'
+                          and execution.get('action')=='WAIT'
                           and not state['model'].get('available')
                           and main.AUTO_PAPER is False)
                       if expected_rollover:
@@ -98,12 +109,14 @@ jobs:
               if remaining>1:time.sleep(min(interval,remaining))
               else:break
           result={'kind':'summary','sample_count':samples,'ticker_count':len(set(tickers)),
+                  'full_depth_samples':depth_available_samples,
                   'unique_tickers':sorted(set(tickers))[:8], 'quality_counts':qualities,
                   'failed_sample_count':len(errors),'safe_rollover_transients':safe_rollover_events,
                   'failures':errors[:12],
                   'no_real_orders':True,'no_auto_paper':True}
           print(json.dumps(result,sort_keys=True),flush=True)
           assert samples>=30, 'insufficient 16-minute coverage'
+          assert depth_available_samples>=1, 'never observed any valid real order-book depth'
           assert len(set(tickers))>=2, 'market rollover not observed'
           assert len(safe_rollover_events)<=4, 'unexpectedly high Kalshi rollover downtime'
           assert not errors, 'one or more live application/health/integrity samples failed'
