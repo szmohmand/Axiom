@@ -18,6 +18,9 @@ from .engine import scalp_signal
 from .ensemble import engine_pack, execution_screen
 from .storage import Ledger
 from .settlement_research import shadow_forecast_from_candles, unavailable as unavailable_research_shadow
+from .orderbook import unavailable as unavailable_book
+from .depth_intelligence import (analyze_opportunities, execution_guidance,
+                                  unavailable_opportunity, unavailable_execution)
 
 ROOT = Path(__file__).parent
 DEMO = os.environ.get('DEMO_MODE', '0') == '1'
@@ -31,6 +34,9 @@ state_lock = threading.RLock()
 state = {'mode':'DEMO' if DEMO else 'LIVE','last_attempt':None,'last_success':None,
          'market':None,'spot':None,'model':None,'engines':[],'scalp':None,'opportunity':None,'candles':[],
          'research_shadow':unavailable_research_shadow('No completed research observation yet'),
+         'orderbook':unavailable_book(None,'No aggregated market depth yet'),
+         'depth_opportunity':unavailable_opportunity('No independently evaluated depth yet'),
+         'execution_intelligence':unavailable_execution('No independently evaluated depth yet'),
          'errors':{},'paper_auto_enabled':AUTO_PAPER,'watch':None,'candle_quality':None,'status':'STARTING',
          'settlement':{'status':'NOT_CHECKED','last_attempt':None,'last_success':None,
                        'checked':0,'failed':0}}
@@ -87,6 +93,8 @@ def _view_locked(now):
         # outage even if they were calculated before the failure became known.
         data['opportunity'] = {'side':'WAIT','edge':None,'entry_price':None,
                                'reason':'System not healthy; paper opportunities paused'}
+        data['depth_opportunity'] = unavailable_opportunity('System unhealthy; no depth-based entry advice')
+        data['execution_intelligence'] = unavailable_execution('System unhealthy; no execution guidance')
     if 'worker_stale' in data['errors']:
         data['research_shadow'] = unavailable_research_shadow('Market update worker is stale')
         # Preserve prior historical rows but never advertise a cached direction
@@ -136,6 +144,21 @@ def update_once(now=None):
         errors['coinbase_candles']=_error_message(e); candles=[]
     model={'available':False,'side':'WAIT','prob_above':None,'reason':'No active market or input data'}
     scalp=scalp_signal(candles,spot)
+    book=unavailable_book(market.get('ticker') if market else None,
+                          'No active market or validated full depth yet')
+    if market is not None:
+        book_reader=getattr(provider,'orderbook',None)
+        if callable(book_reader):
+            try:
+                book=book_reader(market,now)
+            except Exception as e:
+                # Depth failure affects depth intelligence, not independent
+                # forecast, ledger, settlement, or BTC spot scalping.
+                book=unavailable_book(market['ticker'],_error_message(e))
+        else:
+            book=unavailable_book(market['ticker'],'Provider has no full-depth API')
+    depth_op=unavailable_opportunity('Independent forecast or depth not available')
+    depth_exec=unavailable_execution('No verified live order-book opportunity')
     op={'side':'WAIT','edge':None,'entry_price':None,'reason':'No healthy market forecast'}
     watch=None
     # Experimental research candidate is a shadow output only. Its state never
@@ -156,6 +179,15 @@ def update_once(now=None):
         model=engine_pack(spot,market,candles)
         if not model.get('available') and not errors:
             errors['forecast']=model.get('reason','Model unavailable')
+        if not errors and not persistent_faults:
+            try:
+                depth_op=analyze_opportunities(model,market,book,now)
+                depth_exec=execution_guidance(depth_op,model,market,book,now)
+            except Exception as e:
+                # Optional, non-executable execution intelligence cannot break
+                # the original ledger or turn an unknown depth into BUY.
+                depth_op=unavailable_opportunity('Depth analysis failed: '+_error_message(e))
+                depth_exec=unavailable_execution('Depth analysis failed')
         if not errors and model.get('available'):
             if not persistent_faults:
                 op=execution_screen(model,market)
@@ -188,6 +220,8 @@ def update_once(now=None):
             'market':market,'spot':spot,'candles':candles[-70:], 'model':model,'scalp':scalp,
             'opportunity':op,'engines':model.get('engines',[]),'errors':errors,'watch':watch,
              'research_shadow':research_shadow,
+             'orderbook':book,'depth_opportunity':depth_op,
+             'execution_intelligence':depth_exec,
             'candle_quality':({'status':'UNAVAILABLE','reason':errors['coinbase_candles']}
                               if 'coinbase_candles' in errors else getattr(provider,'candle_quality',None))})
         _refresh_status_locked()
@@ -365,7 +399,7 @@ def get_state():
     # A token alone is not permission to record a position against stale or
     # broken market data. The UI and paper endpoint share the same readiness rule.
     d['manual_paper_available']=bool(ADMIN_TOKEN) and d['ok'] and bool(d.get('market'))
-    d['disclaimer']='Experimental models and gross simulated trading only. Coinbase is NOT the BRTI settlement index.'
+    d['disclaimer']='Experimental models and gross simulated trading only. Coinbase is NOT the BRTI settlement index. Full Kalshi aggregated depth is a one-time participant-order snapshot; depth guidance never places an order.'
     return JSONResponse(d,headers={'Cache-Control':'no-store'})
 
 class PaperRequest(BaseModel):
