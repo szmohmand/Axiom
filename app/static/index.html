@@ -64,6 +64,11 @@ button,input{font:inherit}button{cursor:pointer}button:disabled{opacity:.4;curso
         <div class="progress"><div id="probBar"></div></div><div class="pair"><div class="info-cell"><div class="label">ABOVE likelihood</div><b id="above">—</b></div><div class="info-cell"><div class="label">BELOW likelihood</div><b id="below">—</b></div></div>
         <div class="explain" id="forecastReason">Waiting for enough data. This forecast is not independently calibrated.</div>
       </div>
+      <div class="card"><div class="card-head"><div class="card-title">Normalized-distance research</div><span class="pill">SHADOW · NON-VOTING</span></div>
+        <div class="label">BTC proxy study · not the BRTI index</div><div id="shadowSide" class="signal">WAIT</div>
+        <div class="pair"><div class="info-cell"><div class="label">Distance / volatility (z)</div><b id="shadowZ">—</b></div><div class="info-cell"><div class="label">Real 1m bars used</div><b id="shadowBars">—</b></div></div>
+        <div id="shadowReason" class="explain">Experimental reference only. Does not affect the forecast or trade decisions.</div>
+      </div>
       <div class="card"><div class="card-head"><div class="card-title">Contract opportunity</div><span class="submark">Compare model vs quote</span></div><div class="label">Paper contract suggestion</div><div class="signal" id="opSide">WAIT</div>
         <div class="pair"><div class="info-cell"><div class="label">YES ask</div><b id="yesAsk">—</b></div><div class="info-cell"><div class="label">NO ask</div><b id="noAsk">—</b></div></div>
         <div class="pair"><div class="info-cell"><div class="label">Model edge, gross</div><b id="edge">—</b></div><div class="info-cell"><div class="label">Paper mode</div><b id="autoPaper">—</b></div></div>
@@ -118,6 +123,7 @@ function view(s){latest=s;const m=s.market, f=s.model||{},o=s.opportunity||{},sc
  set('distance',Number.isFinite(s.spot)&&Number.isFinite(m?.target)?(s.spot-m.target>=0?'+':'')+money(s.spot-m.target):'—');set('vol',f.sigma_1m!=null?pct(f.sigma_1m):'—');set('candles',s.candles?.length||0);
  const above=f.available?f.prob_above:null;set('forecastSide',f.available?f.side:'WAIT','direction '+directionClass(f.side));set('above',pct(above));set('below',pct(f.available?f.prob_below:null));$('probBar').style.width=f.available?(100*above).toFixed(1)+'%':'50%';set('forecastReason',f.reason||'Insufficient data');
  set('yesAsk',cents(m?.yes_ask));set('noAsk',cents(m?.no_ask));set('opSide',o.side||'WAIT','signal '+directionClass(o.side));set('edge',pct(o.edge));set('autoPaper',s.paper_auto_enabled?'ON':'OFF');set('opReason',o.reason||'No available research opportunity');
+ const sh=s.research_shadow||{};set('shadowSide',sh.available?sh.side:'WAIT','signal '+directionClass(sh.side));set('shadowZ',fmt(sh.z_score,3));set('shadowBars',sh.vol_minutes??'—');set('shadowReason',sh.reason||'Research model unavailable; not used for trading decisions');
  set('scalpSide',sc.side||'WAIT','signal '+directionClass(sc.side));set('scalpEntry',money(sc.entry));set('scalpAtr',money(sc.atr));set('scalpStop',money(sc.stop));set('scalpTarget',money(sc.target));set('scalpReason',sc.reason||'No spot setup');
  let call=(s.calls||[]).find(x=>x.ticker===m?.ticker);set('firstCall',call?`${call.side} ${pct(call.probability)}`:'WATCHING','direction '+directionClass(call?.side));set('holdTime',call?'LOCKED':s.watch?`${s.watch.held_seconds}s / 10s`:'—');
  set('gateExplanation',call?'First call is frozen for this market and will be scored against the official result.':s.watch?`Threshold crossed for ${s.watch.side}. The signal must remain over 85% for 10 seconds across fresh polls.`:'A first call is recorded only after the model stays at least 85% confident on the same side for 10 seconds.');
