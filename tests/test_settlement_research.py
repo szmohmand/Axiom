@@ -131,3 +131,14 @@ def test_shadow_exception_does_not_interrupt_existing_poll(monkeypatch,tmp_path)
     assert state['model']==engine_pack(c[-1]['close'],m,c)
     assert state['research_shadow']['side']=='WAIT'
     assert 'Research model calculation failed' in state['research_shadow']['reason']
+
+
+def test_dashboard_exposes_nonvoting_shadow_without_changing_trade_controls():
+    from pathlib import Path
+    markup = (Path(__file__).resolve().parents[1] / 'app' / 'static' / 'index.html').read_text()
+    for identifier in ('shadowSide', 'shadowZ', 'shadowBars', 'shadowReason'):
+        assert 'id="' + identifier + '"' in markup
+        assert "set('" + identifier + "'" in markup
+    assert 'SHADOW · NON-VOTING' in markup
+    assert 'BTC proxy study · not the BRTI index' in markup
+
