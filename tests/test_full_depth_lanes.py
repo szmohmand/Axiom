@@ -167,13 +167,17 @@ def test_full_depth_endpoint_is_GET_only_without_authentication():
     from app.feeds import LiveProvider, KALSHI
     p=LiveProvider()
     requests=[]
-    def fake_get(url, params=None):
-        requests.append((url,params))
-        return {"orderbook_fp":{"yes_dollars":[["0.54","12"]],
-                                "no_dollars":[["0.40","30"]]}}
-    p.get=fake_get
+    class FakeResponse:
+        def raise_for_status(self): return None
+        def json(self):
+            return {"orderbook_fp":{"yes_dollars":[["0.54","12"]],
+                                    "no_dollars":[["0.40","30"]]}}
+    def fake_get(url, params=None, timeout=None):
+        requests.append((url,params,timeout))
+        return FakeResponse()
+    p.session.get=fake_get
     book=p.orderbook(market(),now=12345.)
-    assert requests==[(f"{KALSHI}/markets/{TICKER}/orderbook",{"depth":0})]
+    assert requests==[(f"{KALSHI}/markets/{TICKER}/orderbook",{"depth":0},2)]
     assert book["available"] and book["levels"]=={"YES":1,"NO":1}
     assert book["received_at"]!=12345., "Receipt time must be AFTER the real HTTP response"
     p.session.close()
