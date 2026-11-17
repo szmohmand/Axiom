@@ -19,6 +19,7 @@ from .ensemble import engine_pack, execution_screen
 from .storage import Ledger
 from .settlement_research import shadow_forecast_from_candles, unavailable as unavailable_research_shadow
 from .orderbook import unavailable as unavailable_book
+from .execution_evidence import examine_liquidity
 from .depth_intelligence import (analyze_opportunities, execution_guidance,
                                   unavailable_opportunity, unavailable_execution)
 
@@ -388,6 +389,7 @@ def get_state():
             state['errors']['ledger_read']=_error_message(e)
             _refresh_status_locked()
             d=_view_locked(now)
+        d['execution_evidence']=examine_liquidity(d.get('orderbook'), d.get('market'),now)
         d['engine_scores']={'status':'UNAVAILABLE','samples':None,'scores':[]}
         d['ledger_available']=False
         d['manual_paper_available']=False
@@ -413,6 +415,7 @@ def get_state():
                 except Exception:
                     d['paper_position_execution']=unavailable_execution('Paper position depth review unavailable')
                 break
+    d['execution_evidence']=examine_liquidity(d.get('orderbook'), d.get('market'),now)
     d['engine_scores']=scores
     d['ledger_available']=True
     d['server_time']=now
