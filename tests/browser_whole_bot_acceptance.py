@@ -63,7 +63,7 @@ def run():
                     page.on("pageerror",lambda err: script_errors.append(str(err)))
                     page.goto(base+"/", wait_until="networkidle",timeout=30000)
                     page.wait_for_function(
-                        "() => document.querySelector('#marketTicker').textContent.includes('KXBTC15M-DEMO')",
+                        "() => document.querySelector('#marketTicker').textContent.trim().startsWith('DEMO-')",
                         timeout=15000
                     )
                     page.wait_for_function(
