@@ -29,6 +29,21 @@ On an iPhone/iPad, use a **new, separate hosting service** deployed from a **new
 
 **This does not mean all 17 public repositories have been combined or installed.** The two MIT methods above are genuine source-informed integrations into a working application. The research catalog includes other projects for future license, compatibility, data-feed, and outcome reviews; it is optional and not loaded into the app.
 
+## Contract price versus forecast: mandatory separation
+
+**Kalshi is not running AXIOM's forecasting model.** YES/NO contract prices emerge from orders placed by traders and market makers. A 70-cent YES quote midpoint is a market price, **not** an official Kalshi prediction that YES will win 70% of the time, and **not** a guaranteed true probability.
+
+AXIOM therefore maintains four separate roles:
+
+1. **Market data:** Kalshi supplies the published target, live YES/NO participant bid/ask quotes, and official settled result. `market_mid` is an order-book YES quote midpoint used for scoring comparison; it never votes in the forecast. The legacy `kalshi_market` identifier in scored snapshots represents this **non-voting quote benchmark**, not a Kalshi forecasting algorithm.
+2. **Independent experimental forecast:** BTC/volatility-based engines and their consensus estimate ABOVE/BELOW without using YES/NO contract prices as forecasting inputs. The research shadow is also non-voting. Changing quoted prices alone cannot change the forecast.
+3. **Opportunity comparison:** The independently estimated probability is compared to participant **ask** prices with illustrative fees. A model-minus-quote difference is **not** verified mispricing, guaranteed profit, or proven alpha. Fill size, slippage, and date-specific fee rules require separate validation.
+4. **Settlement:** The official Kalshi market result determines grading, not the contract price or Coinbase spot. Historical quote-versus-forecast Brier comparisons evaluate descriptive probability skill, not actual trading returns.
+
+**Compatibility:** `market_prob` and `alpha_vs_market` are legacy API/database fields: the former stores the participant YES midpoint; the latter represents experimental model-minus-midpoint difference. Neither is a Kalshi-issued forecast or validated investment alpha. Additional fields (`market_price_source`, `market_mid_role`, `market_price_is_forecast`, `forecast_minus_quote_mid`, `quote_discrepancy_is_validated_alpha`) document their true meaning. The dashboard renders quote midpoints in cents and model estimates as uncalibrated percentages.
+
+Permanent regression suite `tests/test_market_quote_is_not_forecast.py` checks forecast invariance when participant quotes change and verifies that bid/ask prices still affect hypothetical opportunity assessments.
+
 ## How the combined forecast works
 
 1. Read a live open `KXBTC15M` market, the official Kalshi target where published, and Coinbase BTC spot/candles (a **proxy**, not settlement-index BRTI).
