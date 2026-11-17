@@ -91,7 +91,12 @@ class LiveProvider:
         ticker=market['ticker']
         if '/' in ticker or '?' in ticker or '#' in ticker:
             raise ValueError('Invalid order-book ticker')
-        raw=self.get(f'{KALSHI}/markets/{urlquote(ticker,safe="")}/orderbook', {'depth':0})
+        # Optional depth must never consume the 9-second critical data
+        # timeout; bound its additional latency to 2 seconds.
+        response=self.session.get(f'{KALSHI}/markets/{urlquote(ticker,safe="")}/orderbook',
+                                  params={'depth':0}, timeout=2)
+        response.raise_for_status()
+        raw=response.json()
         # Timestamp after successful GET: no false claim about exchange event time.
         # True local receipt AFTER successful network response, never the
         # poll-start timestamp passed from the main worker.
