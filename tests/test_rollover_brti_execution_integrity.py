@@ -183,3 +183,42 @@ def test_dashboard_labels_real_net_as_unmeasured_and_paper_as_assumed():
     assert "Real net P&L: NOT MEASURED" in s
     assert "Before fees" in s
     assert "Assumed quoted-ask fill" in s
+
+
+def test_authenticated_index_check_does_not_claim_success_without_credentials(monkeypatch):
+    from research.verify_official_brti_live import audit
+    monkeypatch.delenv("KALSHI_API_KEY_ID", raising=False)
+    monkeypatch.delenv("KALSHI_PRIVATE_KEY_PEM", raising=False)
+    r = audit()
+    assert r["status"] == "NOT_VERIFIED"
+    assert r["real_orders"] is False
+    assert r["verified_trade_profit"] is False
+
+
+def test_official_market_detail_prefers_finalized_historical_over_lagging_live_detail():
+    from research.verify_official_brti_live import _public_market, API
+
+    class Response:
+        status_code = 200
+        content = b"{}"
+        def __init__(self, status, result):
+            self.payload = {"market": {**_terms(), "status": status, "result": result}}
+        def raise_for_status(self):
+            return None
+        def json(self):
+            return self.payload
+
+    class Session:
+        def __init__(self):
+            self.urls = []
+        def get(self, url, params=None, headers=None, timeout=None):
+            self.urls.append(url)
+            if "/historical/" in url:
+                return Response("settled", "yes")
+            return Response("closed", "yes")
+
+    s = Session()
+    m = _public_market(s, TICKER)
+    assert m["status"] == "settled" and m["result"] == "yes"
+    assert len(s.urls) == 2
+    assert all(url.startswith(API + "/") for url in s.urls)
