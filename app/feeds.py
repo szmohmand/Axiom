@@ -4,6 +4,7 @@ from datetime import datetime, timezone, timedelta
 from urllib.parse import quote as urlquote
 import requests
 from .engine import normalize_candles, market_snapshot, numeric
+from .orderbook import normalize_orderbook
 
 KALSHI = 'https://external-api.kalshi.com/trade-api/v2'
 COINBASE = 'https://api.exchange.coinbase.com'
@@ -79,6 +80,21 @@ class LiveProvider:
         if not markets: return None
         # Prefer current active window with nearest imminent close.
         return sorted(markets, key=lambda m:m['seconds_left'])[0]
+    def orderbook(self, market, now=None):
+        """Request ALL available aggregated levels (depth=0), no account key.
+
+        This is a single REST snapshot, not a WebSocket history and not
+        visibility into individual user orders or live fills.
+        """
+        if not isinstance(market, dict) or not str(market.get('ticker','')).startswith('KXBTC15M-'):
+            raise ValueError('Full depth requires a valid BTC15m market')
+        ticker=market['ticker']
+        if '/' in ticker or '?' in ticker or '#' in ticker:
+            raise ValueError('Invalid order-book ticker')
+        raw=self.get(f'{KALSHI}/markets/{urlquote(ticker,safe="")}/orderbook', {'depth':0})
+        # Timestamp after successful GET: no false claim about exchange event time.
+        received=time.time() if now is None else float(now)
+        return normalize_orderbook(raw,ticker,received)
     def price(self):
         raw = self.get(f'{COINBASE}/products/BTC-USD/ticker')
         p = numeric(raw.get('price'))
@@ -131,6 +147,21 @@ class DemoProvider:
     def _value(self, t):
         import math
         return self.seed + 200*math.sin(t/180) + 120*math.sin(t/80) + 25*math.sin(t/13)
+    def orderbook(self, market, now=None):
+        """Explicitly synthetic aggregated depth for offline demonstration only."""
+        from decimal import Decimal
+        t=time.time() if now is None else float(now)
+        def levels(top):
+            if top is None: return []
+            p=Decimal(str(top))
+            return [[str(p-Decimal('0.01')*i),str(10+15*i)]
+                    for i in range(3,-1,-1) if Decimal('0')<p-Decimal('0.01')*i<Decimal('1')]
+        payload={'orderbook_fp':{'yes_dollars':levels(market.get('yes_bid')),
+                                 'no_dollars':levels(market.get('no_bid'))}}
+        out=normalize_orderbook(payload,market['ticker'],t)
+        out['source']='synthetic_demo_orderbook'
+        out['reason']='SYNTHETIC aggregated depth; not exchange liquidity'
+        return out
     def price(self): return round(self._value(time.time()),2)
     def candles(self):
         now = int(time.time()//60)*60
