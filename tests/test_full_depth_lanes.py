@@ -183,12 +183,15 @@ def test_staged_pipeline_and_failure_keep_existing_forecast_and_ledger(env):
     now=provider.close-600
     clock.now=now
     def book_reader(m,now):
-        return makebook(now, yes=[["0.40","50"],["0.44","40"]],
-                        no=[["0.44","80"],["0.48","60"]])
+        return normalize_orderbook({'orderbook_fp':{
+            'yes_dollars':[['0.40','50'],['0.44','40']],
+            'no_dollars':[['0.50','80'],['0.54','60']]}},m['ticker'],now)
     provider.orderbook=book_reader
     stage=main.update_once()
     assert stage["orderbook"]["available"]
     assert stage["depth_opportunity"]["read_only"]
+    assert stage["depth_opportunity"]["status"]=='CANDIDATE'
+    assert stage["execution_intelligence"]["action"]=='ENTER'
     assert stage["execution_intelligence"]["read_only"]
     assert stage["execution_intelligence"]["order_placed"] is False
     assert stage["model"]["available"]
@@ -196,6 +199,9 @@ def test_staged_pipeline_and_failure_keep_existing_forecast_and_ledger(env):
     baseline=main.ledger.data()["count"]
     def fail(m,now):
         raise TimeoutError("orderbook unavailable")
+    paper=main.ledger.trade(stage['market'],'NO',clock.now,source='MANUAL_PAPER')
+    position=client.get('/api/state').json()['paper_position_execution']
+    assert position['action']=='EXIT' and position['side']=='NO' and not position['order_placed']
     provider.orderbook=fail
     clock.now+=15
     degraded=main.update_once()
@@ -205,7 +211,7 @@ def test_staged_pipeline_and_failure_keep_existing_forecast_and_ledger(env):
     assert degraded["model"]["prob_above"]==engine_pack(degraded["spot"],degraded["market"],degraded["candles"])["prob_above"]
     assert degraded["model"]["available"]
     assert degraded["status"]=="DEMO"
-    assert main.ledger.data()["count"]["paper"]==baseline["paper"]
+    assert main.ledger.data()["count"]["paper"]==baseline["paper"]+1
     provider.orderbook=book_reader
     clock.now+=15
     assert main.update_once()["orderbook"]["available"]
