@@ -1,0 +1,37 @@
+name: AXIOM independent mobile and desktop browser acceptance (isolated)
+on:
+  push:
+    branches:
+      - tests/axiom-full-lifecycle-audit-2026-11-17
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  real-browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Install original locked application dependencies
+        run: python -m pip install --disable-pip-version-check -r requirements.lock.txt
+      - name: Install isolated browser test driver
+        run: |
+          python -m pip install --disable-pip-version-check playwright==1.56.0
+          python -m playwright install --with-deps chromium
+      - name: Start genuine FastAPI application and test rendered browser behavior
+        env:
+          AUTO_PAPER: '0'
+          DEMO_MODE: '1'
+        run: python tests/browser_whole_bot_acceptance.py
+      - name: Save browser screenshots even if a later assertion fails
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: axiom-browser-iphone-desktop-acceptance
+          path: |
+            axiom-iphone-ui-acceptance.png
+            axiom-desktop-ui-acceptance.png
+          if-no-files-found: warn
