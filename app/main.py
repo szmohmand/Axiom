@@ -96,6 +96,8 @@ def _view_locked(now):
         data['depth_opportunity'] = unavailable_opportunity('System unhealthy; no depth-based entry advice')
         data['execution_intelligence'] = unavailable_execution('System unhealthy; no execution guidance')
     if 'worker_stale' in data['errors']:
+        data['orderbook'] = unavailable_book(data['market'].get('ticker') if data['market'] else None,
+                                               'Market worker stale; cached book invalid')
         data['research_shadow'] = unavailable_research_shadow('Market update worker is stale')
         # Preserve prior historical rows but never advertise a cached direction
         # as a current signal if the worker has stopped updating.
@@ -393,6 +395,21 @@ def get_state():
         _refresh_status_locked()
         d=_view_locked(now)
     d.update(ledger_rows)
+    # Optional review of ONE paper contract, never a real Kalshi account.
+    # The existing paper ledger represents one contract per row; user holdings
+    # and real order/fill history are NOT available to AXIOM.
+    d['paper_position_execution']=unavailable_execution('No open matching simulated position')
+    active=d.get('market')
+    if active and d.get('ok'):
+        for trade in d.get('trades',[]):
+            if trade.get('ticker')==active['ticker'] and trade.get('status')=='OPEN':
+                try:
+                    d['paper_position_execution']=execution_guidance(
+                        d.get('depth_opportunity'),d.get('model'),active,d.get('orderbook'),now,
+                        position={'side':trade['side'],'contracts':1.0})
+                except Exception:
+                    d['paper_position_execution']=unavailable_execution('Paper position depth review unavailable')
+                break
     d['engine_scores']=scores
     d['ledger_available']=True
     d['server_time']=now
