@@ -1,0 +1,36 @@
+name: AXIOM official BRTI settlement reference reconciliation (read-only)
+on:
+  push:
+    branches:
+      - fix/rollover-brti-execution-evidence-2026-11-17
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  official-brti:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      DEMO_MODE: '0'
+      AUTO_PAPER: '0'
+      AXIOM_BRTI_EVIDENCE_PATH: official-brti-reconciliation.json
+      KALSHI_API_KEY_ID: ${{ secrets.KALSHI_API_KEY_ID }}
+      KALSHI_PRIVATE_KEY_PEM: ${{ secrets.KALSHI_PRIVATE_KEY_PEM }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Install application lock plus isolated signing dependency (no runtime change)
+        run: |
+          python -m pip install --disable-pip-version-check -r requirements.lock.txt
+          python -m pip install --disable-pip-version-check cryptography==46.0.3
+      - name: Verify one recent officially settled KXBTC15M against authenticated CF Benchmarks 5Hz index history
+        run: python -m research.verify_official_brti_live
+      - name: Preserve SANITIZED comparison summary only (no raw index, signatures, or secrets)
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: official-brti-readonly-reconciliation
+          path: official-brti-reconciliation.json
+          if-no-files-found: warn
