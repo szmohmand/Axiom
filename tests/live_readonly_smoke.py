@@ -10,6 +10,7 @@ import time
 from app.feeds import LiveProvider, KALSHI
 from app.engine import scalp_signal
 from app.ensemble import engine_pack, execution_screen
+from app.depth_intelligence import analyze_opportunities, execution_guidance
 
 def probe():
     p=LiveProvider()
@@ -48,16 +49,35 @@ def probe():
         market=None
         results['checks']['kalshi_open_market']={'ok':False,'error':type(e).__name__+': '+str(e)[:160]}
         failures.append('Kalshi market endpoint failed')
+    # Verify actual Kalshi full-depth GET, with no authentication or order submission.
+    book=None
+    if market:
+        try:
+            book=p.orderbook(market)
+            results['checks']['kalshi_full_aggregated_depth']={
+                'ok':book.get('available',False),'ticker':book.get('ticker'),
+                'levels':book.get('levels'), 'source':book.get('source'),
+                'read_only':True, 'individual_orders_visible':False}
+            if not book.get('available'):
+                results['warnings'].append('Active contract has no resting depth; execution signals must WAIT')
+        except Exception as e:
+            results['checks']['kalshi_full_aggregated_depth']={'ok':False,
+                'error':type(e).__name__+': '+str(e)[:160]}
+            failures.append('Kalshi live full-depth endpoint failed')
     if market and btc and candles:
         try:
             models=engine_pack(btc,market,candles)
             scalp=scalp_signal(candles,btc)
             opportunity=execution_screen(models,market)
+            depth_op=analyze_opportunities(models,market,book,time.time())
+            advice=execution_guidance(depth_op,models,market,book,time.time())
             results['checks']['real_feed_pipeline']={
                 'ok':models.get('available',False),
                 'engine_names':[x.get('name') for x in models['engines']],
                 'available_engines':[x.get('name') for x in models['engines'] if x.get('available')],
                 'scalp_side':scalp['side'],'contract_screen':opportunity['side'],
+                'depth_opportunity':depth_op['side'], 'manual_execution_action':advice['action'],
+                'execution_is_read_only':advice['read_only'],
                 'reason':models.get('reason')}
             if not models.get('available',False): failures.append('Real-feed forecast unavailable')
         except Exception as e:
