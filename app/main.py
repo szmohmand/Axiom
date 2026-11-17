@@ -183,8 +183,11 @@ def update_once(now=None):
             errors['forecast']=model.get('reason','Model unavailable')
         if not errors and not persistent_faults:
             try:
-                depth_op=analyze_opportunities(model,market,book,now)
-                depth_exec=execution_guidance(depth_op,model,market,book,now)
+                # The book has a *receipt* time after the initial quote/spot
+                # reads; do not label genuine fresh depth as future-dated.
+                depth_now=max(now,float(book.get('received_at') or now))
+                depth_op=analyze_opportunities(model,market,book,depth_now)
+                depth_exec=execution_guidance(depth_op,model,market,book,depth_now)
             except Exception as e:
                 # Optional, non-executable execution intelligence cannot break
                 # the original ledger or turn an unknown depth into BUY.
