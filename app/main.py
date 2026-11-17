@@ -17,6 +17,7 @@ from .feeds import LiveProvider, DemoProvider
 from .engine import scalp_signal
 from .ensemble import engine_pack, execution_screen
 from .storage import Ledger
+from .settlement_research import shadow_forecast_from_candles, unavailable as unavailable_research_shadow
 
 ROOT = Path(__file__).parent
 DEMO = os.environ.get('DEMO_MODE', '0') == '1'
@@ -29,6 +30,7 @@ ledger = Ledger(DATA_PATH)
 state_lock = threading.RLock()
 state = {'mode':'DEMO' if DEMO else 'LIVE','last_attempt':None,'last_success':None,
          'market':None,'spot':None,'model':None,'engines':[],'scalp':None,'opportunity':None,'candles':[],
+         'research_shadow':unavailable_research_shadow('No completed research observation yet'),
          'errors':{},'paper_auto_enabled':AUTO_PAPER,'watch':None,'candle_quality':None,'status':'STARTING',
          'settlement':{'status':'NOT_CHECKED','last_attempt':None,'last_success':None,
                        'checked':0,'failed':0}}
@@ -86,6 +88,7 @@ def _view_locked(now):
         data['opportunity'] = {'side':'WAIT','edge':None,'entry_price':None,
                                'reason':'System not healthy; paper opportunities paused'}
     if 'worker_stale' in data['errors']:
+        data['research_shadow'] = unavailable_research_shadow('Market update worker is stale')
         # Preserve prior historical rows but never advertise a cached direction
         # as a current signal if the worker has stopped updating.
         data['model'] = {'available':False,'side':'WAIT','prob_above':None,
@@ -135,6 +138,15 @@ def update_once(now=None):
     scalp=scalp_signal(candles,spot)
     op={'side':'WAIT','edge':None,'entry_price':None,'reason':'No healthy market forecast'}
     watch=None
+    # Experimental research candidate is a shadow output only. Its state never
+    # enters the ensemble, opportunity evaluation, ledger, or paper decisions.
+    research_shadow = unavailable_research_shadow('Market or source candles unavailable')
+    if market is not None and not errors:
+        try:
+            research_shadow = shadow_forecast_from_candles(candles, market, now)
+        except Exception:
+            # An optional research probe cannot interrupt the production poll.
+            research_shadow = unavailable_research_shadow('Research model calculation failed')
     with state_lock:
         # Older unresolved settlement/ledger faults are independent of this
         # market poll. Preserve predictions, but suspend new paper decisions.
@@ -175,6 +187,7 @@ def update_once(now=None):
         state.update({'last_attempt':now,
             'market':market,'spot':spot,'candles':candles[-70:], 'model':model,'scalp':scalp,
             'opportunity':op,'engines':model.get('engines',[]),'errors':errors,'watch':watch,
+             'research_shadow':research_shadow,
             'candle_quality':({'status':'UNAVAILABLE','reason':errors['coinbase_candles']}
                               if 'coinbase_candles' in errors else getattr(provider,'candle_quality',None))})
         _refresh_status_locked()
