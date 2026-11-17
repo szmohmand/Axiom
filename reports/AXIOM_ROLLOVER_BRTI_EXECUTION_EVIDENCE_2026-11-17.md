@@ -1,0 +1,33 @@
+# AXIOM: rollover, authentic BRTI reconciliation and execution-evidence repair
+
+**Date:** 2026-11-17. **Scope:** only `szmohmand/Axiom`, isolated `fix/rollover-brti-execution-evidence-2026-11-17`; never merge, deploy, grant trading permissions or enter real orders automatically. Exact preserved pre-fix checkpoint: `ce71c66c087c75a9883f010757b67804c31578a1`; recovery branch `verified/2026-11-17-ce71c66-node24`. Original `main` remains `b12be3758049b6766dda8fefad06611bf41ada2e` as of initial inspection.
+
+## Requirement, changes and preserved behavior
+
+| Investigation | Minimal correction | Must remain unchanged |
+|---|---|---|
+| 15-minute Kalshi contract-publication gap | `LiveProvider.market()` performs one bounded 0.4-second retry **only** within 90 seconds after a real-market 900-second boundary and only for an empty yet-successful public listing. Both attempts require an individually normalized open, future-expiring contract. Otherwise returns `None`, which keeps forecasts/entries/paper disabled. | No guessed strike, no expired-market reuse, no blocking of polling outside boundary. Existing 15-minute market polling and settlement worker remain independent. |
+| Kalshi direct market result temporarily `closed` but historical finalized result available | `LiveProvider.settlement()` considers independently finalized historical market details instead of returning early on an intermediate `closed` result. Never trusts a nonfinal result. | Official Kalshi YES/NO is still the sole grading label. Coinbase spot never substitutes for BRTI or Kalshi settlement; unresolved and conflicting data remain ungraded. |
+| Authentic reference checking | New pure `app/settlement_reference.py` reconstructs historical 60-second open and close BRTI averages using one authentic index tick per second, exactly 60 complete seconds per boundary, with strict numeric/UTC timestamp checks and half-cent comparisons to Kalshi's published `floor_strike` and `expiration_value`. It independently checks the resulting side against the official settled outcome. Missing tick seconds, unpublished fields, pending contracts or mismatches are **not a pass**. | Forecast ensemble and non-voting research shadow remain unchanged. Historical BRTI event time cannot prove contemporaneous trader receipt or strike first-publication timing. |
+| Official source and credentials | New `research/verify_official_brti_live.py` and a read-only GitHub Actions job use existing repository secrets **in memory** only to request BRTI history via Kalshi's signed GET API. Only sanitized status/coverage/differences are uploaded. No raw index archive, account or portfolio endpoint, credentials or signatures are stored. | Runtime requirements.lock.txt unchanged. No secret exposure, orders or deployment. Missing access fails the verification rather than silently using Coinbase. |
+| Research accuracy vs executable profit | New `app/execution_evidence.py` reports only hypothetical full-depth size-aware entry/exit book walks at the same snapshot, and explicitly returns `realized_net_profit_usd: null`, authenticated fill count zero, no confirmed fee ledger. The API and browser render this distinct from forecast Brier/accuracy and gross top-quote paper P&L. | All existing forecasts, paper trades, ledger schema, scorecards, entry rules, automatic paper controls and authorization remain unchanged. Actual Kalshi fills, applied fees and executable net returns cannot be deduced from public books. |
+
+## Verified read-only BRTI source result (first implementation checkpoint)
+
+The authenticated Kalshi /cfbenchmarks/history/values request returned a full 60 seconds in each boundary of `KXBTC15M-26NOV171800-00`. The first-tick-per-second reconstruction differed from published official references by **$0.0026667** at the opening and **$0.0043333** at closing, both within $0.005; reconstructed winner, published-reference winner and settled official YES/NO all agreed. [Authenticated evidence #44197614669](https://github.com/szmohmand/Axiom/actions/runs/44197614669). This is historical point-in-time **reference consistency**. No claim of original live delivery latency, full contract sample coverage, forecast calibration or profit.
+
+## Source evidence and relevant historical events
+
+- Prior live 16-minute baseline on pre-fix audit head observed **32 actual public observations** and two brief 15-minute boundary gaps, all explicitly fail-closed. [Run #44192967168](https://github.com/szmohmand/Axiom/actions/runs/44192967168).
+- Existing independent August/October BRTI archives in `research/historical-data-completion-2026-11-16` previously reconciled 3,505 available official contract outcomes, but contain explicit coverage, timing and source-precision caveats. Reused the verified reconstruction algorithm; did **not** recollect the large archives.
+- Previous API mismatch at around 20:15 UTC was an exchange-publication discrepancy, not evidence that Coinbase could provide an official replacement. The code now distinguishes publication lag and authoritative finalized historical results.
+
+## Tests and release gate
+
+New permanent regressions: A24 (rollover), A25 (official BRTI/settlement reference), A26 (execution provenance), in `reports/REGRESSION_HISTORY.json`, exercised by `tests/test_rollover_brti_execution_integrity.py`. Prior H01–H05 and A01–A15 tests are preserved without alteration.
+
+Full candidate validation must include frozen archive/hash verification, permanent regression inventory, **all** original/new unit + synthetic full lifecycle tests, real read-only provider, actual market/settlement workers, end-to-end mobile + desktop Chromium, source compare, data integrity, stale/outage/rollover, and a 16-minute live read-only observation **on the final candidate SHA**. Tests must verify that no old behavior regresses; any failure requires a targeted fix and complete rerun before release.
+
+**Do not certify real trading performance.** Even a perfectly matching official settled result does not prove forecast reliability or actionable fill prices. The execution evidence layer deliberately reports unknown actual fills, fee schedule and realized net P&L. That is a corrected evidence boundary, **not** creation of actual fill data. Actual economic verification needs authenticated read-only order/fill/fee records and source-dated contract rules, which have not been supplied to this app. No workflow may claim profitability in their absence.
+
+**Release decision:** DRAFT/NOT MERGED. Add actual exact-head CI and observation results to the PR; do not claim deployment-ready until all applicable gates pass.
