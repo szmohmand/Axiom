@@ -16,8 +16,8 @@ jobs:
       POLL_SECONDS: '5'
       DATA_PATH: '/tmp/axiom-independent-whole-bot-readonly.sqlite3'
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.13'
       - name: Install locked application and test packages
@@ -102,7 +102,7 @@ jobs:
           PY
       - name: Preserve real evidence even if acceptance fails
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: whole-bot-real-readonly-worker-evidence
           path: axiom-whole-bot-real-worker.jsonl
