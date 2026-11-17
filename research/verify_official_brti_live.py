@@ -81,6 +81,7 @@ def _seconds(value):
 
 def _public_market(session, ticker):
     encoded = quote(ticker, safe="")
+    pending = None
     for endpoint in (f"/markets/{encoded}", f"/historical/markets/{encoded}"):
         try:
             item = _get(session, API + endpoint).get("market")
@@ -89,8 +90,11 @@ def _public_market(session, ticker):
                 continue
             raise
         if isinstance(item, dict):
-            return item
-    return None
+            if (str(item.get("status") or "").lower() in ("settled", "finalized")
+                    and str(item.get("result") or "").lower() in ("yes", "no")):
+                return item
+            pending = item
+    return pending
 
 
 def _load_hours(session, key_id, private_key, contract):
