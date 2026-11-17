@@ -131,6 +131,8 @@ def execution_guidance(opportunity: dict | None, forecast: dict | None,
     if not forecast or not forecast.get("available"):
         return unavailable_execution("Independent forecast unavailable")
     if position is not None:
+        if forecast.get('side') not in ('ABOVE','BELOW'):
+            return unavailable_execution('Independent forecast abstained; no basis for HOLD or EXIT')
         side=position.get("side")
         try: size=float(position.get("contracts"))
         except (TypeError, ValueError): return unavailable_execution("Invalid hypothetical position size")
@@ -141,10 +143,12 @@ def execution_guidance(opportunity: dict | None, forecast: dict | None,
             return unavailable_execution("Insufficient displayed bid depth to exit hypothetical position")
         aligned = (side=="YES" and forecast.get("side")=="ABOVE") or (
             side=="NO" and forecast.get("side")=="BELOW")
-        should_exit = (not aligned or (market.get("seconds_left") or 0) < 60)
+        # A bare expiry timer is NOT evidence that selling beats settlement;
+        # only an explicit opposing forecast produces experimental EXIT advice.
+        should_exit = not aligned
         return {
             "action": "EXIT" if should_exit else "HOLD", "side": side,
-            "reason": ("Model no longer supports position or expiry is imminent; hypothetical exit only" if should_exit else
+            "reason": ("Experimental forecast opposes the position; review hypothetical bid-depth exit, not guaranteed advice" if should_exit else
                        "Current model remains aligned; hypothetical hold, not a guaranteed winning position"),
             "entry_price": None, "estimated_exit_price":sell["average_price"],
             "size_contracts": size, "sweep": sell, "read_only": True,
