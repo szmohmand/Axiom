@@ -80,20 +80,28 @@ class LiveProvider:
                     pass
             # Never reuse an expired contract or invent a future strike.
             return min(markets,key=lambda m:m['seconds_left']) if markets else None
-        active=eligible(self.get(f'{KALSHI}/markets',params))
+        # A newly opened contract may be briefly absent from Kalshi's
+        # published list OR the listing endpoint may transiently return 503.
+        # Permit exactly one bounded retry in the first 90s of a REAL 15m
+        # boundary. Outside that interval preserve the original HTTP error.
+        # Never reuse an expired ticker, infer a strike or fabricate a book.
+        rollover = 0 <= (now % 900) <= 90 and abs(time.time()-now) < 30
+        try:
+            active=eligible(self.get(f'{KALSHI}/markets',params))
+        except requests.HTTPError as exc:
+            status=exc.response.status_code if exc.response is not None else None
+            if not rollover or status not in (404,429,500,502,503,504):
+                raise
+            active=None
         if active:
             return active
-        # Kalshi sometimes publishes the replacement contract after the clock
-        # boundary. One SHORT, bounded retry can bridge a temporary listing
-        # gap, but it must never turn unavailable data into a LIVE signal.
-        # Restrict this to the actual present, not synthetic/historic replays.
-        if 0 <= (now % 900) <= 90 and abs(time.time()-now) < 30:
+        if rollover:
             time.sleep(.4)
             try:
                 return eligible(self.get(f'{KALSHI}/markets',params))
             except requests.RequestException:
-                # First successful empty list remains the authoritative
-                # fail-closed result; later polling attempts may recover.
+                # A second source failure is NOT a valid market. The poll
+                # publishes unavailable/WAIT; the next normal poll may recover.
                 return None
         return None
     def orderbook(self, market, now=None):
