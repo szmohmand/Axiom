@@ -17,6 +17,8 @@ from unittest.mock import patch
 from types import SimpleNamespace
 
 from fastapi import HTTPException
+import sys
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 
 from app import main
 from app import feeds,orderbook
