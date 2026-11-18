@@ -1,0 +1,65 @@
+name: AXIOM integrated iPhone and authenticated live BRTI acceptance (read-only)
+on:
+  push:
+    branches:
+      - integration/axiom-live-brti-mobile-2026-11-18
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  iphone-browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 13
+    env:
+      DEMO_MODE: '1'
+      AUTO_PAPER: '0'
+      BRTI_STREAM_ENABLED: '0'
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Install pinned app, isolated Playwright, Chromium
+        run: |
+          python -m pip install --disable-pip-version-check -r requirements.lock.txt
+          python -m pip install --disable-pip-version-check playwright==1.56.0
+          python -m playwright install --with-deps chromium
+      - name: Verify complete updated iPhone and desktop dashboard on genuine FastAPI HTTP server
+        run: python tests/browser_whole_bot_acceptance.py
+      - name: Preserve actual browser screenshots
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: axiom-integrated-brti-iphone-desktop
+          path: |
+            axiom-iphone-ui-acceptance.png
+            axiom-desktop-ui-acceptance.png
+          if-no-files-found: warn
+
+  signed-live-brti:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      DEMO_MODE: '0'
+      AUTO_PAPER: '0'
+      BRTI_STREAM_ENABLED: '1'
+      BRTI_PROBE_SECONDS: '60'
+      BRTI_PROBE_EVIDENCE_PATH: live-brti-asof-probe.json
+      KALSHI_API_KEY_ID: ${{ secrets.KALSHI_API_KEY_ID }}
+      KALSHI_PRIVATE_KEY_PEM: ${{ secrets.KALSHI_PRIVATE_KEY_PEM }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Install pinned authenticated market-data transport and BRTI signer
+        run: python -m pip install --disable-pip-version-check -r requirements.lock.txt
+      - name: Observe authentic Kalshi 1Hz plus 5Hz BRTI WebSocket with millisecond receipt times; NO ORDER CALLS
+        run: python -m research.probe_live_brti_ws
+      - name: Preserve only sanitized as-received timestamps/counts (never credentials or raw frames)
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: axiom-authenticated-live-brti-capability
+          path: live-brti-asof-probe.json
+          if-no-files-found: warn

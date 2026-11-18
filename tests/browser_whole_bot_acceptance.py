@@ -48,6 +48,9 @@ def run():
         assert state["orderbook"]["available"] and state["orderbook"]["is_full_aggregated_depth"]
         assert state["execution_intelligence"]["order_placed"] is False
         assert state["depth_opportunity"]["read_only"] is True
+        assert state["live_brti"]["votes_in_forecast"] is False
+        assert state["live_brti"]["triggers_orders"] is False
+        assert state["live_brti"]["verified_final_settlement"] is False
 
         results = []
         with sync_playwright() as play:
@@ -73,8 +76,10 @@ def run():
                     assert "No real orders are placed" in page.locator("body").inner_text()
                     for selector in ("#bookStatus", "#bookBidRows tr", "#bookAskRows tr",
                                      "#depthSide", "#execAction", "#scalpSide", "#forecastSide",
-                                     "#engineRows tr", "#chart", "#paperYes", "#paperNo"):
+                                     "#engineRows tr", "#chart", "#brtiPanel", "#brtiStatus",
+                                     "#brtiValue", "#brtiAvg", "#brtiStrike", "#paperYes", "#paperNo"):
                         assert page.locator(selector).count()>0, selector
+                    assert page.locator("#brtiStatus").inner_text().strip() in ("DISABLED","NOT_CONFIGURED","NOT_CONNECTED")
                     assert page.locator("#paperYes").is_disabled()
                     assert page.locator("#paperNo").is_disabled()
                     data = page.evaluate("""() => ({

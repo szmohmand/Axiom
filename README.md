@@ -124,3 +124,13 @@ See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for exact file provenance
 - Exact implementations of third-party proprietary systems and unlicensed public repositories are **not** included.
 
 **Isolation:** This entire v2 was created only in `/mnt/data/AXIOM_v2_Research_Bot/`. No original GitHub project, branch, Render service, or database was modified.
+
+## AXIOM integrated live BRTI observation (research-only, 2026-11-18)
+
+The new opt-in live index lane subscribes to Kalshi's authenticated **cfbenchmarks_value** (about 1Hz, published trailing and final-minute averages) and **cfbenchmarks_value_5hz** (raw up-to-5Hz values) channels, requesting **BRTI only**. It records separate upstream source timestamp, Kalshi receipt timestamp, and AXIOM local receipt timestamp. It does not manufacture missing index seconds, substitute Coinbase for CF Benchmarks, or claim final outcomes from progressive windows.
+
+In LIVE mode, set `KALSHI_API_KEY_ID` and `KALSHI_PRIVATE_KEY_PEM` as server-side secret environment variables. `BRTI_STREAM_ENABLED=1` is the default when `DEMO_MODE=0`; set it to `0` if explicitly disabled. Configure `BRTI_OBSERVATION_PATH` on persistent storage to retain sanitized as-of 1Hz/5Hz records; otherwise observations remain in bounded memory and are lost on restart. Never place a private key in browser JavaScript, a GitHub commit, or an artifact.
+
+The live /api/state BRTI panel is **non-voting**. It never changes the existing three-model prediction, opportunity computation, paper ledger or manual execution guidance. `strike_observation.locally_first_observed_at` means when AXIOM first saw the published target, **not** Kalshi's original strike-publication timestamp; the latter requires external evidence. `progressive_close_window` is an incomplete or provisional published series, **not** verified settlement.
+
+Live trading is not implemented. Real orders are never sent. Paper automation is OFF by default; `AUTO_PAPER=1` would affect simulated entries only. Do not use a high-availability marketing label without continuous hosting, persistent data, provider entitlement and long-horizon evidence. All available source proofs, E2E, and a real signed WebSocket capture must pass before promoting this integration branch.
