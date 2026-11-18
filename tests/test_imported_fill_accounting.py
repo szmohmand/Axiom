@@ -69,7 +69,7 @@ def test_duplicate_partial_omitted_fee_or_invalid_source_fields_fail_closed():
       [row("wrong-ticker",ticker="KXETH15M-OTHER")],
       [row("bad-side",side="maybe")],
       [row("bad-action",action="remove")],
-      [row("bad-time",when=5e20)],
+      [dict(row("bad-time"),created_time="not-a-date")],
       [row("bad-row")] + ["not-a-record"],
     ]
     for entries in invalids:
