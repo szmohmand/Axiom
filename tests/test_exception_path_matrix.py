@@ -322,6 +322,7 @@ def test_main_grade_invalid_result_retained_as_error(env):
     clock.now=p.close-600
     main.update_once()
     p.result="invalid"
+    clock.now=p.close+6
     main.grade_once()
     assert main.state["settlement"]["status"]=="ERROR"
     assert "settlement" in main.state["errors"]
