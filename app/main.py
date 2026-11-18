@@ -17,19 +17,32 @@ from .feeds import LiveProvider, DemoProvider
 from .engine import scalp_signal
 from .ensemble import engine_pack, execution_screen
 from .storage import Ledger
+from .settlement_research import shadow_forecast_from_candles, unavailable as unavailable_research_shadow
+from .orderbook import unavailable as unavailable_book
+from .execution_evidence import examine_liquidity
+from .live_brti import BRTIObserver, run_stream
+from .depth_intelligence import (analyze_opportunities, execution_guidance,
+                                  unavailable_opportunity, unavailable_execution)
 
 ROOT = Path(__file__).parent
 DEMO = os.environ.get('DEMO_MODE', '0') == '1'
-AUTO_PAPER = os.environ.get('AUTO_PAPER', '1') == '1'
+AUTO_PAPER = os.environ.get('AUTO_PAPER', '0') == '1'
 POLL_SECONDS = max(5, int(os.environ.get('POLL_SECONDS', '15')))
 DATA_PATH = os.environ.get('DATA_PATH', str(ROOT.parent/'data'/'bot.sqlite3'))
 ADMIN_TOKEN = os.environ.get('BOT_ADMIN_TOKEN','')
 provider = DemoProvider() if DEMO else LiveProvider()
 ledger = Ledger(DATA_PATH)
+BRTI_STREAM_ENABLED = os.environ.get('BRTI_STREAM_ENABLED','1') == '1' and not DEMO
+brti_observer = BRTIObserver(os.environ.get('BRTI_OBSERVATION_PATH') or None)
 state_lock = threading.RLock()
 state = {'mode':'DEMO' if DEMO else 'LIVE','last_attempt':None,'last_success':None,
          'market':None,'spot':None,'model':None,'engines':[],'scalp':None,'opportunity':None,'candles':[],
+         'research_shadow':unavailable_research_shadow('No completed research observation yet'),
+         'orderbook':unavailable_book(None,'No aggregated market depth yet'),
+         'depth_opportunity':unavailable_opportunity('No independently evaluated depth yet'),
+         'execution_intelligence':unavailable_execution('No independently evaluated depth yet'),
          'errors':{},'paper_auto_enabled':AUTO_PAPER,'watch':None,'candle_quality':None,'status':'STARTING',
+         'strike_observation':{'status':'NOT_SEEN','official_publication_timestamp_verified':False},
          'settlement':{'status':'NOT_CHECKED','last_attempt':None,'last_success':None,
                        'checked':0,'failed':0}}
 shutdown = threading.Event()
@@ -72,6 +85,8 @@ def _view_locked(now):
     data = dict(state)
     data['errors'] = dict(state['errors'])
     data['settlement'] = dict(state['settlement'])
+    data['strike_observation'] = dict(state.get('strike_observation') or {})
+    data['live_brti'] = brti_observer.snapshot(data.get('market'),now)
     attempted = state['last_attempt']
     data['heartbeat_age_seconds'] = None if attempted is None else max(0, round(now-attempted, 2))
     stale_limit = max(60, 3*POLL_SECONDS)
@@ -85,7 +100,12 @@ def _view_locked(now):
         # outage even if they were calculated before the failure became known.
         data['opportunity'] = {'side':'WAIT','edge':None,'entry_price':None,
                                'reason':'System not healthy; paper opportunities paused'}
+        data['depth_opportunity'] = unavailable_opportunity('System unhealthy; no depth-based entry advice')
+        data['execution_intelligence'] = unavailable_execution('System unhealthy; no execution guidance')
     if 'worker_stale' in data['errors']:
+        data['orderbook'] = unavailable_book(data['market'].get('ticker') if data['market'] else None,
+                                               'Market worker stale; cached book invalid')
+        data['research_shadow'] = unavailable_research_shadow('Market update worker is stale')
         # Preserve prior historical rows but never advertise a cached direction
         # as a current signal if the worker has stopped updating.
         data['model'] = {'available':False,'side':'WAIT','prob_above':None,
@@ -133,8 +153,32 @@ def update_once(now=None):
         errors['coinbase_candles']=_error_message(e); candles=[]
     model={'available':False,'side':'WAIT','prob_above':None,'reason':'No active market or input data'}
     scalp=scalp_signal(candles,spot)
+    book=unavailable_book(market.get('ticker') if market else None,
+                          'No active market or validated full depth yet')
+    if market is not None:
+        book_reader=getattr(provider,'orderbook',None)
+        if callable(book_reader):
+            try:
+                book=book_reader(market,now)
+            except Exception as e:
+                # Depth failure affects depth intelligence, not independent
+                # forecast, ledger, settlement, or BTC spot scalping.
+                book=unavailable_book(market['ticker'],_error_message(e))
+        else:
+            book=unavailable_book(market['ticker'],'Provider has no full-depth API')
+    depth_op=unavailable_opportunity('Independent forecast or depth not available')
+    depth_exec=unavailable_execution('No verified live order-book opportunity')
     op={'side':'WAIT','edge':None,'entry_price':None,'reason':'No healthy market forecast'}
     watch=None
+    # Experimental research candidate is a shadow output only. Its state never
+    # enters the ensemble, opportunity evaluation, ledger, or paper decisions.
+    research_shadow = unavailable_research_shadow('Market or source candles unavailable')
+    if market is not None and not errors:
+        try:
+            research_shadow = shadow_forecast_from_candles(candles, market, now)
+        except Exception:
+            # An optional research probe cannot interrupt the production poll.
+            research_shadow = unavailable_research_shadow('Research model calculation failed')
     with state_lock:
         # Older unresolved settlement/ledger faults are independent of this
         # market poll. Preserve predictions, but suspend new paper decisions.
@@ -144,6 +188,18 @@ def update_once(now=None):
         model=engine_pack(spot,market,candles)
         if not model.get('available') and not errors:
             errors['forecast']=model.get('reason','Model unavailable')
+        if not errors and not persistent_faults:
+            try:
+                # The book has a *receipt* time after the initial quote/spot
+                # reads; do not label genuine fresh depth as future-dated.
+                depth_now=max(now,float(book.get('received_at') or now))
+                depth_op=analyze_opportunities(model,market,book,depth_now)
+                depth_exec=execution_guidance(depth_op,model,market,book,depth_now)
+            except Exception as e:
+                # Optional, non-executable execution intelligence cannot break
+                # the original ledger or turn an unknown depth into BUY.
+                depth_op=unavailable_opportunity('Depth analysis failed: '+_error_message(e))
+                depth_exec=unavailable_execution('Depth analysis failed')
         if not errors and model.get('available'):
             if not persistent_faults:
                 op=execution_screen(model,market)
@@ -168,6 +224,17 @@ def update_once(now=None):
         # otherwise a short feed outage can be counted as sustained evidence.
         ledger.reset_watches()
     with state_lock:
+        # First observation by this process, never the index issuer's
+        # original strike publication timestamp; do not backdate evidence.
+        previous=state.get('strike_observation') or {}
+        if market and market.get('target') is not None:
+            if (previous.get('ticker')!=market['ticker'] or
+                    previous.get('target')!=market['target']):
+                state['strike_observation']={'status':'FIRST_OBSERVED',
+                    'ticker':market['ticker'],'target':market['target'],
+                    'locally_first_observed_at':time.time(),
+                    'official_publication_timestamp_verified':False,
+                    'observation_is_earliest_publication':False}
         # Keep unresolved grading failures visible, even across good feed polls.
         for component in ('settlement','settlement_worker','ledger_read','ledger_connection'):
             if component in state['errors']:
@@ -175,6 +242,9 @@ def update_once(now=None):
         state.update({'last_attempt':now,
             'market':market,'spot':spot,'candles':candles[-70:], 'model':model,'scalp':scalp,
             'opportunity':op,'engines':model.get('engines',[]),'errors':errors,'watch':watch,
+             'research_shadow':research_shadow,
+             'orderbook':book,'depth_opportunity':depth_op,
+             'execution_intelligence':depth_exec,
             'candle_quality':({'status':'UNAVAILABLE','reason':errors['coinbase_candles']}
                               if 'coinbase_candles' in errors else getattr(provider,'candle_quality',None))})
         _refresh_status_locked()
@@ -291,10 +361,21 @@ async def lifespan(_app):
     grading_thread=threading.Thread(target=grading_worker, name='research-settlement-worker',daemon=True)
     market_thread.start()
     grading_thread.start()
+    brti_thread=None
+    if BRTI_STREAM_ENABLED:
+        brti_thread=threading.Thread(target=run_stream,
+            args=(brti_observer,shutdown),
+            kwargs={'key_id':os.environ.get('KALSHI_API_KEY_ID',''),
+                    'private_key':os.environ.get('KALSHI_PRIVATE_KEY_PEM','')},
+            name='read-only-live-brti-worker',daemon=True)
+        brti_thread.start()
+    else:
+        brti_observer.mark('DISABLED','BRTI WebSocket disabled for demo/configuration')
     yield
     shutdown.set()
     market_thread.join(timeout=3)
     grading_thread.join(timeout=3)
+    if brti_thread: brti_thread.join(timeout=4)
 
 app=FastAPI(title='AXIOM Multi-Engine BTC Research Bot',version='2.0.0',lifespan=lifespan, docs_url=None,redoc_url=None)
 
@@ -320,7 +401,9 @@ def health():
         'mode':snapshot['mode'],'last_attempt':snapshot['last_attempt'],
         'last_success':snapshot['last_success'],
         'heartbeat_age_seconds':snapshot['heartbeat_age_seconds'],
-        'errors':snapshot['errors'],'settlement':snapshot['settlement']},
+        'errors':snapshot['errors'],'settlement':snapshot['settlement'],
+        'live_brti_status':snapshot['live_brti']['status'],
+        'live_brti_fresh':snapshot['live_brti']['fresh']},
         status_code=200 if snapshot['ok'] else 503,headers={'Cache-Control':'no-store'})
 
 @app.get('/api/state')
@@ -336,6 +419,7 @@ def get_state():
             state['errors']['ledger_read']=_error_message(e)
             _refresh_status_locked()
             d=_view_locked(now)
+        d['execution_evidence']=examine_liquidity(d.get('orderbook'), d.get('market'),now)
         d['engine_scores']={'status':'UNAVAILABLE','samples':None,'scores':[]}
         d['ledger_available']=False
         d['manual_paper_available']=False
@@ -346,13 +430,29 @@ def get_state():
         _refresh_status_locked()
         d=_view_locked(now)
     d.update(ledger_rows)
+    # Optional review of ONE paper contract, never a real Kalshi account.
+    # The existing paper ledger represents one contract per row; user holdings
+    # and real order/fill history are NOT available to AXIOM.
+    d['paper_position_execution']=unavailable_execution('No open matching simulated position')
+    active=d.get('market')
+    if active and d.get('ok'):
+        for trade in d.get('trades',[]):
+            if trade.get('ticker')==active['ticker'] and trade.get('status')=='OPEN':
+                try:
+                    d['paper_position_execution']=execution_guidance(
+                        d.get('depth_opportunity'),d.get('model'),active,d.get('orderbook'),now,
+                        position={'side':trade['side'],'contracts':1.0})
+                except Exception:
+                    d['paper_position_execution']=unavailable_execution('Paper position depth review unavailable')
+                break
+    d['execution_evidence']=examine_liquidity(d.get('orderbook'), d.get('market'),now)
     d['engine_scores']=scores
     d['ledger_available']=True
     d['server_time']=now
     # A token alone is not permission to record a position against stale or
     # broken market data. The UI and paper endpoint share the same readiness rule.
     d['manual_paper_available']=bool(ADMIN_TOKEN) and d['ok'] and bool(d.get('market'))
-    d['disclaimer']='Experimental models and gross simulated trading only. Coinbase is NOT the BRTI settlement index.'
+    d['disclaimer']='Experimental models and gross simulated trading only. Coinbase is NOT the BRTI settlement index. Full Kalshi aggregated depth is a one-time participant-order snapshot; depth guidance never places an order. Live BRTI is an optional authenticated as-received nonvoting reference and does not establish verified settlement or real profitability.'
     return JSONResponse(d,headers={'Cache-Control':'no-store'})
 
 class PaperRequest(BaseModel):

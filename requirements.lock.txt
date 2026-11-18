@@ -20,6 +20,10 @@ pydantic-core==2.46.5
 pygments==2.20.0
 pytest==9.0.2
 requests==2.32.5
+websocket-client==1.9.0
+cryptography==46.0.3
+cffi==2.0.0
+pycparser==3.0
 starlette==0.50.0
 typing-extensions==4.16.0
 typing-inspection==0.4.4

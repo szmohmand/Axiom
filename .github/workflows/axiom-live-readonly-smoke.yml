@@ -15,8 +15,8 @@ jobs:
       AUTO_PAPER: '0'
       DATA_PATH: '/tmp/axiom-provider-smoke.sqlite3'
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.13'
       - name: Install pinned dependencies
@@ -74,7 +74,7 @@ jobs:
           PY
       - name: Save probe output even if endpoints fail
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: live-readonly-smoke-result
           path: live-readonly-smoke-result.json

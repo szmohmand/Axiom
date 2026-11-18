@@ -1,0 +1,166 @@
+name: AXIOM integrated iPhone and authenticated live BRTI acceptance (read-only)
+on:
+  push:
+    branches:
+      - integration/axiom-live-brti-mobile-2026-11-18
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  iphone-browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 13
+    env:
+      DEMO_MODE: '1'
+      AUTO_PAPER: '0'
+      BRTI_STREAM_ENABLED: '0'
+      AXIOM_BROWSER_CHANNEL: 'chrome'
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Install pinned app and Playwright; use the preinstalled Ubuntu runner Chrome
+        run: |
+          python -m pip install --disable-pip-version-check -r requirements.lock.txt
+          python -m pip install --disable-pip-version-check playwright==1.56.0
+          command -v google-chrome
+      - name: Verify complete updated iPhone and desktop dashboard on genuine FastAPI HTTP server
+        run: python tests/browser_whole_bot_acceptance.py
+      - name: Preserve actual browser screenshots
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: axiom-integrated-brti-iphone-desktop
+          path: |
+            axiom-iphone-ui-acceptance.png
+            axiom-desktop-ui-acceptance.png
+          if-no-files-found: warn
+
+  signed-live-brti:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      DEMO_MODE: '0'
+      AUTO_PAPER: '0'
+      BRTI_STREAM_ENABLED: '1'
+      BRTI_PROBE_SECONDS: '60'
+      BRTI_PROBE_EVIDENCE_PATH: live-brti-asof-probe.json
+      KALSHI_API_KEY_ID: ${{ secrets.KALSHI_API_KEY_ID }}
+      KALSHI_PRIVATE_KEY_PEM: ${{ secrets.KALSHI_PRIVATE_KEY_PEM }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Install pinned authenticated market-data transport and BRTI signer
+        run: python -m pip install --disable-pip-version-check -r requirements.lock.txt
+      - name: Observe authentic Kalshi 1Hz plus 5Hz BRTI WebSocket with millisecond receipt times; NO ORDER CALLS
+        run: python -m research.probe_live_brti_ws
+      - name: Preserve only sanitized as-received timestamps/counts (never credentials or raw frames)
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: axiom-authenticated-live-brti-capability
+          path: live-brti-asof-probe.json
+          if-no-files-found: warn
+
+  full-live-fastapi:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 7
+    env:
+      DEMO_MODE: '0'
+      AUTO_PAPER: '0'
+      BRTI_STREAM_ENABLED: '1'
+      POLL_SECONDS: '5'
+      DATA_PATH: '/tmp/axiom-brti-live-full-integrated.sqlite3'
+      KALSHI_API_KEY_ID: ${{ secrets.KALSHI_API_KEY_ID }}
+      KALSHI_PRIVATE_KEY_PEM: ${{ secrets.KALSHI_PRIVATE_KEY_PEM }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Install pinned app and signing/streaming dependencies
+        run: python -m pip install --disable-pip-version-check -r requirements.lock.txt
+      - name: Run genuine FastAPI lifespan plus live Coinbase, Kalshi depth, BRTI channels, SQLite and browser HTTP APIs
+        shell: bash
+        run: |
+          set -o pipefail
+          PYTHONPATH=. python - <<'PY' | tee axiom-live-full-integration.jsonl
+          import json,threading,time
+          from fastapi.testclient import TestClient
+          from app import main
+          assert not main.DEMO and not main.AUTO_PAPER and main.BRTI_STREAM_ENABLED
+          healthy=set()
+          depths=0
+          brti_verified=False
+          samples=0
+          started=time.monotonic()
+          with TestClient(main.app) as client:
+              threads={t.name for t in threading.enumerate()}
+              assert {'research-data-worker','research-settlement-worker','read-only-live-brti-worker'}<=threads
+              assert client.get('/').status_code==200
+              while time.monotonic()-started < 110:
+                  h=client.get('/health'); s=client.get('/api/state')
+                  assert s.status_code in (200,503)
+                  health=h.json(); body=s.json()
+                  assert main.AUTO_PAPER is False
+                  assert main.ledger.data()['count']['paper']==0
+                  assert body['execution_intelligence']['order_placed'] is False
+                  assert body['depth_opportunity']['read_only'] is True
+                  assert body['live_brti']['votes_in_forecast'] is False
+                  assert body['live_brti']['triggers_orders'] is False
+                  assert body['live_brti']['verified_final_settlement'] is False
+                  assert client.post('/api/paper',json={'side':'YES'}).status_code==403
+                  assert client.post('/api/orders',json={}).status_code==404
+                  bt=body['live_brti']
+                  if (bt['fresh'] and bt['counts']['accepted_1hz']>=2
+                          and bt['counts']['accepted_5hz']>=2):
+                      assert bt['source_timestamp_ms']<=int(time.time()*1000)+3000
+                      assert bt['provider_received_at_ms'] is not None
+                      assert bt['local_received_at'] is not None
+                      brti_verified=True
+                  if health['ok']:
+                      assert h.status_code==200 and s.status_code==200
+                      assert len(body['engines'])==4
+                      assert body['model']['available'] is True
+                      assert len(body['candles'])>=31
+                      assert all(b['t']-a['t']==60 for a,b in zip(body['candles'],body['candles'][1:]))
+                      assert body['strike_observation']['official_publication_timestamp_verified'] is False
+                      healthy.add(health['last_attempt'])
+                      book=body['orderbook']
+                      if book.get('available'):
+                          assert book['is_full_aggregated_depth']
+                          depths+=1
+                  else:
+                      assert h.status_code==503 and not body['ok']
+                      assert body['execution_intelligence']['action']=='WAIT'
+                  samples+=1
+                  print(json.dumps({'kind':'read_only_sample','health':health['status'],
+                      'live_brti':bt['status'],'brti_1hz_count':bt['counts']['accepted_1hz'],
+                      'brti_5hz_count':bt['counts']['accepted_5hz'],
+                      'market_ready':health['ok'],
+                      'live_depth_available':bool(body['orderbook'].get('available')),
+                      'no_real_orders':True},sort_keys=True),flush=True)
+                  if len(healthy)>=2 and depths>=1 and brti_verified:
+                      break
+                  time.sleep(5)
+              assert len(healthy)>=2, 'Two independent healthy market worker iterations missing'
+              assert depths>=1, 'A real Kalshi depth snapshot never became available'
+              assert brti_verified, 'Authenticated live BRTI 1Hz+5Hz did not reach FastAPI state'
+              assert main.ledger.conn.execute('SELECT count(*) FROM observations').fetchone()[0]>=2
+          for label in ('research-data-worker','research-settlement-worker','read-only-live-brti-worker'):
+              assert not any(t.name==label and t.is_alive() for t in threading.enumerate()),label
+          print(json.dumps({'kind':'AXIOM_FULL_LIVE_INTEGRATION_PASS',
+               'healthy_worker_iterations':len(healthy),'full_depth_samples':depths,
+               'brti_both_channels':brti_verified,'samples':samples,'orders_sent':0,
+               'paper_auto':False},sort_keys=True),flush=True)
+          PY
+      - name: Preserve public-source and as-received read-only integration evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: axiom-real-market-workers-and-authenticated-brti
+          path: axiom-live-full-integration.jsonl
+          if-no-files-found: warn
