@@ -216,6 +216,16 @@
         "tests/test_rollover_brti_execution_integrity.py::test_paper_profit_cannot_be_mistaken_for_exchange_fill_performance",
         "tests/test_rollover_brti_execution_integrity.py::test_dashboard_labels_real_net_as_unmeasured_and_paper_as_assumed"
       ]
+    },
+    {
+      "id": "A27",
+      "finding": "Kalshi's active BTC15m listing may return a transient 503/429/5xx or 404 exactly at rollover, not merely an empty successful listing. A single live-boundary-only retry must recover if the authentic next market appears, preserve the original error outside rollover, and fail closed if the second read also fails.",
+      "fixed_commit": "f3455a6b1d7c4228c49aef4f946e215d7aa824ae",
+      "tests": [
+        "tests/test_exception_path_matrix.py::test_live_market_transient_http_503_near_rollover_recovers",
+        "tests/test_exception_path_matrix.py::test_live_market_http_503_outside_boundary_does_not_hide_error",
+        "tests/test_runtime_fault_injection.py::test_rollover_retry_second_http_failure_stays_unavailable"
+      ]
     }
   ]
 }

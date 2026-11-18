@@ -3,7 +3,13 @@ on:
   push:
     branches:
       - fix/rollover-brti-execution-evidence-2026-11-17
+      - fix/axiom-quantum-grade-resilience-coverage-2026-11-17
   workflow_dispatch:
+  # Scheduled read-only rechecks become active only if this workflow is
+  # explicitly merged onto the default branch. The provider controls when
+  # genuine BRTI history becomes available; no synthetic fallback is allowed.
+  schedule:
+    - cron: '17 */2 * * *'
 permissions:
   contents: read
 jobs:
