@@ -1,0 +1,75 @@
+name: AXIOM independent full-code coverage audit (test-only branch)
+on:
+  push:
+    branches:
+      - audit/complete-coverage-and-workflows-2026-11-17
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  coverage:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      DEMO_MODE: '1'
+      AUTO_PAPER: '0'
+      DATA_PATH: '/tmp/axiom-complete-code-coverage.sqlite3'
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Install exact app dependencies plus isolated independent coverage measurement
+        run: |
+          python -m pip install --disable-pip-version-check -r requirements.lock.txt
+          python -m pip install --disable-pip-version-check coverage==7.10.7
+      - name: Validate source archives, regression inventory and compilation
+        run: |
+          python phase0/verify_transfer.py --checkout . --require-archives
+          python phase0/check_regression_history.py
+          python -m compileall -q app tests research research_sources phase0
+      - name: Run EVERY pytest case with measured branch and line coverage
+        shell: bash
+        run: |
+          set -o pipefail
+          python -m coverage run --branch --source=app,phase0,research,research_sources -m pytest -q
+          python -m coverage report -m | tee full-code-coverage-report.txt
+          python -m coverage json -o full-code-coverage.json
+          python - <<'PY'
+          import json,ast,pathlib
+          d=json.loads(pathlib.Path('full-code-coverage.json').read_text())
+          files=d.get('files',{})
+          summary={'percent_covered':d['totals']['percent_covered'],
+                   'covered_lines':d['totals']['covered_lines'],
+                   'missing_lines':d['totals']['missing_lines'],
+                   'num_statements':d['totals']['num_statements'],
+                   'modules':{}}
+          for path,data in files.items():
+              summary['modules'][path]={'percent_covered':data['summary']['percent_covered'],
+                 'missing_lines':data.get('missing_lines',[])[:100],
+                 'missing_branch_arcs':data.get('missing_branches',[])[:100]}
+          cases=[]
+          skipped=[]
+          for p in pathlib.Path('tests').glob('test_*.py'):
+              tree=ast.parse(p.read_text())
+              for obj in tree.body:
+                  if isinstance(obj,(ast.FunctionDef,ast.AsyncFunctionDef)) and obj.name.startswith('test_'):
+                      cases.append(f'{p}:{obj.name}')
+              if 'pytest.skip' in p.read_text() or 'pytest.mark.skip' in p.read_text() or 'xfail(' in p.read_text():
+                  skipped.append(str(p))
+          summary['test_definitions']=len(cases)
+          summary['explicit_skip_or_xfail_files']=skipped
+          pathlib.Path('coverage-audit-summary.json').write_text(json.dumps(summary,indent=2))
+          print('COVERAGE_AUDIT_SUMMARY',json.dumps({k:v for k,v in summary.items() if k!='modules'}),flush=True)
+          print('LOW_COVERAGE_MODULES',json.dumps([(k,v['percent_covered']) for k,v in summary['modules'].items() if v['percent_covered']<80]),flush=True)
+          PY
+      - name: Upload audit coverage and missing-line evidence even after failing verification
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: axiom-full-source-branch-coverage-and-test-inventory
+          path: |
+            full-code-coverage-report.txt
+            full-code-coverage.json
+            coverage-audit-summary.json
+          if-no-files-found: warn

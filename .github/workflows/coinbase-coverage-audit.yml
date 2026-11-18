@@ -1,6 +1,8 @@
 name: AXIOM Coinbase 12-hour real data completeness investigation
 on:
   push:
+    branches:
+      - audit/complete-coverage-and-workflows-2026-11-17
     paths:
       - '.github/workflows/coinbase-coverage-audit.yml'
   workflow_dispatch:
