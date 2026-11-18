@@ -36,6 +36,10 @@ jobs:
           python -m coverage run --branch --source=app,phase0,research,research_sources -m pytest -q
           python -m coverage run --append --branch --source=app,phase0,research,research_sources tests/audit_deep_auxiliary.py
           python -m coverage run --append --branch --source=app,phase0,research,research_sources tests/audit_adversarial_auxiliary.py
+          # Verify actual CLI entrypoints under coverage; separate invocations
+          # also prove their exit codes rather than just importing functions.
+          python -m coverage run --append --branch --source=app,phase0,research,research_sources phase0/verify_transfer.py --checkout . --require-archives
+          python -m coverage run --append --branch --source=app,phase0,research,research_sources phase0/check_regression_history.py
           python -m coverage report -m | tee full-code-coverage-report.txt
           python -m coverage json -o full-code-coverage.json
           python - <<'PY'
