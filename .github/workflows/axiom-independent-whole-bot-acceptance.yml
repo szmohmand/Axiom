@@ -4,6 +4,7 @@ on:
     branches:
       - tests/axiom-full-lifecycle-audit-2026-11-17
       - fix/rollover-brti-execution-evidence-2026-11-17
+      - fix/axiom-quantum-grade-resilience-coverage-2026-11-17
   workflow_dispatch:
 permissions:
   contents: read
