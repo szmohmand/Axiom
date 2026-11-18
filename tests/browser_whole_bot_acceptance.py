@@ -54,7 +54,7 @@ def run():
 
         results = []
         with sync_playwright() as play:
-            browser = play.chromium.launch(headless=True)
+            browser = play.chromium.launch(headless=True, channel=os.environ.get('AXIOM_BROWSER_CHANNEL') or None)
             try:
                 for name, width, height in (("iphone", 390, 844), ("desktop", 1280, 800)):
                     context = browser.new_context(viewport={"width": width, "height": height},
