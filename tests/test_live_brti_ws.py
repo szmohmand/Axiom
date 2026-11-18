@@ -174,3 +174,17 @@ def test_fastapi_snapshot_never_uses_brti_as_forecast_or_verified_profit(env,mon
     assert history['live_brti']['triggers_orders'] is False
     health=client.get('/health').json()
     assert 'live_brti_status' in health and 'live_brti_fresh' in health
+
+
+def test_disconnected_or_auth_denied_never_advertises_recent_cached_tick():
+    o=BRTIObserver()
+    assert o.ingest(frame(),received_at=T+.1)
+    assert o.snapshot(now=T+.2)['fresh'] is True
+    for state in ('SOURCE_ERROR','AUTH_REJECTED','NOT_CONFIGURED','DISABLED','CONNECTED'):
+        o.mark(state,'constant simulated status')
+        out=o.snapshot(now=T+.3)
+        assert out['fresh'] is False
+        assert out['current_value_usd'] is None
+        assert out['progressive_close_window'] is None
+    o.ingest(frame(t=MS+1000),received_at=T+1.1)
+    assert o.snapshot(now=T+1.2)['fresh'] is True

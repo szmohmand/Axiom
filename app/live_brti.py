@@ -132,7 +132,8 @@ class BRTIObserver:
             tick=max((x for x in (one,fast) if x is not None),
                 key=lambda x:x['local_received_at'],default=None)
             age=None if tick is None else max(0.,round(now-tick['local_received_at'],3))
-            fresh=bool(tick and age<=10 and now-tick['source_ts_ms']/1000<=20)
+            fresh=bool(tick and self.connected and self.status=='STREAMING'
+                and age<=10 and now-tick['source_ts_ms']/1000<=20)
             status=('STALE' if tick and not fresh else self.status)
             close=market.get('close_ts') if isinstance(market,dict) else None
             target=_price(market.get('target')) if isinstance(market,dict) else None
@@ -143,7 +144,7 @@ class BRTIObserver:
                 final=None
             return {
                 'status':status,'source':'KALSHI_CF_BENCHMARKS_AUTH_WS',
-                'configured':status!='NOT_CONFIGURED','connected':self.connected,
+                'configured':status not in ('NOT_CONFIGURED','DISABLED'),'connected':self.connected,
                 'fresh':fresh,'last_sample_age_seconds':age,
                 'current_value_usd':tick['value_usd'] if fresh else None,
                 'latest_1hz':dict(one) if one else None,
