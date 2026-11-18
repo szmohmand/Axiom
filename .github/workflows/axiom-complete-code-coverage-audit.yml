@@ -37,6 +37,7 @@ jobs:
           python -m coverage run --append --branch --source=app,phase0,research,research_sources tests/audit_deep_auxiliary.py
           python -m coverage run --append --branch --source=app,phase0,research,research_sources tests/audit_provenance_and_brti_exceptions.py
           python -m coverage run --append --branch --source=app,phase0,research,research_sources tests/audit_application_boundary_exceptions.py
+          python -m coverage run --append --branch --source=app,phase0,research,research_sources tests/audit_main_worker_failover.py
           python -m coverage report -m | tee full-code-coverage-report.txt
           python -m coverage json -o full-code-coverage.json
           python - <<'PY'
