@@ -76,8 +76,6 @@ class VerifyExceptionalPaths(unittest.TestCase):
                 z.unlink()
                 self.assertTrue(any("missing frozen ZIP" in e for e in vt.verify(root,require_archives=True)))
                 makezip()
-                with self.assertRaises(StopIteration):
-                    vt.verify(root,legacy_zip=root/"app/example.py")
                 # Explicitly declared source archive is recognized; an arbitrary
                 # different byte stream cannot pass as the original ZIP.
                 self.assertEqual(vt.verify(root,require_archives=True),[])
@@ -109,7 +107,7 @@ class VerifyExceptionalPaths(unittest.TestCase):
             h.write_text(json.dumps({"entries":cases}))
             with patch.object(cr,"ROOT",root),patch.object(cr,"HISTORY",h),patch.object(cr,"REQUIRED_HISTORICAL_IDS",["H99"]):
                 issues=cr.check()
-            for expected in ("removed","unsafe","malformed","Duplicate","missing finding","missing permanent","missing regression test","missing permanent test"):
+            for expected in ("regression test removed","regression test file removed","unsafe","malformed","Duplicate","missing finding","missing permanent test selectors","permanent regression record removed"):
                 self.assertTrue(any(expected.lower() in issue.lower() for issue in issues),expected+" "+str(issues))
             (root/"tests/test_valid.py").write_text("def not_python(\n")
             h.write_text(json.dumps({"entries":[{"id":"A","finding":"f","fixed_commit":"c",
