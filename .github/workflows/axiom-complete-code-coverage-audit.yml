@@ -15,6 +15,7 @@ jobs:
       DEMO_MODE: '1'
       AUTO_PAPER: '0'
       DATA_PATH: '/tmp/axiom-complete-code-coverage.sqlite3'
+      PYTHONWARNINGS: 'error::RuntimeWarning'
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6

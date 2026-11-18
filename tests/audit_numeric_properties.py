@@ -90,7 +90,7 @@ class AdversarialNumberAndPropertyTests(unittest.TestCase):
         with patch.object(Path,"read_text",new=fake_read),patch.object(
                  sys,"argv",["check_regression_history.py"]),contextlib.redirect_stdout(io.StringIO()) as out:
             with self.assertRaises(SystemExit) as ex:
-                runpy.run_module("phase0.check_regression_history",run_name="__main__")
+                runpy.run_path(str(Path(check_regression_history.__file__)),run_name="__main__")
         self.assertEqual(ex.exception.code,1)
         self.assertIn("FAIL:",out.getvalue())
 

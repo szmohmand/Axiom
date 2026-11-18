@@ -215,6 +215,6 @@ def test_manual_backfill_cli_without_entitlement_reports_not_verified(monkeypatc
     with patch.object(sys,"argv",["verify_brti_backlog.py"]):
         with contextlib.redirect_stdout(io.StringIO()) as out:
             with pytest.raises(SystemExit) as ex:
-                runpy.run_module("research.verify_brti_backlog",run_name="__main__")
+                runpy.run_path(str(Path(backfill.__file__)),run_name="__main__")
     assert ex.value.code==1
     assert "NOT_VERIFIED" in out.getvalue()

@@ -110,7 +110,7 @@ class HardeningAdversarialChecks(unittest.TestCase):
                 self.assertEqual(hist.check(),[])
             capture=io.StringIO()
             with contextlib.redirect_stdout(capture),patch.object(sys,"argv",["check_regression_history.py"]):
-                runpy.run_module("phase0.check_regression_history",run_name="__main__")
+                runpy.run_path(str(Path(hist.__file__)),run_name="__main__")
             self.assertIn("permanent regression",capture.getvalue())
             self.assertIn("PASS:",capture.getvalue())
 
@@ -167,13 +167,13 @@ class HardeningAdversarialChecks(unittest.TestCase):
             root=Path(tmp);fixture(root)
             with patch.object(sys,"argv",["verify_transfer.py","--checkout",str(root),"--require-archives"]):
                 with contextlib.redirect_stdout(io.StringIO()) as output:
-                    runpy.run_module("phase0.verify_transfer",run_name="__main__")
+                    runpy.run_path(str(Path(transfer.__file__)),run_name="__main__")
                 self.assertIn("PASS:",output.getvalue())
             (root/"phase0/source_archives/original.zip").unlink()
             with patch.object(sys,"argv",["verify_transfer.py","--checkout",str(root),"--require-archives"]):
                 with contextlib.redirect_stdout(io.StringIO()) as output:
                     with self.assertRaises(SystemExit) as caught:
-                        runpy.run_module("phase0.verify_transfer",run_name="__main__")
+                        runpy.run_path(str(Path(transfer.__file__)),run_name="__main__")
                 self.assertEqual(caught.exception.code,1)
                 self.assertIn("FAIL:",output.getvalue())
 
@@ -255,7 +255,7 @@ class HardeningAdversarialChecks(unittest.TestCase):
             with patch.object(sys,"argv",["verify_official_brti_live.py"]):
                 with contextlib.redirect_stdout(io.StringIO()):
                     with self.assertRaises(SystemExit) as e:
-                        runpy.run_module("research.verify_official_brti_live",run_name="__main__")
+                        runpy.run_path(str(Path(brti.__file__)),run_name="__main__")
                 self.assertEqual(e.exception.code,2)
 
     def test_public_source_fetch_caps_bytes_and_scopes_optional_github_token(self):
