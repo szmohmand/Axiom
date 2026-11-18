@@ -191,7 +191,7 @@ def test_invalid_or_naive_clock_and_malformed_listing_records_cannot_qualify(mon
                {"ticker":"KXBTC15M-WRONGRESULT","result":"void","close_time":iso(CLOCK-900)},
                {"ticker":"KXBTC15M-BADTIME","result":"yes","close_time":"bad"},
                recent,recent]
-    result=check(monkeypatch,malformed)
+    result=check(monkeypatch,malformed,terms={recent["ticker"]:recent})
     assert result["status"]=="RECONCILED_ALL"
     assert result["checked"]==result["verified"]==1
 
