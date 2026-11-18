@@ -15,7 +15,8 @@ from typing import Any
 
 def utc_timestamp(value: Any) -> float | None:
     if isinstance(value, (int, float)):
-        return float(value)
+        # A nonfinite or Boolean clock is not a published contract timestamp.
+        return numeric(value)
     if not isinstance(value, str) or not value:
         return None
     try:
@@ -30,7 +31,7 @@ def numeric(value: Any) -> float | None:
     try:
         f = float(value)
         return f if math.isfinite(f) else None
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None
 
 
@@ -110,7 +111,18 @@ def volatility_forecast(spot: float | None, target: float | None,
     empty = {'available': False, 'prob_above': None, 'prob_below': None, 'side': 'WAIT',
              'reason': 'Requires a published Kalshi target, fresh BTC price and at least 16 candles',
              'sigma_1m': None, 'drift_1m': None, 'distance': None, 'method': 'experimental-volatility-model'}
-    if spot is None or target is None or spot <= 0 or target <= 0 or seconds_left <= 0: return empty
+    # A NaN/Infinity input used to survive comparisons and be converted into
+    # a confident-looking real forecast. Convert/validate BEFORE model math.
+    if any(v is None or isinstance(v, bool) for v in (spot, target, seconds_left)):
+        return empty
+    try:
+        spot, target, seconds_left = map(float, (spot, target, seconds_left))
+    except (TypeError, ValueError, OverflowError):
+        return empty
+    if not all(map(math.isfinite, (spot, target, seconds_left))):
+        return empty
+    if spot <= 0 or target <= 0 or seconds_left <= 0:
+        return empty
     closes = [c['close'] for c in candles if c.get('close') and c['close'] > 0]
     if len(closes) < 16: return empty
     returns = [math.log(b / a) for a, b in zip(closes, closes[1:])]

@@ -14,6 +14,8 @@ Preserve every last-known-good commit **before** a new change. Keep old SHA and 
 
 | 2026-11-17 | `ce71c66c087c75a9883f010757b67804c31578a1` | `verified/2026-11-17-ce71c66-node24` | [Pass #44192967169](https://github.com/szmohmand/Axiom/actions/runs/44192967169), 20 permanent regressions and full synthetic suite; [browser #44192967384](https://github.com/szmohmand/Axiom/actions/runs/44192967384), mobile + desktop; [read-only worker #44192967202](https://github.com/szmohmand/Axiom/actions/runs/44192967202), 2 real polls | [Pass #44192967074](https://github.com/szmohmand/Axiom/actions/runs/44192967074), official Kalshi public endpoints and Coinbase; [16-minute rollover #44192967168](https://github.com/szmohmand/Axiom/actions/runs/44192967168), 32 samples, 2 safe brief contract-publication gaps |
 
+| 2026-11-17 | `54fe1a288333e24d90b4c730c4b7c783dbec20d2` | `verified/2026-11-17-54fe1a2-pre-numeric-hardening` | [Full pytest + archive and 23 permanent regressions #44234033750](https://github.com/szmohmand/Axiom/actions/runs/44234033750); [measured coverage #44234033687](https://github.com/szmohmand/Axiom/actions/runs/44234033687): 98.64% at exact audit SHA, before new numeric regressions | [Read-only provider #44234033836](https://github.com/szmohmand/Axiom/actions/runs/44234033836); sandbox-only audit source and no real orders |
+
 ## Future workflow
 1. Confirm the intended baseline SHA is fully verified and create a distinct in-repository recovery reference **before** coding.
 2. Make candidate changes on an isolated branch within `szmohmand/Axiom`, not by editing the verified branch. Compare the candidate to its baseline.

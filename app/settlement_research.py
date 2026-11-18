@@ -46,7 +46,9 @@ def shadow_forecast_from_candles(candles: list[dict], market: dict | None,
     except (KeyError, TypeError, ValueError):
         return unavailable('Missing strike, time remaining, or observation time')
     if (not all(map(math.isfinite, (strike, seconds_left, asof))) or
-            strike <= 0 or seconds_left <= 0 or seconds_left > 900):
+            strike <= 0 or seconds_left < 1 or seconds_left > 900):
+        # Subsecond expiration could underflow sqrt(T) to zero and divide
+        # by zero. An effectively expired contract cannot produce a signal.
         return unavailable('Invalid published target or expiration clock')
     if not isinstance(candles, list):
         return unavailable('No valid minute candles')

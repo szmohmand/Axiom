@@ -74,7 +74,8 @@ def normalize_orderbook(payload: dict, ticker: str, received_at: float) -> dict:
     """
     if not ticker or not ticker.startswith("KXBTC15M-"):
         raise ValueError("Orderbook must be tied to an active BTC15m ticker")
-    if not isinstance(received_at, (int, float)) or not math.isfinite(received_at):
+    if (isinstance(received_at, bool) or not isinstance(received_at, (int, float))
+            or not math.isfinite(received_at)):
         raise ValueError("Invalid order-book receipt time")
     if not isinstance(payload, dict) or not isinstance(payload.get("orderbook_fp"), dict):
         raise ValueError("Kalshi orderbook_fp missing")
@@ -131,7 +132,8 @@ def current_book(book: dict | None, ticker: str, now: float, max_age: float = 45
     if not isinstance(book, dict) or not book.get("available") or book.get("ticker") != ticker:
         return False
     ts = book.get("received_at")
-    return isinstance(ts, (int, float)) and math.isfinite(ts) and -2 <= now-ts <= max_age
+    return (not isinstance(ts, bool) and isinstance(ts, (int, float))
+            and math.isfinite(ts) and -2 <= now-ts <= max_age)
 
 
 def sweep(book: dict, side: str, action: str, contracts: float = 1.) -> dict:

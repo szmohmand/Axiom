@@ -216,6 +216,32 @@
         "tests/test_rollover_brti_execution_integrity.py::test_paper_profit_cannot_be_mistaken_for_exchange_fill_performance",
         "tests/test_rollover_brti_execution_integrity.py::test_dashboard_labels_real_net_as_unmeasured_and_paper_as_assumed"
       ]
+    },
+    {
+      "id": "A27",
+      "finding": "Nonfinite BTC spot, target, duration or astronomically large numeric input previously bypassed experimental model input validity and could produce an apparently available forecast or overflow. Reject before probability calculation; preserve finite model behavior.",
+      "fixed_commit": "391aaf7e92a622a413a3b135c3ee5e3a00c5f88b",
+      "tests": [
+        "tests/test_numeric_input_integrity.py::test_nonfinite_or_unrepresentable_volatility_inputs_never_produce_direction",
+        "tests/test_numeric_input_integrity.py::test_valid_finite_forecast_and_full_depth_keep_previous_behavior"
+      ]
+    },
+    {
+      "id": "A28",
+      "finding": "A positive but subsecond expiration interval in the nonvoting Coinbase research shadow could underflow sqrt(T) to zero and raise ZeroDivisionError. Fail closed for expired/under-one-second target times; do not affect normal 1-900-second inputs.",
+      "fixed_commit": "391aaf7e92a622a413a3b135c3ee5e3a00c5f88b",
+      "tests": [
+        "tests/test_numeric_input_integrity.py::test_subsecond_or_underflowing_shadow_expiration_fails_closed"
+      ]
+    },
+    {
+      "id": "A29",
+      "finding": "Python bool is a subclass of int; order-book normalization and freshness checks previously accepted True/False as genuine market receipt timestamps. Reject all Boolean timestamps without altering valid finite numeric book semantics.",
+      "fixed_commit": "391aaf7e92a622a413a3b135c3ee5e3a00c5f88b",
+      "tests": [
+        "tests/test_numeric_input_integrity.py::test_boolean_received_at_is_not_a_real_exchange_snapshot_timestamp",
+        "tests/test_numeric_input_integrity.py::test_valid_finite_forecast_and_full_depth_keep_previous_behavior"
+      ]
     }
   ]
 }
