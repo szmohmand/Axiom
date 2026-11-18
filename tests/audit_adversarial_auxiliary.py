@@ -228,5 +228,72 @@ class VerifyExceptionalPaths(unittest.TestCase):
             self.assertEqual(failed["status"],"download_failed")
             self.assertTrue("master" in failed["notes"])
 
+    def test_brti_unsupported_elliptic_curve_signer_rejected(self):
+        from cryptography.hazmat.primitives import hashes,serialization
+        from cryptography.hazmat.primitives.asymmetric import ec
+        private=ec.generate_private_key(ec.SECP256R1())
+        pem=private.private_bytes(serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption()).decode()
+        with self.assertRaisesRegex(ValueError,"Only Kalshi RSA/Ed25519"):
+            b._signed_headers("test-only",pem,b.HISTORY_PATH)
+
+    def test_brti_old_contract_skipped_and_no_output_path_needed(self):
+        old={**TERMS,"close_time":"2026-11-01T18:00:00Z"}
+        with patch.dict(os.environ,{"KALSHI_API_KEY_ID":"test-id","KALSHI_PRIVATE_KEY_PEM":"test-key"}),patch.object(
+                b.requests,"Session",Session),patch("time.time",return_value=NOW),patch.object(
+                b,"_get",return_value={"markets":[old]}):
+            report=b.audit()
+            self.assertEqual(report["tried_contracts"],0)
+            self.assertEqual(report["status"],"NOT_VERIFIED")
+        with patch.dict(os.environ,{"AXIOM_BRTI_EVIDENCE_PATH":""}),patch.object(
+                b,"audit",return_value={"status":"NOT_VERIFIED"}):
+            self.assertEqual(b.main(),2)
+
+    def test_missing_archived_source_member_detected_and_git_unavailable_safe(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d)
+            arc=root/"phase0/source_archives"
+            arc.mkdir(parents=True)
+            (root/"app").mkdir()
+            (root/"app/source.py").write_text("synthetic")
+            z=arc/"source.zip"
+            with zipfile.ZipFile(z,"w") as archive:
+                archive.writestr("AXIOM_v2/app/WRONG.py","synthetic")
+            sha=lambda x:hashlib.sha256(x).hexdigest()
+            manifest={"transfer_base":"source.zip",
+                      "source_artifacts":[{"type":"legacy_zip","filename":"source.zip","sha256":sha(z.read_bytes())}],
+                      "transferred_files":[{"path":"app/source.py","sha256":sha(b"synthetic")}]}
+            (root/"phase0/transfer_manifest.json").write_text(json.dumps(manifest))
+            with patch.object(vt.subprocess,"check_output",side_effect=FileNotFoundError("no git")):
+                issues=vt.verify(root,require_archives=True)
+            self.assertTrue(any("missing file in frozen source ZIP" in x for x in issues))
+
+    def test_real_cli_rejects_bad_legacy_hash_with_nonzero_exit(self):
+        import runpy
+        repo=Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory() as d:
+            bad=Path(d)/"synthetic-wrong.zip"
+            bad.write_bytes(b"not the original archived bytes")
+            argv=["verify_transfer.py","--checkout",str(repo),
+                  "--legacy-zip",str(bad),"--require-archives"]
+            with patch.object(sys,"argv",argv):
+                with self.assertRaises(SystemExit) as exit:
+                    runpy.run_path(str(repo/"phase0/verify_transfer.py"),run_name="__main__")
+            self.assertEqual(exit.exception.code,1)
+
+    def test_gitlab_collector_branch_is_not_assumed_to_be_github(self):
+        blob=io.BytesIO()
+        with zipfile.ZipFile(blob,"w") as z:z.writestr("repo/README.md","test-only")
+        with tempfile.TemporaryDirectory() as d:
+            out=Path(d)
+            (out/"repositories").mkdir()
+            with patch.object(c,"OUTPUT",out),patch.object(c,"fetch",return_value=blob.getvalue()) as fetch:
+                result=c.collect({"name":"GitLab fixture","availability":"public_source_gitlab",
+                                  "repository":"1234"})
+            self.assertEqual(result["status"],"downloaded")
+            self.assertEqual(result["branch"],"default")
+            self.assertIn("gitlab.com",fetch.call_args[0][0])
+
 if __name__=="__main__":
     unittest.main(verbosity=2)
