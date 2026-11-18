@@ -64,6 +64,13 @@ button,input{font:inherit}button{cursor:pointer}button:disabled{opacity:.4;curso
         <div class="progress"><div id="probBar"></div></div><div class="pair"><div class="info-cell"><div class="label">ABOVE likelihood</div><b id="above">—</b></div><div class="info-cell"><div class="label">BELOW likelihood</div><b id="below">—</b></div></div>
         <div class="explain" id="forecastReason">Waiting for enough data. This forecast is not independently calibrated.</div>
       </div>
+      <div class="card" id="brtiPanel"><div class="card-head"><div class="card-title">Live CF Benchmarks BRTI</div><span class="pill">AUTHENTICATED · NON-VOTING</span></div>
+        <div class="label">Kalshi index feed</div><div id="brtiStatus" class="signal">NOT CONNECTED</div>
+        <div class="pair"><div class="info-cell"><div class="label">As-received BRTI</div><b id="brtiValue">—</b></div><div class="info-cell"><div class="label">Published trailing 60s average</div><b id="brtiAvg">—</b></div></div>
+        <div class="pair"><div class="info-cell"><div class="label">Published quarter-hour average progress</div><b id="brtiClose">—</b></div><div class="info-cell"><div class="label">Last tick age</div><b id="brtiAge">—</b></div></div>
+        <div class="explain" id="brtiStrike">Official strike first-publication time unverified.</div>
+        <div class="explain" id="brtiNote">Live observed index timing is distinct from historical reconstruction; this reference does not vote in the forecast or place orders.</div>
+      </div>
       <div class="card"><div class="card-head"><div class="card-title">Normalized-distance research</div><span class="pill">SHADOW · NON-VOTING</span></div>
         <div class="label">BTC proxy study · not the BRTI index</div><div id="shadowSide" class="signal">WAIT</div>
         <div class="pair"><div class="info-cell"><div class="label">Distance / volatility (z)</div><b id="shadowZ">—</b></div><div class="info-cell"><div class="label">Real 1m bars used</div><b id="shadowBars">—</b></div></div>
@@ -143,6 +150,24 @@ function view(s){latest=s;const m=s.market, f=s.model||{},o=s.opportunity||{},sc
  set('distance',Number.isFinite(s.spot)&&Number.isFinite(m?.target)?(s.spot-m.target>=0?'+':'')+money(s.spot-m.target):'—');set('vol',f.sigma_1m!=null?pct(f.sigma_1m):'—');set('candles',s.candles?.length||0);
  const above=f.available?f.prob_above:null;set('forecastSide',f.available?f.side:'WAIT','direction '+directionClass(f.side));set('above',pct(above));set('below',pct(f.available?f.prob_below:null));$('probBar').style.width=f.available?(100*above).toFixed(1)+'%':'50%';set('forecastReason',f.reason||'Insufficient data');
  set('yesAsk',cents(m?.yes_ask));set('noAsk',cents(m?.no_ask));set('opSide',o.side||'WAIT','signal '+directionClass(o.side));set('edge',pct(o.edge));set('autoPaper',s.paper_auto_enabled?'ON':'OFF');set('opReason',o.reason||'No available research opportunity');
+ const bt=s.live_brti||{},stObs=s.strike_observation||{};
+ set('brtiStatus',bt.status||'NOT CONNECTED',bt.fresh?'signal green':'signal');
+ set('brtiValue',bt.fresh?money(bt.current_value_usd):'—');
+ set('brtiAvg',bt.fresh?money(bt.published_trailing_60s?.value_usd):'—');
+ const avg=bt.progressive_close_window;
+ set('brtiClose',avg?money(avg.value_usd)+' · '+avg.window_size+' ticks':'—');
+ set('brtiAge',bt.last_sample_age_seconds==null?'—':fmt(bt.last_sample_age_seconds,1)+'s');
+ set('brtiStrike',stObs.locally_first_observed_at?
+   'Strike first SEEN by AXIOM: '+new Date(stObs.locally_first_observed_at*1000).toLocaleTimeString()+
+   ' · actual Kalshi publication time UNVERIFIED':
+   'Official strike first-publication time unverified.');
+ set('brtiNote',bt.fresh?
+   'BRTI event: '+new Date(bt.source_timestamp_ms).toLocaleTimeString()+
+   ' · Kalshi receipt: '+new Date(bt.provider_received_at_ms).toLocaleTimeString()+
+   ' · local receipt: '+new Date(bt.local_received_at*1000).toLocaleTimeString()+
+   '. Not a certified final settlement or a prediction.':
+   'WAIT: '+(bt.source_warnings||bt.status||'No fresh authenticated index').replace(/[<>]/g,'')+
+   '. No substitute BRTI price or official result invented.');
  const sh=s.research_shadow||{};set('shadowSide',sh.available?sh.side:'WAIT','signal '+directionClass(sh.side));set('shadowZ',fmt(sh.z_score,3));set('shadowBars',sh.vol_minutes??'—');set('shadowReason',sh.reason||'Research model unavailable; not used for trading decisions');
  const book=s.orderbook||{},dp=s.depth_opportunity||{},ex=s.execution_intelligence||{},sel=dp.selected||{};
  set('bookStatus',book.available?`Current aggregated price levels · ${(book.received_at?new Date(book.received_at*1000).toLocaleTimeString():'time unavailable')}`:`WAIT · ${book.reason||'No valid order-book depth'}`);

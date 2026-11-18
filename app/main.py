@@ -20,17 +20,20 @@ from .storage import Ledger
 from .settlement_research import shadow_forecast_from_candles, unavailable as unavailable_research_shadow
 from .orderbook import unavailable as unavailable_book
 from .execution_evidence import examine_liquidity
+from .live_brti import BRTIObserver, run_stream
 from .depth_intelligence import (analyze_opportunities, execution_guidance,
                                   unavailable_opportunity, unavailable_execution)
 
 ROOT = Path(__file__).parent
 DEMO = os.environ.get('DEMO_MODE', '0') == '1'
-AUTO_PAPER = os.environ.get('AUTO_PAPER', '1') == '1'
+AUTO_PAPER = os.environ.get('AUTO_PAPER', '0') == '1'
 POLL_SECONDS = max(5, int(os.environ.get('POLL_SECONDS', '15')))
 DATA_PATH = os.environ.get('DATA_PATH', str(ROOT.parent/'data'/'bot.sqlite3'))
 ADMIN_TOKEN = os.environ.get('BOT_ADMIN_TOKEN','')
 provider = DemoProvider() if DEMO else LiveProvider()
 ledger = Ledger(DATA_PATH)
+BRTI_STREAM_ENABLED = os.environ.get('BRTI_STREAM_ENABLED','1') == '1' and not DEMO
+brti_observer = BRTIObserver(os.environ.get('BRTI_OBSERVATION_PATH') or None)
 state_lock = threading.RLock()
 state = {'mode':'DEMO' if DEMO else 'LIVE','last_attempt':None,'last_success':None,
          'market':None,'spot':None,'model':None,'engines':[],'scalp':None,'opportunity':None,'candles':[],
@@ -39,6 +42,7 @@ state = {'mode':'DEMO' if DEMO else 'LIVE','last_attempt':None,'last_success':No
          'depth_opportunity':unavailable_opportunity('No independently evaluated depth yet'),
          'execution_intelligence':unavailable_execution('No independently evaluated depth yet'),
          'errors':{},'paper_auto_enabled':AUTO_PAPER,'watch':None,'candle_quality':None,'status':'STARTING',
+         'strike_observation':{'status':'NOT_SEEN','official_publication_timestamp_verified':False},
          'settlement':{'status':'NOT_CHECKED','last_attempt':None,'last_success':None,
                        'checked':0,'failed':0}}
 shutdown = threading.Event()
@@ -81,6 +85,8 @@ def _view_locked(now):
     data = dict(state)
     data['errors'] = dict(state['errors'])
     data['settlement'] = dict(state['settlement'])
+    data['strike_observation'] = dict(state.get('strike_observation') or {})
+    data['live_brti'] = brti_observer.snapshot(data.get('market'),now)
     attempted = state['last_attempt']
     data['heartbeat_age_seconds'] = None if attempted is None else max(0, round(now-attempted, 2))
     stale_limit = max(60, 3*POLL_SECONDS)
@@ -218,6 +224,17 @@ def update_once(now=None):
         # otherwise a short feed outage can be counted as sustained evidence.
         ledger.reset_watches()
     with state_lock:
+        # First observation by this process, never the index issuer's
+        # original strike publication timestamp; do not backdate evidence.
+        previous=state.get('strike_observation') or {}
+        if market and market.get('target') is not None:
+            if (previous.get('ticker')!=market['ticker'] or
+                    previous.get('target')!=market['target']):
+                state['strike_observation']={'status':'FIRST_OBSERVED',
+                    'ticker':market['ticker'],'target':market['target'],
+                    'locally_first_observed_at':time.time(),
+                    'official_publication_timestamp_verified':False,
+                    'observation_is_earliest_publication':False}
         # Keep unresolved grading failures visible, even across good feed polls.
         for component in ('settlement','settlement_worker','ledger_read','ledger_connection'):
             if component in state['errors']:
@@ -344,10 +361,21 @@ async def lifespan(_app):
     grading_thread=threading.Thread(target=grading_worker, name='research-settlement-worker',daemon=True)
     market_thread.start()
     grading_thread.start()
+    brti_thread=None
+    if BRTI_STREAM_ENABLED:
+        brti_thread=threading.Thread(target=run_stream,
+            args=(brti_observer,shutdown),
+            kwargs={'key_id':os.environ.get('KALSHI_API_KEY_ID',''),
+                    'private_key':os.environ.get('KALSHI_PRIVATE_KEY_PEM','')},
+            name='read-only-live-brti-worker',daemon=True)
+        brti_thread.start()
+    else:
+        brti_observer.mark('DISABLED','BRTI WebSocket disabled for demo/configuration')
     yield
     shutdown.set()
     market_thread.join(timeout=3)
     grading_thread.join(timeout=3)
+    if brti_thread: brti_thread.join(timeout=4)
 
 app=FastAPI(title='AXIOM Multi-Engine BTC Research Bot',version='2.0.0',lifespan=lifespan, docs_url=None,redoc_url=None)
 
@@ -373,7 +401,9 @@ def health():
         'mode':snapshot['mode'],'last_attempt':snapshot['last_attempt'],
         'last_success':snapshot['last_success'],
         'heartbeat_age_seconds':snapshot['heartbeat_age_seconds'],
-        'errors':snapshot['errors'],'settlement':snapshot['settlement']},
+        'errors':snapshot['errors'],'settlement':snapshot['settlement'],
+        'live_brti_status':snapshot['live_brti']['status'],
+        'live_brti_fresh':snapshot['live_brti']['fresh']},
         status_code=200 if snapshot['ok'] else 503,headers={'Cache-Control':'no-store'})
 
 @app.get('/api/state')
@@ -422,7 +452,7 @@ def get_state():
     # A token alone is not permission to record a position against stale or
     # broken market data. The UI and paper endpoint share the same readiness rule.
     d['manual_paper_available']=bool(ADMIN_TOKEN) and d['ok'] and bool(d.get('market'))
-    d['disclaimer']='Experimental models and gross simulated trading only. Coinbase is NOT the BRTI settlement index. Full Kalshi aggregated depth is a one-time participant-order snapshot; depth guidance never places an order.'
+    d['disclaimer']='Experimental models and gross simulated trading only. Coinbase is NOT the BRTI settlement index. Full Kalshi aggregated depth is a one-time participant-order snapshot; depth guidance never places an order. Live BRTI is an optional authenticated as-received nonvoting reference and does not establish verified settlement or real profitability.'
     return JSONResponse(d,headers={'Cache-Control':'no-store'})
 
 class PaperRequest(BaseModel):
