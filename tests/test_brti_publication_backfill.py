@@ -175,7 +175,7 @@ def test_backlog_output_hides_auth_and_does_not_claim_trade_profits(monkeypatch)
         assert "synthetic-PEM-not-a-secret" not in data
         assert '"status": "RECONCILED_ALL"' in data
         assert json.loads(data)["orders_placed"] is False
-        monkeypatch.setattr(backfill,"inspect",side_effect=RuntimeError("synthetic exception"))
-        with patch("sys.stdout",new=io.StringIO()):
-            assert backfill.main()==1
+        with patch.object(backfill,"inspect",side_effect=RuntimeError("synthetic exception")):
+            with patch("sys.stdout",new=io.StringIO()):
+                assert backfill.main()==1
         assert json.loads(Path(path).read_text())["status"]=="SOURCE_ERROR"
