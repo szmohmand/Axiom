@@ -179,3 +179,42 @@ def test_backlog_output_hides_auth_and_does_not_claim_trade_profits(monkeypatch)
             with patch("sys.stdout",new=io.StringIO()):
                 assert backfill.main()==1
         assert json.loads(Path(path).read_text())["status"]=="SOURCE_ERROR"
+
+
+def test_invalid_or_naive_clock_and_malformed_listing_records_cannot_qualify(monkeypatch):
+    for raw in (None,3,"invalid","2026-11-17T18:00:00"):
+        with pytest.raises((ValueError,TypeError)):
+            backfill._utc_sec(raw)
+    recent=official("KXBTC15M-OK",300)
+    malformed=[None,{},{"ticker":"OTHER","result":"yes","close_time":iso(CLOCK-900)},
+               {"ticker":None,"result":"yes","close_time":iso(CLOCK-900)},
+               {"ticker":"KXBTC15M-WRONGRESULT","result":"void","close_time":iso(CLOCK-900)},
+               {"ticker":"KXBTC15M-BADTIME","result":"yes","close_time":"bad"},
+               recent,recent]
+    result=check(monkeypatch,malformed)
+    assert result["status"]=="RECONCILED_ALL"
+    assert result["checked"]==result["verified"]==1
+
+
+def test_verifier_incomplete_official_outcome_never_certifies_correctness(monkeypatch):
+    m=official("KXBTC15M-INVALID",300)
+    listing,detail,_=source([m])
+    monkeypatch.setattr(backfill.src,"_get",listing)
+    monkeypatch.setattr(backfill.src,"_public_market",detail)
+    monkeypatch.setattr(backfill.src,"_load_hours",lambda *_: ([None],[]))
+    report=backfill.inspect(object(),"id","key",now=CLOCK)
+    assert report["status"]=="CONFLICT"
+    assert not report["all_checked_contracts_verified"]
+
+
+def test_manual_backfill_cli_without_entitlement_reports_not_verified(monkeypatch):
+    import runpy, contextlib, sys
+    monkeypatch.delenv("KALSHI_API_KEY_ID",raising=False)
+    monkeypatch.delenv("KALSHI_PRIVATE_KEY_PEM",raising=False)
+    monkeypatch.delenv("AXIOM_BRTI_BACKFILL_EVIDENCE_PATH",raising=False)
+    with patch.object(sys,"argv",["verify_brti_backlog.py"]):
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            with pytest.raises(SystemExit) as ex:
+                runpy.run_module("research.verify_brti_backlog",run_name="__main__")
+    assert ex.value.code==1
+    assert "NOT_VERIFIED" in out.getvalue()
