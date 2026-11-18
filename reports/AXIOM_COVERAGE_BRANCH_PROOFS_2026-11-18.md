@@ -29,3 +29,31 @@
 **Rules for interpreting the outcome:** these are source-grounded program invariants, not absolute proof that every possible future refactor will preserve them. No `# pragma: no cover`, `# pragma: no branch`, artificial coverage exclusion, discarded test, or changed trading behavior is used. Some missing Python generator, loop, and return arcs may be instrumentation-specific; do not claim they are logically impossible unless supported by the program invariant. Only the actual subsequent CI logs may establish measured improvement. Full replay, provider acceptance, historical BRTI publication and authenticated net returns remain separate engineering/economic evidence categories.
 
 **Verification gate:** run original 172 passing pytest cases plus this test file, all isolated adversarial checks, compilation, archive/regression tests, and the live read-only public provider smoke on the **same audit SHA**, with runtime warnings escalated to test failures. Preserve the verified baseline; do not merge or deploy.
+
+## Completed verification against the exact audited source (2026-11-18)
+
+**Original missing-path inventory:** 9 statements and 16 branch arcs. **New targeted tests exercised 5 additional statements and 10 additional arcs** without changing application code.
+
+**Final audited candidate before the independent coverage-gate commit:** `39d3202dc5e8b09a5600405d20cc67098592aa83`.
+
+- [Full pytest regression and synthetic end-to-end — PASS](https://github.com/szmohmand/Axiom/actions/runs/44394483858)
+- [Measured all-source branch and line coverage — PASS](https://github.com/szmohmand/Axiom/actions/runs/44394484304)
+- [Public-provider read-only smoke — PASS](https://github.com/szmohmand/Axiom/actions/runs/44394484073)
+- **Actual measured result:** 1,781 statements, **1,777 executed**, 4 missing; 654 branch opportunities, **648 exercised**, 6 missing; **99.58932238193019%** combined raw statement/branch coverage; **zero Coverage.py exclusions**. The complete 180-case pytest run and five supplemental offline adversarial suites passed; no runtime warning was reported.
+
+**Exact six remaining coverage arcs, independently recovered from `full-code-coverage.json` artifact ID `14467924427`:**
+
+| Missing coverage.py arc | Classification | Evidence |
+|---|---|---|
+| `app/engine.py 129 -> -104` | Provably impossible after candle-count validation | ≥16 closes generates ≥15 consecutive returns before `len(returns)<15` |
+| `app/orderbook.py 99 -> 100` | Provably impossible for a normalized, noncrossed bid-only book | When both bids present, their sum ≤$1 implies reciprocal ask spread ≥0; when one missing, spread is undefined |
+| `app/orderbook.py 157 -> 158` | Provably impossible for validated positive quantities | Each successive `take` is positive until `filled == requested`, which immediately breaks the loop |
+| `app/settlement_research.py 87 -> 88` | Provably impossible after 31 completed candles | A trailing 31–61-bar window yields ≥30 real returns |
+| `app/storage.py 113 -> -110` | **Coverage tracer artifact for `if r: return` inside `with self.lock`**, not an untested database outcome | Targeted test verifies both missing and present-watch outcomes, including returned side, locking, continuity, removal. A minimized reproduction on CPython 3.13.5 / Coverage.py 7.13.3 also reports `if r: return` within `with` as missing `->exit` even though both paths execute, confirming the instrumentation behavior |
+| `research/verify_official_brti_live.py 109 -> 110` | Provably impossible with exactly two history reference windows | Two opening and two closing endpoint timestamps map to at most four hour buckets |
+
+**No score manipulation:** all four unexecuted lines correspond to the four source-level mathematically unreachable assertions above (two orderbook lines, one research-return line and one BRTI-hour bound); the other two remaining gaps are an impossible GBM branch and the context-manager tracer artifact. Those safety guards remain in the source code unmodified; **neither coverage exclusions nor denominator tricks** were used.
+
+**Persistent future acceptance rule:** `tests/coverage_gate.py` fails CI if a new unreviewed missing statement or branch appears, raw coverage declines, or exclusions are introduced. The raw score remains separately displayed and is never renamed 100%. Changes that alter the underlying proof require a new code review and updated tests, not silent gate relaxation.
+
+**Scope limit:** coverage proves which program branches run under this test suite. It does not certify all live trading outcomes, every possible future code change, actual filled-order profit, production uptime or authenticated official settlement publication latency. No real orders, merge or deployment occurred.
