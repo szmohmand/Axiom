@@ -109,7 +109,10 @@ def test_stop_event_prevents_any_work_and_reconnect_error_is_sanitized():
             return self.calls>1
         def wait(self,delay):self.sleep=delay
     event=One()
-    with patch.object(brti_live.asyncio,"run",side_effect=RuntimeError("fake private secret")):
+    def close_and_fail(coro):
+        coro.close()  # Mocked asyncio.run never owns the real coroutine.
+        raise RuntimeError("fake private secret")
+    with patch.object(brti_live.asyncio,"run",side_effect=close_and_fail):
         brti_live.run_worker(obj,event)
     assert event.sleep==4
     state=json.dumps(obj.snapshot(TS))
@@ -122,7 +125,10 @@ def test_probe_is_explicit_about_missing_data_and_outputs_no_values(tmp_path,mon
     monkeypatch.setenv("AXIOM_LIVE_BRTI_SUMMARY",str(tmp_path/"summary.json"))
     monkeypatch.delenv("KALSHI_API_KEY_ID",raising=False)
     monkeypatch.delenv("KALSHI_PRIVATE_KEY_PEM",raising=False)
-    with patch.object(live_brti_probe.asyncio,"run",return_value=0):
+    def close_and_return(coro):
+        coro.close()
+        return 0
+    with patch.object(live_brti_probe.asyncio,"run",side_effect=close_and_return):
         assert live_brti_probe.run()==2
     report=json.loads((tmp_path/"summary.json").read_text())
     assert report["status"]=="NOT_VERIFIED"

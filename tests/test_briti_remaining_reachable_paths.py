@@ -96,7 +96,10 @@ def test_briti_worker_success_case_backoff_resets(monkeypatch):
         def is_set(self):self.count+=1;return self.count>1
         def wait(self,seconds):self.slept.append(seconds)
     stop=Stop()
-    with patch.object(brti_live.asyncio,"run",return_value=4):
+    def close_and_return(coro):
+        coro.close()
+        return 4
+    with patch.object(brti_live.asyncio,"run",side_effect=close_and_return):
         brti_live.run_worker(tracker,stop)
     assert stop.slept==[2]
     assert stop.count==2
@@ -120,7 +123,10 @@ def test_fastapi_real_briti_worker_thread_start_stop_in_full_lifespan(monkeypatc
 def test_briti_probe_error_reason_cannot_contain_original_network_message(monkeypatch,tmp_path,capsys):
     monkeypatch.setenv("BRTI_PROBE_SECONDS","10")
     monkeypatch.setenv("AXIOM_LIVE_BRTI_SUMMARY",str(tmp_path/"status.json"))
-    with patch.object(live_brti_probe.asyncio,"run",side_effect=OSError("private-key-must-not-leak")):
+    def close_and_fail(coro):
+        coro.close()
+        raise OSError("private-key-must-not-leak")
+    with patch.object(live_brti_probe.asyncio,"run",side_effect=close_and_fail):
         assert live_brti_probe.run()==2
     row=json.loads((tmp_path/"status.json").read_text())
     assert row["transport_failure_type"]=="OSError"
