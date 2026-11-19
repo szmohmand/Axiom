@@ -1,6 +1,8 @@
 name: AXIOM live read-only 16-minute continuity observation
 on:
   push:
+    branches:
+      - integrate/axiom-live-brti-release-candidate-2026-11-18
     paths:
       - '.github/workflows/axiom-live-continuity-observation.yml'
   workflow_dispatch:

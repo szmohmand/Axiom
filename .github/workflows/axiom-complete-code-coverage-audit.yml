@@ -5,6 +5,7 @@ on:
       - audit/complete-coverage-and-workflows-2026-11-17
       - audit/axiom-high-assurance-full-coverage-2026-11-17
       - audit/remaining-branches-meaningful-coverage-2026-11-18
+      - integrate/axiom-live-brti-release-candidate-2026-11-18
   workflow_dispatch:
 permissions:
   contents: read
