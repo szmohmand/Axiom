@@ -71,7 +71,7 @@ def run():
                         timeout=15000
                     )
                     assert "No real orders are placed" in page.locator("body").inner_text()
-                    for selector in ("#bookStatus", "#bookBidRows tr", "#bookAskRows tr",
+                    for selector in ("#liveBRTISection", "#brtiValue", "#brtiState", "#bookStatus", "#bookBidRows tr", "#bookAskRows tr",
                                      "#depthSide", "#execAction", "#scalpSide", "#forecastSide",
                                      "#engineRows tr", "#chart", "#paperYes", "#paperNo"):
                         assert page.locator(selector).count()>0, selector

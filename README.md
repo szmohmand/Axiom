@@ -15,7 +15,7 @@ DEMO_MODE=1 AUTO_PAPER=0 uvicorn app.main:app --host 127.0.0.1 --port 8000 --wor
 
 Open http://127.0.0.1:8000 (on the machine running the server). Demo mode uses clearly labeled synthetic prices/outcomes. **For public live read-only feeds**, remove `DEMO_MODE=1` or set `DEMO_MODE=0` and use a machine with internet access.
 
-On an iPhone/iPad, use a **new, separate hosting service** deployed from a **new repository**, not any existing project. This package does not create that new repository or deploy itself.
+On iPhone/iPad, use a single-worker HTTPS hosting service deployed from this same dedicated AXIOM repository after confirming the hosting workspace. Never create a different repository for this system.
 
 ## Actual engines integrated in v2
 
@@ -124,3 +124,7 @@ See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for exact file provenance
 - Exact implementations of third-party proprietary systems and unlicensed public repositories are **not** included.
 
 **Isolation:** This entire v2 was created only in `/mnt/data/AXIOM_v2_Research_Bot/`. No original GitHub project, branch, Render service, or database was modified.
+
+## Live authenticated BRTI reference (integration candidate)
+
+Set `BRTI_LIVE_ENABLED=1`, `KALSHI_API_KEY_ID` and `KALSHI_PRIVATE_KEY_PEM` in *server-side* environment secrets. AXIOM subscribes to Kalshi's authenticated `cfbenchmarks_value` and `cfbenchmarks_value_5hz` channels for BRTI only. `/api/state.live_briti` displays source and receipt timestamps and provider-reported 60-second/15-minute-window information without exporting credentials or raw frames. It does NOT vote in the uncalibrated forecasting ensemble, trigger paper trades or place real orders. Missing/stale data is marked unavailable. AXIOM's first-observed strike time is not proof of the exchange's first publication. Validate real stream capability using `python -m research.live_brti_probe`. Kalshi official documentation: https://docs.kalshi.com/websockets/cfbenchmarks-value and https://docs.kalshi.com/websockets/cfbenchmarks-value-5hz.

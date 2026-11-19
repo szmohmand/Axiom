@@ -20,6 +20,7 @@ from .storage import Ledger
 from .settlement_research import shadow_forecast_from_candles, unavailable as unavailable_research_shadow
 from .orderbook import unavailable as unavailable_book
 from .execution_evidence import examine_liquidity
+from .brti_live import BRTITracker, run_worker as brti_reference_worker
 from .depth_intelligence import (analyze_opportunities, execution_guidance,
                                   unavailable_opportunity, unavailable_execution)
 
@@ -29,6 +30,8 @@ AUTO_PAPER = os.environ.get('AUTO_PAPER', '1') == '1'
 POLL_SECONDS = max(5, int(os.environ.get('POLL_SECONDS', '15')))
 DATA_PATH = os.environ.get('DATA_PATH', str(ROOT.parent/'data'/'bot.sqlite3'))
 ADMIN_TOKEN = os.environ.get('BOT_ADMIN_TOKEN','')
+BRTI_LIVE_ENABLED = (not DEMO and os.environ.get('BRTI_LIVE_ENABLED','0') == '1')
+brti_tracker = BRTITracker(enabled=BRTI_LIVE_ENABLED)
 provider = DemoProvider() if DEMO else LiveProvider()
 ledger = Ledger(DATA_PATH)
 state_lock = threading.RLock()
@@ -81,6 +84,7 @@ def _view_locked(now):
     data = dict(state)
     data['errors'] = dict(state['errors'])
     data['settlement'] = dict(state['settlement'])
+    data['live_briti'] = brti_tracker.snapshot()
     attempted = state['last_attempt']
     data['heartbeat_age_seconds'] = None if attempted is None else max(0, round(now-attempted, 2))
     stale_limit = max(60, 3*POLL_SECONDS)
@@ -117,6 +121,8 @@ def update_once(now=None):
     errors={}; market=None; spot=None; candles=[]
     try:
         market=provider.market(now)
+        if market is not None and not DEMO:
+            brti_tracker.observe_market(market)
         if market is None:
             errors['kalshi']='No active Kalshi BTC15M market available'
     except Exception as e:
@@ -344,10 +350,17 @@ async def lifespan(_app):
     grading_thread=threading.Thread(target=grading_worker, name='research-settlement-worker',daemon=True)
     market_thread.start()
     grading_thread.start()
+    brti_thread = None
+    if BRTI_LIVE_ENABLED:
+        brti_thread = threading.Thread(target=brti_reference_worker,
+            args=(brti_tracker,shutdown),name='read-only-live-brti-worker',daemon=True)
+        brti_thread.start()
     yield
     shutdown.set()
     market_thread.join(timeout=3)
     grading_thread.join(timeout=3)
+    if brti_thread is not None:
+        brti_thread.join(timeout=3)
 
 app=FastAPI(title='AXIOM Multi-Engine BTC Research Bot',version='2.0.0',lifespan=lifespan, docs_url=None,redoc_url=None)
 
@@ -373,7 +386,8 @@ def health():
         'mode':snapshot['mode'],'last_attempt':snapshot['last_attempt'],
         'last_success':snapshot['last_success'],
         'heartbeat_age_seconds':snapshot['heartbeat_age_seconds'],
-        'errors':snapshot['errors'],'settlement':snapshot['settlement']},
+        'errors':snapshot['errors'],'settlement':snapshot['settlement'],
+        'live_briti':snapshot['live_briti']},
         status_code=200 if snapshot['ok'] else 503,headers={'Cache-Control':'no-store'})
 
 @app.get('/api/state')
