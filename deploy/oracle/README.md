@@ -2,7 +2,7 @@
 
 ## Source and status
 Oracle prep ships with AXIOM's unified application implementation.
-The verified integrated source checkpoint is 6f4ace73e0627e23824df09e0bf4039b94fe2dc0.
+The verified integrated source checkpoint is a25c960a36a7b5af5a6646b6bf6e0ffa6f2a5aef.
 Its release candidate passed all six GitHub gates: complete offline regression
 and full synthetic lifecycle, public Kalshi/Coinbase, genuine worker/full-depth,
 authenticated BRTI 1Hz/5Hz, strict measured branch coverage and real Chromium
@@ -81,3 +81,8 @@ an instantaneous depth/illustrative-fee resale review; these are not actual
 fills or profit. Funding data is explicitly NOT_CONNECTED until verified.
 The Oracle service environment requests a five-second poll interval; real
 network latency may prevent exact five-second observations.
+
+The pinned integrated source now includes verified read-only intracontract
+resale, depth-level change, actual quote-timing history, paper exit review,
+and a five-second requested polling interval. The installer must not deploy
+an older candidate or modify live trading permissions.

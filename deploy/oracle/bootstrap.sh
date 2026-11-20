@@ -3,7 +3,7 @@
 set -Eeuo pipefail
 REPO_URL='https://github.com/szmohmand/Axiom.git'
 DEPLOY_BRANCH='main'
-VERIFIED_BASE='6f4ace73e0627e23824df09e0bf4039b94fe2dc0'
+VERIFIED_BASE='a25c960a36a7b5af5a6646b6bf6e0ffa6f2a5aef'
 if [[ $EUID -ne 0 ]]; then echo 'Run with sudo' >&2; exit 2; fi
 . /etc/os-release
 if [[ $ID != ubuntu || $(uname -m) != aarch64 ]]; then
