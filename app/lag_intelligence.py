@@ -27,7 +27,7 @@ def wait(reason, funding=None):
             "funding_bias":(funding or {}).get("funding_bias","UNKNOWN"),
             "funding_percent":(funding or {}).get("funding_percent"),
             "funding_used_for_direction":False,
-            "read_only":True,"order_placed":False,"verified_profit":False}
+            "read_only":True,"order_placed":False,"orders_placed":False,"verified_profit":False}
 
 
 class BinanceKalshiLagTracker:
