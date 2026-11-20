@@ -9,7 +9,7 @@ def test_oracle_installer_syntax_and_manual_activation():
     body = script.read_text()
     lines = [x.strip() for x in body.splitlines() if x.lstrip().startswith("systemctl ")]
     assert lines == ["systemctl daemon-reload"]
-    assert "VERIFIED_BASE='a25c960a36a7b5af5a6646b6bf6e0ffa6f2a5aef'" in body
+    assert "VERIFIED_BASE='a1542a3bc62f39116bec54006ba47d9fd6597f4c'" in body
     assert "python -m pytest -q" in body
     assert "DEPLOY_BRANCH='main'" in body
     assert "git merge-base --is-ancestor" in body

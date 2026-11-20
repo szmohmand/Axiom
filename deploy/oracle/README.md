@@ -2,7 +2,7 @@
 
 ## Source and status
 Oracle prep ships with AXIOM's unified application implementation.
-The verified integrated source checkpoint is a25c960a36a7b5af5a6646b6bf6e0ffa6f2a5aef.
+The verified integrated source checkpoint is a1542a3bc62f39116bec54006ba47d9fd6597f4c.
 Its release candidate passed all six GitHub gates: complete offline regression
 and full synthetic lifecycle, public Kalshi/Coinbase, genuine worker/full-depth,
 authenticated BRTI 1Hz/5Hz, strict measured branch coverage and real Chromium
