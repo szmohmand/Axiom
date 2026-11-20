@@ -198,6 +198,7 @@ def update_once(now=None):
                 spot_source_at=getattr(provider,'price_source_at',None))
         except (ArithmeticError,TypeError,ValueError,KeyError):
             signals=unavailable_signals('BTC feature calculation rejected invalid inputs')
+            errors['btc_signals']='BTC feature calculation rejected invalid inputs'
         model=engine_pack(spot,market,candles,signals=signals)
         if not model.get('available') and not errors:
             errors['forecast']=model.get('reason','Model unavailable')

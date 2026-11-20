@@ -44,7 +44,9 @@ def run():
 
         state = requests.get(base + "/api/state", timeout=3).json()
         assert state["status"] == "DEMO" and state["ok"] is True
-        assert state["model"]["available"] and len(state["engines"]) == 4
+        assert state["model"]["available"] and len(state["engines"]) == 5
+        assert state["btc_signals"]["available"] is True
+        assert state["trade_decision"]["order_placed"] is False
         assert state["orderbook"]["available"] and state["orderbook"]["is_full_aggregated_depth"]
         assert state["execution_intelligence"]["order_placed"] is False
         assert state["depth_opportunity"]["read_only"] is True
@@ -71,11 +73,12 @@ def run():
                         timeout=15000
                     )
                     assert "No real orders are placed" in page.locator("body").inner_text()
-                    for selector in ("#liveBRTISection", "#brtiValue", "#brtiState", "#bookStatus", "#bookBidRows tr", "#bookAskRows tr",
+                    for selector in ("#decisionSignalsSection","#dynZ","#dynAccel","#dynTouch","#dynMove","#dynRef","#decisionAction","#decisionReason", "#liveBRTISection", "#brtiValue", "#brtiState", "#bookStatus", "#bookBidRows tr", "#bookAskRows tr",
                                      "#depthSide", "#execAction", "#scalpSide", "#forecastSide",
                                      "#engineRows tr", "#chart", "#paperYes", "#paperNo"):
                         assert page.locator(selector).count()>0, selector
                     assert page.locator("#paperYes").is_disabled()
+                    assert page.locator("#decisionReason").inner_text().strip()
                     assert page.locator("#paperNo").is_disabled()
                     data = page.evaluate("""() => ({
                       bodyWidth:document.body.scrollWidth,

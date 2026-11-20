@@ -14,12 +14,17 @@ import sys
 REVIEWED_MISSING_STATEMENTS = {
     "app/orderbook.py": {100, 158},
     "app/settlement_research.py": {88},
+    # 31+ strictly valid continuous bars always produce 30+ log returns;
+    # this defensive check is logically unreachable without altering inputs
+    # between validation and arithmetic. Keep the safety guard in source.
+    "app/decision_signals.py": {73},
     "research/verify_official_brti_live.py": {110},
 }
 # Exact coverage.py branch arcs. app/storage.py 113->-110 is a CPython
 # return-from-with tracer artifact; tests exercise both return outcomes.
 REVIEWED_MISSING_ARCS = {
     "app/engine.py": {(129, -104)},
+    "app/decision_signals.py": {(72, 73)},
     "app/orderbook.py": {(99, 100), (157, 158)},
     "app/settlement_research.py": {(87, 88)},
     "app/storage.py": {(113, -110)},
