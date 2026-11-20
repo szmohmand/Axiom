@@ -41,6 +41,9 @@ def test_two_snapshots_track_actual_spacing_midpoint_depth_and_btc():
     assert op["entry_ask"]==pytest.approx(.42)
     assert op["break_even_exit_bid"] > op["entry_ask"]
     assert op["net_profit_verified"] is False and not op["order_placed"]
+    assert "btc_movement_risk_2m" in op and "btc_target_touch_probability" in op
+    assert "momentum_acceleration_bps_per_min" in op
+    assert op["quote_rejection_proxy"] == "NONE"
     assert op["settlement_winner_not_required"] is True
 
 
@@ -151,6 +154,8 @@ def test_paper_exit_missing_position_wrong_ticker_and_unfillable_book():
     assert resale_position_review(None,m,b,s,None,T)["action"]=="WAIT"
     assert "same-contract" in resale_position_review({"side":"YES","entry":.3},m,b,s,None,T+90)["reason"]
     assert "Invalid paper" in resale_position_review({"side":"WHAT","entry":.3},m,b,s,None,T)["reason"]
+    assert "different contract" in resale_position_review({"ticker":"KXBTC15M-WRONG","side":"YES","entry":.3},m,b,s,None,T)["reason"]
+    assert "Fresh BTC" in resale_position_review({"side":"YES","entry":.3},m,b,{"available":False},None,T)["reason"]
     tiny_m,tiny_b,tiny_s=data(yes_size=".5")
     assert "Cannot sell" in resale_position_review({"side":"YES","entry":.3},
                                                      tiny_m,tiny_b,tiny_s,None,T)["reason"]
@@ -217,3 +222,14 @@ def test_corrupt_snapshot_analysis_is_localized_and_does_not_touch_settlement(en
     assert not result["resale_setup"]["order_placed"]
     assert result["execution_intelligence"]["order_placed"] is False
     assert main.ledger.data()["count"]["calls"]==calls
+
+
+def test_mixed_contract_history_is_never_an_entry_signal():
+    tracker=IntracontractTracker()
+    market,book,signals=data()
+    tracker.observe(market,book,signals,T)
+    market,book,signals=data(T+5,yes=".40",no=".58",btc=60010)
+    timeline=tracker.observe(market,book,signals,T+5)
+    wrong={**timeline,"ticker":"KXBTC15M-OTHER"}
+    result=resale_screen(market,book,signals,wrong,T+5)
+    assert result["action"]=="WAIT" and "different contract" in result["reason"]

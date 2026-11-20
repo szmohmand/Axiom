@@ -120,6 +120,8 @@ def resale_screen(market, book, signals, timeline, now):
         return result
     if not current_book(book,market["ticker"],now):
         return wait("Stale or mismatched execution book")
+    if timeline.get("ticker")!=market["ticker"]:
+        return wait("Snapshot history belongs to a different contract")
     last=timeline.get("last_move")
     if not last or last["btc_reference_change_bps"] is None:
         return result
@@ -153,6 +155,11 @@ def resale_screen(market, book, signals, timeline, now):
             "adverse_exit_slippage_buffer":.01,
             "observed_move_seconds":last["observed_seconds"],
             "observed_yes_midpoint_move":yes,
+            "momentum_acceleration_bps_per_min":signals.get("acceleration_bps_per_min"),
+            "btc_target_touch_probability":signals.get("target_touch_probability"),
+            "btc_movement_risk_2m":signals.get("movement_2m_probability_5bp"),
+            "reversal_risk_observed":signals.get("first_two_minute_reversal_flag"),
+            "quote_rejection_proxy":timeline.get("rejection_proxy"),
             "settlement_winner_not_required":True,
             "net_profit_verified":False}
 
@@ -164,6 +171,10 @@ def resale_position_review(position, market, book, signals, timeline, now):
         return base
     if not market or not current_book(book,market["ticker"],now):
         return wait("Cannot evaluate exit without current same-contract bids")
+    if position.get("ticker") not in (None,market["ticker"]):
+        return wait("Paper position belongs to a different contract")
+    if not signals or not signals.get("available"):
+        return wait("Fresh BTC evidence is required for a hold/sell review")
     side=position.get("side")
     cost=numeric(position.get("entry"))
     if side not in ("YES","NO") or cost is None or not 0<cost<1:
