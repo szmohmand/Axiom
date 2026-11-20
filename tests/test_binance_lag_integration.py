@@ -285,3 +285,135 @@ def test_full_app_snapshot_and_api_use_real_binance_data_but_no_real_order(env):
     assert degraded["binance_kalshi_delay"]["action"]=="WAIT"
     assert not degraded["ok"]
     assert client.get("/api/state").json()["binance_kalshi_delay"]["action"]=="WAIT"
+
+
+
+def test_spot_worker_timeout_frame_none_connect_loop_and_stop_paths(monkeypatch):
+    from app import binance_telemetry as mod
+    monkeypatch.setattr(mod.time,"time",lambda:T)
+    b=BinanceTelemetry(enabled=True)
+    stopped=threading.Event()
+    stopped.set()
+    spot_worker(b,stopped)  # no connection if already stopped
+    class TimeoutThenNone:
+        def __init__(self):self.calls=0
+        def __enter__(self):return self
+        def __exit__(self,*args):return False
+        def recv(self,timeout=None):
+            self.calls+=1
+            if self.calls==1:raise TimeoutError()
+            return None
+    sock=TimeoutThenNone()
+    class StopOnce:
+        def __init__(self):self.waits=0
+        def is_set(self):return False
+        def wait(self,_delay):
+            self.waits+=1
+            return self.waits>=2
+    stop=StopOnce()
+    calls=[]
+    def connection(*args,**kwargs):
+        calls.append(1)
+        return sock
+    monkeypatch.setattr(mod,"connect",connection)
+    spot_worker(b,stop)
+    assert len(calls)==2 and sock.calls>=3 and stop.waits==2
+    assert not b.connected
+    # Connection may return while worker stop was set; no frames consumed.
+    stop_event=threading.Event()
+    class EnterSetsStop:
+        def __enter__(self):
+            stop_event.set()
+            return self
+        def __exit__(self,*args):return False
+        def recv(self,timeout=None):raise AssertionError("Should never read")
+    monkeypatch.setattr(mod,"connect",lambda *a,**k:EnterSetsStop())
+    spot_worker(b,stop_event)
+    assert not b.connected
+
+
+def test_funding_worker_no_request_if_stopped_and_two_intervals(monkeypatch):
+    from app import binance_telemetry as mod
+    class Response:
+        def raise_for_status(self):return None
+        def json(self):return funding(T-1)
+    class Session:
+        def __init__(self):self.calls=0;self.closed=False
+        def get(self,*args,**kwargs):
+            self.calls+=1
+            return Response()
+        def close(self):self.closed=True
+    session=Session()
+    monkeypatch.setattr(mod.requests,"Session",lambda:session)
+    monkeypatch.setattr(mod.time,"time",lambda:T)
+    stop=threading.Event()
+    stop.set()
+    funding_worker(BinanceTelemetry(enabled=True),stop)
+    assert session.calls==0 and session.closed
+    other=Session()
+    monkeypatch.setattr(mod.requests,"Session",lambda:other)
+    class TwoCycles:
+        def __init__(self):self.calls=0
+        def is_set(self):return False
+        def wait(self,seconds):
+            self.calls+=1
+            return self.calls>=2
+    b=BinanceTelemetry(enabled=True)
+    funding_worker(b,TwoCycles())
+    assert other.calls==2 and other.closed
+    assert b.snapshot(T)["funding_status"]=="LIVE"
+
+
+def test_lag_rejects_binance_trade_observed_before_prior_book():
+    tracker=BinanceKalshiLagTracker()
+    p=market()
+    forecast={"available":True,"side":"ABOVE","prob_above":.8}
+    tracker.observe(p,bk(T+.25),spot(60000,T),forecast,T+.25)
+    updated=spot(60050,T+5)
+    updated["spot_trade_at"]=T+.2
+    updated["spot_received_at"]=T+.3
+    result=tracker.observe(p,bk(T+5.3),updated,forecast,T+5.3)
+    assert result["action"]=="WAIT"
+    assert "Binance event" in result["reason"]
+
+
+def test_lag_rejects_wide_spread_after_valid_big_binance_move():
+    tracker=BinanceKalshiLagTracker()
+    p=market()
+    f={"available":True,"side":"ABOVE","prob_above":.85}
+    tracker.observe(p,bk(T+.25),spot(60000,T),f,T+.25)
+    updated=bk(T+5.3)
+    updated["best"]["YES"]["spread"]=.2
+    result=tracker.observe(p,updated,spot(60050,T+5),f,T+5.3)
+    assert result["action"]=="WAIT" and "Spread" in result["reason"]
+
+
+def test_lag_analysis_exception_does_not_interrupt_original_bot(env,monkeypatch):
+    main,clock,provider,client,_=env
+    clock.now=provider.close-600
+    def broken(*args,**kwargs):raise TypeError("injected malformed exchange pair")
+    monkeypatch.setattr(main.binance_lag_tracker,"observe",broken)
+    state=main.update_once()
+    assert state["ok"] and state["model"]["available"]
+    assert state["binance_kalshi_delay"]["action"]=="WAIT"
+    assert not state["binance_kalshi_delay"]["orders_placed"]
+    assert client.get("/health").status_code==200
+
+
+def test_binance_worker_threads_start_and_stop_with_actual_api_lifespan(env,monkeypatch):
+    from fastapi.testclient import TestClient
+    main,clock,provider,client,_=env
+    monkeypatch.setattr(main,"BINANCE_INTELLIGENCE_ENABLED",True)
+    started=set()
+    def fake_worker(_tracker,stop_event):
+        started.add(threading.current_thread().name)
+        stop_event.wait(3)
+    monkeypatch.setattr(main,"binance_spot_worker",fake_worker)
+    monkeypatch.setattr(main,"binance_funding_worker",fake_worker)
+    with TestClient(main.app) as live:
+        assert live.get("/").status_code==200
+        assert {"read-only-binance-spot-worker","read-only-binance-funding-worker"}<=(
+            {thread.name for thread in threading.enumerate()})
+    assert {"read-only-binance-spot-worker","read-only-binance-funding-worker"}<=started
+    assert not any(thread.name.startswith("read-only-binance-") and thread.is_alive()
+                   for thread in threading.enumerate())
