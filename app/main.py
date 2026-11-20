@@ -21,6 +21,7 @@ from .settlement_research import shadow_forecast_from_candles, unavailable as un
 from .orderbook import unavailable as unavailable_book
 from .execution_evidence import examine_liquidity
 from .brti_live import BRTITracker, run_worker as brti_reference_worker
+from .decision_signals import derive_signals, unavailable as unavailable_signals, execution_decision
 from .depth_intelligence import (analyze_opportunities, execution_guidance,
                                   unavailable_opportunity, unavailable_execution)
 
@@ -41,6 +42,8 @@ state = {'mode':'DEMO' if DEMO else 'LIVE','last_attempt':None,'last_success':No
          'orderbook':unavailable_book(None,'No aggregated market depth yet'),
          'depth_opportunity':unavailable_opportunity('No independently evaluated depth yet'),
          'execution_intelligence':unavailable_execution('No independently evaluated depth yet'),
+          'btc_signals':unavailable_signals('Awaiting fresh market inputs'),
+          'trade_decision':execution_decision(None,None,None,None,None,time.time()),
          'errors':{},'paper_auto_enabled':AUTO_PAPER,'watch':None,'candle_quality':None,'status':'STARTING',
          'settlement':{'status':'NOT_CHECKED','last_attempt':None,'last_success':None,
                        'checked':0,'failed':0}}
@@ -100,6 +103,7 @@ def _view_locked(now):
                                'reason':'System not healthy; paper opportunities paused'}
         data['depth_opportunity'] = unavailable_opportunity('System unhealthy; no depth-based entry advice')
         data['execution_intelligence'] = unavailable_execution('System unhealthy; no execution guidance')
+        data['trade_decision'] = execution_decision(None,None,None,None,None,now)
     if 'worker_stale' in data['errors']:
         data['orderbook'] = unavailable_book(data['market'].get('ticker') if data['market'] else None,
                                                'Market worker stale; cached book invalid')
@@ -152,6 +156,8 @@ def update_once(now=None):
     except Exception as e:
         errors['coinbase_candles']=_error_message(e); candles=[]
     model={'available':False,'side':'WAIT','prob_above':None,'reason':'No active market or input data'}
+    signals=unavailable_signals('Market/price/candles unavailable or invalid')
+    trade_decision=execution_decision(None,None,None,None,None,now)
     scalp=scalp_signal(candles,spot)
     book=unavailable_book(market.get('ticker') if market else None,
                           'No active market or validated full depth yet')
@@ -185,7 +191,14 @@ def update_once(now=None):
         persistent_faults = any(k in state['errors'] for k in
                                 ('settlement','settlement_worker','ledger_read','ledger_connection'))
     if market:
-        model=engine_pack(spot,market,candles)
+        try:
+            signals=derive_signals(market,spot,candles,now,
+                brti=brti_tracker.snapshot(now_ms=int(now*1000)) if BRTI_LIVE_ENABLED else None,
+                spot_received_at=getattr(provider,'price_received_at',None),
+                spot_source_at=getattr(provider,'price_source_at',None))
+        except (ArithmeticError,TypeError,ValueError,KeyError):
+            signals=unavailable_signals('BTC feature calculation rejected invalid inputs')
+        model=engine_pack(spot,market,candles,signals=signals)
         if not model.get('available') and not errors:
             errors['forecast']=model.get('reason','Model unavailable')
         if not errors and not persistent_faults:
@@ -193,13 +206,16 @@ def update_once(now=None):
                 # The book has a *receipt* time after the initial quote/spot
                 # reads; do not label genuine fresh depth as future-dated.
                 depth_now=max(now,float(book.get('received_at') or now))
-                depth_op=analyze_opportunities(model,market,book,depth_now)
+                depth_op=analyze_opportunities(model,market,book,depth_now,signals=signals)
                 depth_exec=execution_guidance(depth_op,model,market,book,depth_now)
             except Exception as e:
                 # Optional, non-executable execution intelligence cannot break
                 # the original ledger or turn an unknown depth into BUY.
                 depth_op=unavailable_opportunity('Depth analysis failed: '+_error_message(e))
                 depth_exec=unavailable_execution('Depth analysis failed')
+        if not errors and not persistent_faults:
+            trade_decision=execution_decision(signals,model,market,book,depth_op,
+                                      max(now,float(book.get('received_at') or now)))
         if not errors and model.get('available'):
             if not persistent_faults:
                 op=execution_screen(model,market)
@@ -234,6 +250,7 @@ def update_once(now=None):
              'research_shadow':research_shadow,
              'orderbook':book,'depth_opportunity':depth_op,
              'execution_intelligence':depth_exec,
+             'btc_signals':signals,'trade_decision':trade_decision,
             'candle_quality':({'status':'UNAVAILABLE','reason':errors['coinbase_candles']}
                               if 'coinbase_candles' in errors else getattr(provider,'candle_quality',None))})
         _refresh_status_locked()

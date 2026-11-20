@@ -34,7 +34,7 @@ def log_returns(closes: list[float]) -> list[float]:
     return [math.log(b/a) for a,b in zip(closes,closes[1:]) if a>0 and b>0]
 
 
-def engine_pack(spot: float | None, market: dict | None, candles: list[dict]) -> dict:
+def engine_pack(spot: float | None, market: dict | None, candles: list[dict], signals: dict | None = None) -> dict:
     """Run available engines on the SAME market/spot snapshot.
 
     Each engine reports its source and provenance; no fabricated ML outputs or
@@ -92,9 +92,23 @@ def engine_pack(spot: float | None, market: dict | None, candles: list[dict]) ->
         engines.append(engine_result('kalshibot_headstart',cdf(headstart),'adapted-MIT-feature',
                                      'KalshiBot head-start distance feature mapped through normal CDF; NOT trained Predictor',
                                      independent=True, z_score=round(headstart,4)))
+    # When called by the live application, include the point-in-time analytic
+    # target model in the existing integrated ensemble. Standalone legacy
+    # engine_pack calls without a signals snapshot retain their original
+    # three-engine semantics and archived regression scorecards.
+    if signals is not None:
+        d=signals if isinstance(signals,dict) else {}
+        engines.append(engine_result('axiom_target_dynamics',
+            d.get('prob_above') if d.get('available') else None,
+            'analytic-distance-volatility-acceleration',
+            d.get('reason','Fresh target dynamics unavailable'),independent=True,
+            reference=d.get('price_reference'),
+            target_touch_probability=d.get('target_touch_probability'),
+            movement_2m_probability_5bp=d.get('movement_2m_probability_5bp'),
+            calibrated=False))
     # Only named BTC-derived models may vote. Quotes remain a comparison even
     # if an accidental future flag labels the quote benchmark independent.
-    voting_models=frozenset(('axiom_volatility','aaryann_fair','kalshibot_headstart'))
+    voting_models=frozenset(('axiom_volatility','aaryann_fair','kalshibot_headstart','axiom_target_dynamics'))
     good=[e['prob_above'] for e in engines
           if e['name'] in voting_models and e.get('independent') and e['available']]
     if len(good)<2:

@@ -33,8 +33,9 @@ def test_full_depth_joins_real_engine_paper_http_settlement_export_restart(env):
 
     first = main.update_once()
     assert first["ok"] and first["status"] == "DEMO"
-    assert first["model"]["available"] and len(first["engines"]) == 4
+    assert first["model"]["available"] and len(first["engines"]) == 5
     assert first["scalp"]["side"] in ("LONG", "SHORT", "WAIT")
+    assert first["btc_signals"]["available"] and first["trade_decision"]["order_placed"] is False
     assert first["orderbook"]["available"]
     assert first["orderbook"]["ticker"] == provider.ticker
     assert first["orderbook"]["levels"] == {"YES": 2, "NO": 2}
@@ -52,6 +53,7 @@ def test_full_depth_joins_real_engine_paper_http_settlement_export_restart(env):
     assert payload["execution_intelligence"]["order_placed"] is False
     assert payload["ledger_available"]
     assert "bookStatus" in client.get("/").text
+    assert "decisionSignalsSection" in client.get("/").text
 
     # Actual paper endpoint is authenticated; no live-order endpoint exists.
     auth = {"Authorization": "Bearer synthetic-local-testing-token"}
@@ -73,7 +75,7 @@ def test_full_depth_joins_real_engine_paper_http_settlement_export_restart(env):
         assert polled["orderbook"]["ticker"] == provider.ticker
         assert polled["execution_intelligence"]["order_placed"] is False
     before = client.get("/api/state").json()
-    assert before["engine_scores"]["samples"] == 20
+    assert before["engine_scores"]["samples"] == 24
     assert before["stats"]["settled_paper_trades"] == 0
     assert before["count"]["paper"] == 1
 
@@ -83,8 +85,8 @@ def test_full_depth_joins_real_engine_paper_http_settlement_export_restart(env):
     graded = client.get("/api/state").json()
     assert graded["stats"]["settled_paper_trades"] == 1
     assert graded["trades"][0]["result"] == "yes"
-    assert graded["engine_scores"]["samples"] == 20
-    assert len(graded["engine_scores"]["scores"]) == 20
+    assert graded["engine_scores"]["samples"] == 24
+    assert len(graded["engine_scores"]["scores"]) == 24
     assert main.ledger.unresolved() == []
     main.grade_once()
     assert client.get("/api/state").json()["stats"] == graded["stats"]
@@ -98,7 +100,7 @@ def test_full_depth_joins_real_engine_paper_http_settlement_export_restart(env):
     reopened = Ledger(str(tmp / "runtime.sqlite3"))
     assert reopened.data()["count"]["paper"] == 1
     assert reopened.data()["stats"]["settled_paper_trades"] == 1
-    assert reopened.engine_scores()["samples"] == 20
+    assert reopened.engine_scores()["samples"] == 24
     reopened.conn.close()
 
 

@@ -54,7 +54,8 @@ def _fee_estimate(sweep_result: dict, side: str) -> float:
 
 def analyze_opportunities(forecast: dict | None, market: dict | None,
                           book: dict | None, now: float,
-                          size_contracts: float = DEFAULT_SIZE) -> dict:
+                          size_contracts: float = DEFAULT_SIZE,
+                          signals: dict | None = None) -> dict:
     """Compare model probabilities with *size-adjusted* book ask, never mid.
 
     No forecast is created from order book. If no independent forecast, no
@@ -93,8 +94,19 @@ def analyze_opportunities(forecast: dict | None, market: dict | None,
         can_enter = (complete and valid_spread and .05 <= avg_ask <= .90
                      and net is not None and net >= MIN_AFTER_FEE_EDGE
                      and side == ("YES" if forecast["side"]=="ABOVE" else "NO"))
+        signal_gate = 'OK'
+        if signals is not None:
+            if not signals.get('available'):
+                signal_gate = 'Stale or missing BTC dynamics'
+            elif (market.get('market_mid') is not None and
+                  .47 <= market['market_mid'] <= .53 and .35 <= p <= .65):
+                signal_gate = 'Near-even quote with weak independent direction'
+            elif (signals.get('first_two_minute_reversal_flag') ==
+                  'EARLY_DOWN_REBOUND_TENDENCY' and side == 'NO' and p > .20):
+                signal_gate = 'Early-down rebound risk'
+        can_enter = can_enter and signal_gate == 'OK'
         candidates.append({
-            "side": side, "model_probability": round(probability, 6),
+            "side": side, "signal_gate":signal_gate, "model_probability": round(probability, 6),
             "size_contracts": requested, "ask_sweep": buys,
             "bid_sweep": sells, "complete_buy_depth": complete,
             "gross_model_minus_avg_ask": round(gross, 6) if gross is not None else None,

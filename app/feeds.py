@@ -3,7 +3,7 @@ import time
 from datetime import datetime, timezone, timedelta
 from urllib.parse import quote as urlquote
 import requests
-from .engine import normalize_candles, market_snapshot, numeric
+from .engine import normalize_candles, market_snapshot, numeric, utc_timestamp
 from .orderbook import normalize_orderbook
 
 KALSHI = 'https://external-api.kalshi.com/trade-api/v2'
@@ -61,6 +61,8 @@ def contiguous_real_candle_suffix(candles, min_bars=MIN_REAL_ONE_MINUTE_BARS):
 class LiveProvider:
     def __init__(self):
         self.candle_quality = None
+        self.price_source_at = None
+        self.price_received_at = None
         self.session = requests.Session()
         self.session.headers.update({'User-Agent':'ResearchBot/0.1 (read-only market data)', 'Accept':'application/json'})
     def get(self, url, params=None):
@@ -130,6 +132,11 @@ class LiveProvider:
         raw = self.get(f'{COINBASE}/products/BTC-USD/ticker')
         p = numeric(raw.get('price'))
         if p is None or p <= 0: raise ValueError('Invalid Coinbase BTC price')
+        self.price_source_at = utc_timestamp(raw.get('time'))
+        self.price_received_at = time.time()
+        if self.price_source_at is not None and (self.price_source_at > self.price_received_at+2 or
+                                                  self.price_received_at-self.price_source_at > 90):
+            raise ValueError('Coinbase last trade is stale or future-dated')
         return p
     def candles(self):
         now = datetime.now(timezone.utc)
