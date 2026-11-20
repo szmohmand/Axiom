@@ -2,7 +2,7 @@
 
 ## Source and status
 Oracle prep ships with AXIOM's unified application implementation.
-The verified integrated source checkpoint is 6f4ace73e0627e23824df09e0bf4039b94fe2dc0.
+The verified integrated source checkpoint is a1542a3bc62f39116bec54006ba47d9fd6597f4c.
 Its release candidate passed all six GitHub gates: complete offline regression
 and full synthetic lifecycle, public Kalshi/Coinbase, genuine worker/full-depth,
 authenticated BRTI 1Hz/5Hz, strict measured branch coverage and real Chromium
@@ -69,3 +69,20 @@ profitability, genuine exchange strike-publication timestamps, guaranteed
 
 NO billable resource, service, DNS domain, VM or deployment is created by
 this repository preparation. No unrelated repository is touched.
+
+## Intra-contract resale lane
+The integrated read-only worker tracks consecutive same-contract Kalshi full-depth
+snapshots and actual elapsed observation intervals (never fabricates five-second
+price paths). It reports midpoint/underlying changes, net price-level depth
+changes, imbalance and rejection proxies. The separate movement-based watch
+can flag YES or NO regardless of eventual contract result, but does not
+predict a future exit quote or execute orders. A matching paper position gets
+an instantaneous depth/illustrative-fee resale review; these are not actual
+fills or profit. Funding data is explicitly NOT_CONNECTED until verified.
+The Oracle service environment requests a five-second poll interval; real
+network latency may prevent exact five-second observations.
+
+The pinned integrated source now includes verified read-only intracontract
+resale, depth-level change, actual quote-timing history, paper exit review,
+and a five-second requested polling interval. The installer must not deploy
+an older candidate or modify live trading permissions.

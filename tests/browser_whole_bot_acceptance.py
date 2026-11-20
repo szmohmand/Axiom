@@ -49,6 +49,8 @@ def run():
         assert state["trade_decision"]["order_placed"] is False
         assert state["orderbook"]["available"] and state["orderbook"]["is_full_aggregated_depth"]
         assert state["execution_intelligence"]["order_placed"] is False
+        assert state["resale_setup"]["order_placed"] is False
+        assert state["intracontract"]["available"] is True
         assert state["depth_opportunity"]["read_only"] is True
 
         results = []
@@ -73,7 +75,7 @@ def run():
                         timeout=15000
                     )
                     assert "No real orders are placed" in page.locator("body").inner_text()
-                    for selector in ("#decisionSignalsSection","#dynZ","#dynAccel","#dynTouch","#dynMove","#dynRef","#decisionAction","#decisionReason", "#liveBRTISection", "#brtiValue", "#brtiState", "#bookStatus", "#bookBidRows tr", "#bookAskRows tr",
+                    for selector in ("#resaleIntelligenceSection","#resaleMidMove","#resaleBtcMove","#resaleBookChange","#resaleAction","#resaleReason","#resaleBreakEven","#resaleExitAction", "#decisionSignalsSection","#dynZ","#dynAccel","#dynTouch","#dynMove","#dynRef","#decisionAction","#decisionReason", "#liveBRTISection", "#brtiValue", "#brtiState", "#bookStatus", "#bookBidRows tr", "#bookAskRows tr",
                                      "#depthSide", "#execAction", "#scalpSide", "#forecastSide",
                                      "#engineRows tr", "#chart", "#paperYes", "#paperNo"):
                         assert page.locator(selector).count()>0, selector

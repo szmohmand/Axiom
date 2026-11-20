@@ -114,6 +114,19 @@ button,input{font:inherit}button{cursor:pointer}button:disabled{opacity:.4;curso
     <div id="decisionReason" class="explain">Awaiting fresh BTC data and full Kalshi order-book depth</div>
     <div class="micro">Outcome, target touch and movement magnitude are distinct. Touch/volatility do not predict a direction or guarantee a higher resale price.</div>
   </section>
+  <section class="section card" id="resaleIntelligenceSection"><div class="card-head"><div class="card-title">Intracontract price movement &amp; resale</div><span class="submark">Different from predicting the winner · No real orders</span></div>
+    <div class="pair"><div class="info-cell"><div class="label">Measured Kalshi YES midpoint change</div><b id="resaleMidMove">—</b></div><div class="info-cell"><div class="label">Measured BTC reference change</div><b id="resaleBtcMove">—</b></div></div>
+    <div class="pair"><div class="info-cell"><div class="label">Time between actual book observations</div><b id="resaleElapsed">—</b></div><div class="info-cell"><div class="label">Largest observed YES midpoint change</div><b id="resaleLargest">—</b></div></div>
+    <div class="pair"><div class="info-cell"><div class="label">YES net bid-level additions / removals</div><b id="resaleBookChange">—</b></div><div class="info-cell"><div class="label">Imbalance change</div><b id="resaleImbalance">—</b></div></div>
+    <div class="label">Rejection / swing-failure proxy</div><b id="resaleRejection">—</b>
+    <div class="label">Price-movement entry watch</div><div class="signal" id="resaleAction">WAIT</div>
+    <div class="pair"><div class="info-cell"><div class="label">Size-adjusted entry ask</div><b id="resaleAsk">—</b></div><div class="info-cell"><div class="label">Minimum future exit bid incl. illustrative fees and buffer</div><b id="resaleBreakEven">—</b></div></div>
+    <div class="explain" id="resaleReason">Awaiting observed BTC and contract quote changes</div>
+    <div class="label">Simulated open position — after-fee resale review</div><div class="signal" id="resaleExitAction">WAIT</div>
+    <div class="pair"><div class="info-cell"><div class="label">Available current exit bid</div><b id="resaleExitBid">—</b></div><div class="info-cell"><div class="label">Illustrative P&amp;L at displayed exit bid</div><b id="resaleNet">—</b></div></div>
+    <div class="explain" id="resaleExitReason">No matching paper position</div>
+    <div class="micro">Quote midpoint spikes are not guaranteed fills. Net price-level changes cannot identify individual orders, cancels or sweeps. Funding is not connected. No trained profit model or authenticated execution is claimed.</div>
+  </section>
   <section class="section card" id="liveBRTISection"><div class="card-head"><div class="card-title">Live CF Benchmarks BRTI · official reference</div><span class="submark">Authenticated read-only WebSocket · fresh reference when available</span></div>
     <div class="pair"><div class="info-cell"><div class="label">Live BRTI index</div><b id="brtiValue">—</b></div><div class="info-cell"><div class="label">Stream status</div><b id="brtiState">NOT CONNECTED</b></div></div>
     <div class="pair"><div class="info-cell"><div class="label">Index source → AXIOM receipt</div><b id="brtiLag">—</b></div><div class="info-cell"><div class="label">Last 15m settlement-window average</div><b id="brtiFinal">—</b></div></div>
@@ -173,6 +186,22 @@ function view(s){latest=s;const m=s.market, f=s.model||{},o=s.opportunity||{},sc
   set('dynEarly',fmt(dyn.early_displacement_bps,2));set('dynReversal',dyn.first_two_minute_reversal_flag||'—');
   set('dynRef',dyn.available?dyn.price_reference+' · '+money(dyn.reference_value)+' · long-memory volatility '+pct(dyn.volatility_1m_long)+(dyn.settlement_proxy_warning?' · Coinbase is NOT BRTI settlement':' · authenticated current BRTI reference'):dyn.reason||'No fresh signals');
   set('decisionAction',plan.action||'WAIT','signal '+directionClass(plan.side));set('decisionReason',plan.reason||'No qualifying entry');
+  const timeline=s.intracontract||{},last=timeline.last_move||{},resale=s.resale_setup||{},exit=s.resale_position_review||{};
+  set('resaleMidMove',Number.isFinite(last.yes_midpoint_change)?((last.yes_midpoint_change>=0?'+':'')+cents(last.yes_midpoint_change)):'—');
+  set('resaleBtcMove',Number.isFinite(last.btc_reference_change_bps)?((last.btc_reference_change_bps>=0?'+':'')+fmt(last.btc_reference_change_bps,2)+' bp'):'—');
+  set('resaleElapsed',Number.isFinite(last.observed_seconds)?fmt(last.observed_seconds,1)+' sec':'—');
+  set('resaleLargest',cents(timeline.max_observed_yes_mid_move));
+  const change=last.yes_bid_level_change||{};
+  set('resaleBookChange',Number.isFinite(change.net_addition_contracts)?fmt(change.net_addition_contracts,0)+' / '+fmt(change.net_removal_contracts,0):'—');
+  set('resaleImbalance',pct(last.imbalance_change));
+  set('resaleRejection',timeline.rejection_proxy||'NONE');
+  set('resaleAction',resale.action||'WAIT','signal '+directionClass(resale.side));
+  set('resaleAsk',cents(resale.entry_ask));set('resaleBreakEven',cents(resale.break_even_exit_bid));
+  set('resaleReason',resale.reason||'No qualifying observed quote movement');
+  set('resaleExitAction',exit.action||'WAIT','signal '+directionClass(exit.side));
+  set('resaleExitBid',cents(exit.current_sell_bid));
+  set('resaleNet',Number.isFinite(exit.estimated_net_per_paper_contract)?money(exit.estimated_net_per_paper_contract):'—');
+  set('resaleExitReason',exit.reason||'No current depth-backed paper exit');
   const book=s.orderbook||{},dp=s.depth_opportunity||{},ex=s.execution_intelligence||{},sel=dp.selected||{};
  set('bookStatus',book.available?`Current aggregated price levels · ${(book.received_at?new Date(book.received_at*1000).toLocaleTimeString():'time unavailable')}`:`WAIT · ${book.reason||'No valid order-book depth'}`);
  set('bookYesLevels',book.available?(book.levels?.YES??0):'—');set('bookNoLevels',book.available?(book.levels?.NO??0):'—');
