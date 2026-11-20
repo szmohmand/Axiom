@@ -187,7 +187,9 @@ def test_full_fastapi_poll_api_paper_and_rollover_are_separate_from_final_winner
     clock.now+=5
     rollover=main.update_once()
     assert rollover["intracontract"]["observations"]==1
-    provider.fail_price=True
+    def fail_price():
+        raise RuntimeError("injected Coinbase price outage")
+    provider.price=fail_price
     clock.now+=5
     degraded=main.update_once()
     assert not degraded["ok"] and degraded["resale_setup"]["action"]=="WAIT"
