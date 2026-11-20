@@ -2,6 +2,8 @@ name: AXIOM independent whole-bot read-only worker acceptance (isolated)
 on:
   push:
     branches:
+      - main
+      - deploy/axiom-oracle-preparation-2026-11-19
       - tests/axiom-full-lifecycle-audit-2026-11-17
       - fix/rollover-brti-execution-evidence-2026-11-17
       - integrate/axiom-live-brti-release-candidate-2026-11-18
@@ -70,7 +72,9 @@ jobs:
                   if h['ok']:
                       assert health.status_code==200 and state.status_code==200
                       assert s['status']=='LIVE' and s['model']['available']
-                      assert len(s['engines'])==4
+                      assert len(s['engines'])==5
+                      assert s['btc_signals']['available'] is True
+                      assert s['trade_decision']['order_placed'] is False
                       assert len(s['candles'])>=31
                       assert all(b['t']-a['t']==60 for a,b in zip(s['candles'],s['candles'][1:]))
                       assert s['scalp']['side'] in ('LONG','SHORT','WAIT')

@@ -2,6 +2,8 @@ name: AXIOM real integrated FastAPI + authenticated live BRTI worker (read-only)
 on:
   push:
     branches:
+      - main
+      - deploy/axiom-oracle-preparation-2026-11-19
       - integrate/axiom-live-brti-release-candidate-2026-11-18
   workflow_dispatch:
 permissions:

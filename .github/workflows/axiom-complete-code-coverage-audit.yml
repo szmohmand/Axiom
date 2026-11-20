@@ -2,6 +2,8 @@ name: AXIOM independent full-code coverage audit (test-only branch)
 on:
   push:
     branches:
+      - main
+      - deploy/axiom-oracle-preparation-2026-11-19
       - audit/complete-coverage-and-workflows-2026-11-17
       - audit/axiom-high-assurance-full-coverage-2026-11-17
       - audit/remaining-branches-meaningful-coverage-2026-11-18

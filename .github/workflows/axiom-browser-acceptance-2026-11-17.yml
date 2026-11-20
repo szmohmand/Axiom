@@ -2,6 +2,8 @@ name: AXIOM independent mobile and desktop browser acceptance (isolated)
 on:
   push:
     branches:
+      - main
+      - deploy/axiom-oracle-preparation-2026-11-19
       - tests/axiom-full-lifecycle-audit-2026-11-17
       - fix/rollover-brti-execution-evidence-2026-11-17
       - integrate/axiom-live-brti-release-candidate-2026-11-18
