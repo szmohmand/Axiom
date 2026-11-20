@@ -86,3 +86,15 @@ The pinned integrated source now includes verified read-only intracontract
 resale, depth-level change, actual quote-timing history, paper exit review,
 and a five-second requested polling interval. The installer must not deploy
 an older candidate or modify live trading permissions.
+
+## Binance lead/funding integrated (read-only)
+The genuine production lifespan starts TWO additional public-only independent
+background workers: Binance spot BTCUSDT trade WS (event and receipt time)
+and Binance USD-M perpetual mark/funding REST every 60 seconds. Neither
+worker needs an account/API key or can place orders. Geographic/regulatory
+network blocking or stale timestamps results in UNAVAILABLE, not a fake
+lead signal. Only source-ordered Binance moves followed by an actual Kalshi
+book receipt can create a quote-delay WATCH; size-adjusted YES/NO asks,
+funding context, current full depth and independent after-fee outcomes decide
+whether an illustrative BUY_CANDIDATE is displayed. This is NOT a validated
+execution edge; Binance BTCUSDT is not the BRTI settlement benchmark.

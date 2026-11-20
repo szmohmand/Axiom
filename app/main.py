@@ -24,6 +24,8 @@ from .brti_live import BRTITracker, run_worker as brti_reference_worker
 from .decision_signals import derive_signals, unavailable as unavailable_signals, execution_decision
 from .intracontract import (IntracontractTracker, unavailable as unavailable_timeline,
                             wait as wait_resale, resale_screen, resale_position_review)
+from .binance_telemetry import BinanceTelemetry, spot_worker as binance_spot_worker, funding_worker as binance_funding_worker
+from .lag_intelligence import BinanceKalshiLagTracker, wait as wait_binance_lag
 from .depth_intelligence import (analyze_opportunities, execution_guidance,
                                   unavailable_opportunity, unavailable_execution)
 
@@ -34,11 +36,14 @@ POLL_SECONDS = max(5, int(os.environ.get('POLL_SECONDS', '15')))
 DATA_PATH = os.environ.get('DATA_PATH', str(ROOT.parent/'data'/'bot.sqlite3'))
 ADMIN_TOKEN = os.environ.get('BOT_ADMIN_TOKEN','')
 BRTI_LIVE_ENABLED = (not DEMO and os.environ.get('BRTI_LIVE_ENABLED','0') == '1')
+BINANCE_INTELLIGENCE_ENABLED = (not DEMO and os.environ.get('BINANCE_INTELLIGENCE_ENABLED','1') == '1')
 brti_tracker = BRTITracker(enabled=BRTI_LIVE_ENABLED)
+binance_telemetry = BinanceTelemetry(enabled=BINANCE_INTELLIGENCE_ENABLED)
 provider = DemoProvider() if DEMO else LiveProvider()
 ledger = Ledger(DATA_PATH)
 state_lock = threading.RLock()
 movement_tracker = IntracontractTracker()
+binance_lag_tracker = BinanceKalshiLagTracker()
 state = {'mode':'DEMO' if DEMO else 'LIVE','last_attempt':None,'last_success':None,
          'market':None,'spot':None,'model':None,'engines':[],'scalp':None,'opportunity':None,'candles':[],
          'research_shadow':unavailable_research_shadow('No completed research observation yet'),
@@ -49,6 +54,8 @@ state = {'mode':'DEMO' if DEMO else 'LIVE','last_attempt':None,'last_success':No
           'trade_decision':execution_decision(None,None,None,None,None,time.time()),
           'intracontract':unavailable_timeline('Waiting for consecutive price snapshots'),
           'resale_setup':wait_resale('Waiting for observed intracontract moves'),
+          'binance_intelligence':binance_telemetry.snapshot(),
+          'binance_kalshi_delay':wait_binance_lag('Awaiting real Binance and Kalshi quotes'),
          'errors':{},'paper_auto_enabled':AUTO_PAPER,'watch':None,'candle_quality':None,'status':'STARTING',
          'settlement':{'status':'NOT_CHECKED','last_attempt':None,'last_success':None,
                        'checked':0,'failed':0}}
@@ -93,6 +100,7 @@ def _view_locked(now):
     data['errors'] = dict(state['errors'])
     data['settlement'] = dict(state['settlement'])
     data['live_briti'] = brti_tracker.snapshot()
+    data['binance_intelligence'] = binance_telemetry.snapshot(now)
     attempted = state['last_attempt']
     data['heartbeat_age_seconds'] = None if attempted is None else max(0, round(now-attempted, 2))
     stale_limit = max(60, 3*POLL_SECONDS)
@@ -111,6 +119,7 @@ def _view_locked(now):
         data['trade_decision'] = execution_decision(None,None,None,None,None,now)
         data['intracontract'] = unavailable_timeline('Operational health degraded')
         data['resale_setup'] = wait_resale('Operational health degraded')
+        data['binance_kalshi_delay'] = wait_binance_lag('Operational health degraded',data['binance_intelligence'])
     if 'worker_stale' in data['errors']:
         data['orderbook'] = unavailable_book(data['market'].get('ticker') if data['market'] else None,
                                                'Market worker stale; cached book invalid')
@@ -166,6 +175,10 @@ def update_once(now=None):
     signals=unavailable_signals('Market/price/candles unavailable or invalid')
     trade_decision=execution_decision(None,None,None,None,None,now)
     scalp=scalp_signal(candles,spot)
+    # Capture exchange trade BEFORE requesting Kalshi book: source ordering
+    # is essential to detect candidate stale quotes, never inferred from
+    # after-the-fact midpoint comparisons.
+    binance_before_book=binance_telemetry.snapshot(time.time())
     book=unavailable_book(market.get('ticker') if market else None,
                           'No active market or validated full depth yet')
     if market is not None:
@@ -243,6 +256,18 @@ def update_once(now=None):
                     except ValueError:
                         pass
                 watch=ledger.watch_info(market['ticker'])
+    # Independent, read-only Binance-first detector. Funding never votes in
+    # settlement forecasting or triggers an order; provider outages fail WAIT.
+    if market and not errors and not persistent_faults and model.get('available'):
+        try:
+            binance_lag=binance_lag_tracker.observe(market,book,binance_before_book,
+                model,max(now,float(book.get('received_at') or now)))
+        except (ValueError,TypeError,ArithmeticError,KeyError):
+            binance_lag_tracker.reset()
+            binance_lag=wait_binance_lag('Malformed Binance/Kalshi market pair',binance_before_book)
+    else:
+        binance_lag_tracker.reset()
+        binance_lag=wait_binance_lag('Missing healthy synchronized market inputs',binance_before_book)
     # Read-only intracontract intelligence, after transactional ledger writes.
     if market and not errors and not persistent_faults and model.get('available'):
         try:
@@ -274,6 +299,7 @@ def update_once(now=None):
              'execution_intelligence':depth_exec,
              'btc_signals':signals,'trade_decision':trade_decision,
              'intracontract':intracontract,'resale_setup':resale_setup,
+             'binance_intelligence':binance_before_book,'binance_kalshi_delay':binance_lag,
             'candle_quality':({'status':'UNAVAILABLE','reason':errors['coinbase_candles']}
                               if 'coinbase_candles' in errors else getattr(provider,'candle_quality',None))})
         _refresh_status_locked()
@@ -395,12 +421,21 @@ async def lifespan(_app):
         brti_thread = threading.Thread(target=brti_reference_worker,
             args=(brti_tracker,shutdown),name='read-only-live-brti-worker',daemon=True)
         brti_thread.start()
+    binance_threads=[]
+    if BINANCE_INTELLIGENCE_ENABLED:
+        for target,name in ((binance_spot_worker,'read-only-binance-spot-worker'),
+                            (binance_funding_worker,'read-only-binance-funding-worker')):
+            thread=threading.Thread(target=target,args=(binance_telemetry,shutdown),name=name,daemon=True)
+            thread.start()
+            binance_threads.append(thread)
     yield
     shutdown.set()
     market_thread.join(timeout=3)
     grading_thread.join(timeout=3)
     if brti_thread is not None:
         brti_thread.join(timeout=3)
+    for thread in binance_threads:
+        thread.join(timeout=3)
 
 app=FastAPI(title='AXIOM Multi-Engine BTC Research Bot',version='2.0.0',lifespan=lifespan, docs_url=None,redoc_url=None)
 
@@ -427,7 +462,9 @@ def health():
         'last_success':snapshot['last_success'],
         'heartbeat_age_seconds':snapshot['heartbeat_age_seconds'],
         'errors':snapshot['errors'],'settlement':snapshot['settlement'],
-        'live_briti':snapshot['live_briti']},
+        'live_briti':snapshot['live_briti'],
+        'binance_intelligence':snapshot['binance_intelligence'],
+        'binance_kalshi_delay':snapshot.get('binance_kalshi_delay')},
         status_code=200 if snapshot['ok'] else 503,headers={'Cache-Control':'no-store'})
 
 @app.get('/api/state')

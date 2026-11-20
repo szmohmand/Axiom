@@ -114,6 +114,16 @@ button,input{font:inherit}button{cursor:pointer}button:disabled{opacity:.4;curso
     <div id="decisionReason" class="explain">Awaiting fresh BTC data and full Kalshi order-book depth</div>
     <div class="micro">Outcome, target touch and movement magnitude are distinct. Touch/volatility do not predict a direction or guarantee a higher resale price.</div>
   </section>
+  <section class="section card" id="binanceLeadSection"><div class="card-head"><div class="card-title">Binance spot lead / Kalshi repricing &amp; BTC funding</div><span class="submark">Live public exchange feeds · Read-only</span></div>
+    <div class="pair"><div class="info-cell"><div class="label">Binance BTCUSDT spot stream</div><b id="binanceSpot">—</b></div><div class="info-cell"><div class="label">Binance trade source age / source-to-receipt</div><b id="binanceAge">—</b></div></div>
+    <div class="pair"><div class="info-cell"><div class="label">Published BTCUSDT perpetual funding</div><b id="binanceFunding">—</b></div><div class="info-cell"><div class="label">Who pays funding</div><b id="binanceFundingBias">—</b></div></div>
+    <div class="pair"><div class="info-cell"><div class="label">Futures mark vs index basis (bps)</div><b id="binanceBasis">—</b></div><div class="info-cell"><div class="label">Funding data status</div><b id="binanceFundingStatus">—</b></div></div>
+    <div class="pair"><div class="info-cell"><div class="label">Observed Binance move (bps)</div><b id="binanceMove">—</b></div><div class="info-cell"><div class="label">Kalshi YES midpoint change (cents)</div><b id="binanceKalshiMove">—</b></div></div>
+    <div class="pair"><div class="info-cell"><div class="label">Time between actual Kalshi books</div><b id="binanceBookGap">—</b></div><div class="info-cell"><div class="label">Depth-adjusted entry ask</div><b id="binanceEntry">—</b></div></div>
+    <div class="label">Binance-before-Kalshi observation</div><div id="binanceLagAction" class="signal">WAIT</div>
+    <div id="binanceLagReason" class="explain">Awaiting Binance exchange trades and sequential Kalshi quotes</div>
+    <div class="micro">Candidate repricing delay is NOT verified exchange latency or guaranteed a fill. Binance BTCUSDT is not the Kalshi BRTI USD settlement index. Funding is descriptive positioning information, not a YES/NO forecast. The older 0x8dxd strategy is not presumed still profitable.</div>
+  </section>
   <section class="section card" id="resaleIntelligenceSection"><div class="card-head"><div class="card-title">Intracontract price movement &amp; resale</div><span class="submark">Different from predicting the winner · No real orders</span></div>
     <div class="pair"><div class="info-cell"><div class="label">Measured Kalshi YES midpoint change</div><b id="resaleMidMove">—</b></div><div class="info-cell"><div class="label">Measured BTC reference change</div><b id="resaleBtcMove">—</b></div></div>
     <div class="pair"><div class="info-cell"><div class="label">Time between actual book observations</div><b id="resaleElapsed">—</b></div><div class="info-cell"><div class="label">Largest observed YES midpoint change</div><b id="resaleLargest">—</b></div></div>
@@ -186,6 +196,19 @@ function view(s){latest=s;const m=s.market, f=s.model||{},o=s.opportunity||{},sc
   set('dynEarly',fmt(dyn.early_displacement_bps,2));set('dynReversal',dyn.first_two_minute_reversal_flag||'—');
   set('dynRef',dyn.available?dyn.price_reference+' · '+money(dyn.reference_value)+' · long-memory volatility '+pct(dyn.volatility_1m_long)+(dyn.settlement_proxy_warning?' · Coinbase is NOT BRTI settlement':' · authenticated current BRTI reference'):dyn.reason||'No fresh signals');
   set('decisionAction',plan.action||'WAIT','signal '+directionClass(plan.side));set('decisionReason',plan.reason||'No qualifying entry');
+  const bin=s.binance_intelligence||{},lag=s.binance_kalshi_delay||{};
+  set('binanceSpot',bin.status==='STREAMING'?money(bin.spot_price):bin.status||'NO DATA');
+  set('binanceAge',Number.isFinite(bin.spot_source_age_seconds)?fmt(bin.spot_source_age_seconds,2)+' sec / '+fmt(bin.spot_source_receipt_ms,0)+' ms':'—');
+  set('binanceFunding',Number.isFinite(bin.funding_percent)?fmt(bin.funding_percent,5)+'%':'—');
+  set('binanceFundingBias',bin.funding_bias||'UNKNOWN');
+  set('binanceBasis',Number.isFinite(bin.funding_mark_index_basis_bps)?fmt(bin.funding_mark_index_basis_bps,2):'—');
+  set('binanceFundingStatus',bin.funding_status||'UNAVAILABLE');
+  set('binanceMove',Number.isFinite(lag.measured_binance_move_bps)?fmt(lag.measured_binance_move_bps,2):'—');
+  set('binanceKalshiMove',cents(lag.kalshi_yes_mid_change));
+  set('binanceBookGap',Number.isFinite(lag.book_observation_gap_seconds)?fmt(lag.book_observation_gap_seconds,2)+' sec':'—');
+  set('binanceEntry',cents(lag.entry_ask_size_adjusted));
+  set('binanceLagAction',lag.action||'WAIT','signal '+directionClass(lag.side));
+  set('binanceLagReason',lag.reason||'No synchronized Binance and Kalshi market inputs');
   const timeline=s.intracontract||{},last=timeline.last_move||{},resale=s.resale_setup||{},exit=s.resale_position_review||{};
   set('resaleMidMove',Number.isFinite(last.yes_midpoint_change)?((last.yes_midpoint_change>=0?'+':'')+cents(last.yes_midpoint_change)):'—');
   set('resaleBtcMove',Number.isFinite(last.btc_reference_change_bps)?((last.btc_reference_change_bps>=0?'+':'')+fmt(last.btc_reference_change_bps,2)+' bp'):'—');
