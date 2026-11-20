@@ -22,6 +22,8 @@ from .orderbook import unavailable as unavailable_book
 from .execution_evidence import examine_liquidity
 from .brti_live import BRTITracker, run_worker as brti_reference_worker
 from .decision_signals import derive_signals, unavailable as unavailable_signals, execution_decision
+from .intracontract import (IntracontractTracker, unavailable as unavailable_timeline,
+                            wait as wait_resale, resale_screen, resale_position_review)
 from .depth_intelligence import (analyze_opportunities, execution_guidance,
                                   unavailable_opportunity, unavailable_execution)
 
@@ -36,6 +38,7 @@ brti_tracker = BRTITracker(enabled=BRTI_LIVE_ENABLED)
 provider = DemoProvider() if DEMO else LiveProvider()
 ledger = Ledger(DATA_PATH)
 state_lock = threading.RLock()
+movement_tracker = IntracontractTracker()
 state = {'mode':'DEMO' if DEMO else 'LIVE','last_attempt':None,'last_success':None,
          'market':None,'spot':None,'model':None,'engines':[],'scalp':None,'opportunity':None,'candles':[],
          'research_shadow':unavailable_research_shadow('No completed research observation yet'),
@@ -44,6 +47,8 @@ state = {'mode':'DEMO' if DEMO else 'LIVE','last_attempt':None,'last_success':No
          'execution_intelligence':unavailable_execution('No independently evaluated depth yet'),
           'btc_signals':unavailable_signals('Awaiting fresh market inputs'),
           'trade_decision':execution_decision(None,None,None,None,None,time.time()),
+          'intracontract':unavailable_timeline('Waiting for consecutive price snapshots'),
+          'resale_setup':wait_resale('Waiting for observed intracontract moves'),
          'errors':{},'paper_auto_enabled':AUTO_PAPER,'watch':None,'candle_quality':None,'status':'STARTING',
          'settlement':{'status':'NOT_CHECKED','last_attempt':None,'last_success':None,
                        'checked':0,'failed':0}}
@@ -104,6 +109,8 @@ def _view_locked(now):
         data['depth_opportunity'] = unavailable_opportunity('System unhealthy; no depth-based entry advice')
         data['execution_intelligence'] = unavailable_execution('System unhealthy; no execution guidance')
         data['trade_decision'] = execution_decision(None,None,None,None,None,now)
+        data['intracontract'] = unavailable_timeline('Operational health degraded')
+        data['resale_setup'] = wait_resale('Operational health degraded')
     if 'worker_stale' in data['errors']:
         data['orderbook'] = unavailable_book(data['market'].get('ticker') if data['market'] else None,
                                                'Market worker stale; cached book invalid')
@@ -236,6 +243,20 @@ def update_once(now=None):
                     except ValueError:
                         pass
                 watch=ledger.watch_info(market['ticker'])
+    # Read-only intracontract intelligence, after transactional ledger writes.
+    if market and not errors and not persistent_faults and model.get('available'):
+        try:
+            observed_at=max(now,float(book.get('received_at') or now))
+            intracontract=movement_tracker.observe(market,book,signals,observed_at)
+            resale_setup=resale_screen(market,book,signals,intracontract,observed_at)
+        except (ValueError,TypeError,ArithmeticError,KeyError):
+            movement_tracker.reset()
+            intracontract=unavailable_timeline('Invalid quote-history observation')
+            resale_setup=wait_resale('Invalid quote-history observation')
+    else:
+        movement_tracker.reset()
+        intracontract=unavailable_timeline('No healthy market/forecast cycle')
+        resale_setup=wait_resale('No healthy market/forecast cycle')
     if errors:
         # A missing poll must break the ten-second first-call confidence hold;
         # otherwise a short feed outage can be counted as sustained evidence.
@@ -252,6 +273,7 @@ def update_once(now=None):
              'orderbook':book,'depth_opportunity':depth_op,
              'execution_intelligence':depth_exec,
              'btc_signals':signals,'trade_decision':trade_decision,
+             'intracontract':intracontract,'resale_setup':resale_setup,
             'candle_quality':({'status':'UNAVAILABLE','reason':errors['coinbase_candles']}
                               if 'coinbase_candles' in errors else getattr(provider,'candle_quality',None))})
         _refresh_status_locked()
@@ -436,15 +458,19 @@ def get_state():
     # The existing paper ledger represents one contract per row; user holdings
     # and real order/fill history are NOT available to AXIOM.
     d['paper_position_execution']=unavailable_execution('No open matching simulated position')
+    d['resale_position_review']=wait_resale('No matching simulated position')
     active=d.get('market')
     if active and d.get('ok'):
         for trade in d.get('trades',[]):
             if trade.get('ticker')==active['ticker'] and trade.get('status')=='OPEN':
                 try:
+                    d['resale_position_review']=resale_position_review(trade,active,
+                        d.get('orderbook'),d.get('btc_signals'),d.get('intracontract'),now)
                     d['paper_position_execution']=execution_guidance(
                         d.get('depth_opportunity'),d.get('model'),active,d.get('orderbook'),now,
                         position={'side':trade['side'],'contracts':1.0})
                 except Exception:
+                    d['resale_position_review']=wait_resale('Paper-position resale check unavailable')
                     d['paper_position_execution']=unavailable_execution('Paper position depth review unavailable')
                 break
     d['execution_evidence']=examine_liquidity(d.get('orderbook'), d.get('market'),now)

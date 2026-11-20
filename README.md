@@ -128,3 +128,15 @@ See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for exact file provenance
 ## Live authenticated BRTI reference (integration candidate)
 
 Set `BRTI_LIVE_ENABLED=1`, `KALSHI_API_KEY_ID` and `KALSHI_PRIVATE_KEY_PEM` in *server-side* environment secrets. AXIOM subscribes to Kalshi's authenticated `cfbenchmarks_value` and `cfbenchmarks_value_5hz` channels for BRTI only. `/api/state.live_briti` displays source and receipt timestamps and provider-reported 60-second/15-minute-window information without exporting credentials or raw frames. It does NOT vote in the uncalibrated forecasting ensemble, trigger paper trades or place real orders. Missing/stale data is marked unavailable. AXIOM's first-observed strike time is not proof of the exchange's first publication. Validate real stream capability using `python -m research.live_brti_probe`. Kalshi official documentation: https://docs.kalshi.com/websockets/cfbenchmarks-value and https://docs.kalshi.com/websockets/cfbenchmarks-value-5hz.
+
+## Integrated intracontract movement and resale intelligence
+The live AXIOM application now tracks successive real Kalshi full-depth
+snapshots, YES quote-midpoint changes, the matching BTC/BRTI movement,
+net quoted additions/removals at price levels, book imbalance changes and
+swing-rejection proxies. A separate read-only resale lane reports
+BUY_CANDIDATE/WAIT without assuming the chosen contract will win settlement;
+for an existing simulated paper position it calculates a depth-backed,
+illustrative after-fee exit review. A threshold future bid is NOT a predicted
+price or an executable fill, and quote-movement correlations are not proven
+trading alpha. Funding rates are intentionally marked NOT_CONNECTED, as
+no verified live funding feed is configured. No real order endpoints exist.

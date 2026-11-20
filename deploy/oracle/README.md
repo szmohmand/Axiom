@@ -69,3 +69,15 @@ profitability, genuine exchange strike-publication timestamps, guaranteed
 
 NO billable resource, service, DNS domain, VM or deployment is created by
 this repository preparation. No unrelated repository is touched.
+
+## Intra-contract resale lane
+The integrated read-only worker tracks consecutive same-contract Kalshi full-depth
+snapshots and actual elapsed observation intervals (never fabricates five-second
+price paths). It reports midpoint/underlying changes, net price-level depth
+changes, imbalance and rejection proxies. The separate movement-based watch
+can flag YES or NO regardless of eventual contract result, but does not
+predict a future exit quote or execute orders. A matching paper position gets
+an instantaneous depth/illustrative-fee resale review; these are not actual
+fills or profit. Funding data is explicitly NOT_CONNECTED until verified.
+The Oracle service environment requests a five-second poll interval; real
+network latency may prevent exact five-second observations.
