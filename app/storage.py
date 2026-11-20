@@ -160,6 +160,9 @@ class Ledger:
     def engine_snapshots(self, market, model, now):
         """Fixed-time forecasts for head-to-head scoring (same contract/clock).
 
+        Legacy 'market_prob' SQL field holds the participant order-book YES
+        quote midpoint, not a Kalshi prediction or objective likelihood.
+
         Snapshots are written only inside a +/-30s target band. A fixed
         checkpoint is recorded at most once per engine/market; no rewrites.
         Missing engines get no fabricated forecasts.
@@ -183,7 +186,11 @@ class Ledger:
         return len(rows)
 
     def engine_scores(self):
-        """Official-settlement Brier scores versus same-time Kalshi midpoint."""
+        """Official-settlement Brier scores versus participant quote midpoints.
+
+        A quote midpoint is a descriptive scoring benchmark, not a Kalshi
+        forecasting model or evidence of executable profit.
+        """
         import math
         with self.lock:
             rows=[dict(x) for x in self.conn.execute("SELECT engine,checkpoint,prob_above,market_prob,result FROM engine_snapshots WHERE result IN ('yes','no')")]
@@ -214,9 +221,11 @@ class Ledger:
                 'market_brier':round(base,5) if base is not None else None,
                 'brier_improvement':round(base-b,5) if nm==n else None,
                 'logloss':round(t['sum_logloss']/n,5),
-                'sufficient_sample':n>=30,'validated_alpha':False})
+                'sufficient_sample':n>=30,'validated_alpha':False,
+                'benchmark_kind':'participant_order_book_yes_midpoint',
+                'market_price_is_kalshi_prediction':False})
         return {'samples':total,'scores':sorted(scores,key=lambda r:(r['checkpoint'],r['engine'])),
-                'note':'Descriptive only; 30 samples is a reporting threshold, NOT proof of alpha. Use held-out chronological testing.'}
+                'note':'Order-book midpoints reflect participant quotes, NOT Kalshi predictions. Brier differences are descriptive and NOT validated alpha. Use held-out chronological testing.'}
 
     def grade(self, ticker, result, now):
         """Atomically grade all tables, or roll back completely if anything fails."""

@@ -15,7 +15,7 @@ DEMO_MODE=1 AUTO_PAPER=0 uvicorn app.main:app --host 127.0.0.1 --port 8000 --wor
 
 Open http://127.0.0.1:8000 (on the machine running the server). Demo mode uses clearly labeled synthetic prices/outcomes. **For public live read-only feeds**, remove `DEMO_MODE=1` or set `DEMO_MODE=0` and use a machine with internet access.
 
-On an iPhone/iPad, use a **new, separate hosting service** deployed from a **new repository**, not any existing project. This package does not create that new repository or deploy itself.
+On iPhone/iPad, use a single-worker HTTPS hosting service deployed from this same dedicated AXIOM repository after confirming the hosting workspace. Never create a different repository for this system.
 
 ## Actual engines integrated in v2
 
@@ -28,6 +28,21 @@ On an iPhone/iPad, use a **new, separate hosting service** deployed from a **new
 | `ensemble` | Median of the three experimental probabilities (excluding Kalshi midpoint) | Original AXIOM v2 integration | Not trained, independent information overlap, uncalibrated |
 
 **This does not mean all 17 public repositories have been combined or installed.** The two MIT methods above are genuine source-informed integrations into a working application. The research catalog includes other projects for future license, compatibility, data-feed, and outcome reviews; it is optional and not loaded into the app.
+
+## Contract price versus forecast: mandatory separation
+
+**Kalshi is not running AXIOM's forecasting model.** YES/NO contract prices emerge from orders placed by traders and market makers. A 70-cent YES quote midpoint is a market price, **not** an official Kalshi prediction that YES will win 70% of the time, and **not** a guaranteed true probability.
+
+AXIOM therefore maintains four separate roles:
+
+1. **Market data:** Kalshi supplies the published target, live YES/NO participant bid/ask quotes, and official settled result. `market_mid` is an order-book YES quote midpoint used for scoring comparison; it never votes in the forecast. The legacy `kalshi_market` identifier in scored snapshots represents this **non-voting quote benchmark**, not a Kalshi forecasting algorithm.
+2. **Independent experimental forecast:** BTC/volatility-based engines and their consensus estimate ABOVE/BELOW without using YES/NO contract prices as forecasting inputs. The research shadow is also non-voting. Changing quoted prices alone cannot change the forecast.
+3. **Opportunity comparison:** The independently estimated probability is compared to participant **ask** prices with illustrative fees. A model-minus-quote difference is **not** verified mispricing, guaranteed profit, or proven alpha. Fill size, slippage, and date-specific fee rules require separate validation.
+4. **Settlement:** The official Kalshi market result determines grading, not the contract price or Coinbase spot. Historical quote-versus-forecast Brier comparisons evaluate descriptive probability skill, not actual trading returns.
+
+**Compatibility:** `market_prob` and `alpha_vs_market` are legacy API/database fields: the former stores the participant YES midpoint; the latter represents experimental model-minus-midpoint difference. Neither is a Kalshi-issued forecast or validated investment alpha. Additional fields (`market_price_source`, `market_mid_role`, `market_price_is_forecast`, `forecast_minus_quote_mid`, `quote_discrepancy_is_validated_alpha`) document their true meaning. The dashboard renders quote midpoints in cents and model estimates as uncalibrated percentages.
+
+Permanent regression suite `tests/test_market_quote_is_not_forecast.py` checks forecast invariance when participant quotes change and verifies that bid/ask prices still affect hypothetical opportunity assessments.
 
 ## How the combined forecast works
 
@@ -52,6 +67,22 @@ After **official Kalshi settlement** is available, predictions are graded and th
 - Log loss in CSV/API output
 
 These scorecards do **not** automatically verify predictive alpha or choose weights. They are prerequisites for later chronological out-of-sample testing. A small winning streak or a backtest is insufficient.
+
+## Full aggregated Kalshi order book and three independent decision lanes
+
+**Forecasting is separate from contract pricing.** AXIOM's preexisting consensus of BTC spot/volatility-derived research engines is unchanged. Kalshi's trader-set quote midpoint and the full order book are NOT inputs to the winner estimate. Contract pricing cannot override or vote in the forecasting models.
+
+**Full market depth:** LiveProvider uses the public GET `/markets/{ticker}/orderbook?depth=0` REST endpoint with no API key or real order placement. It retrieves all **currently available aggregated bid price levels** and their fixed-point contract quantities for YES and NO. The server independently constructs YES asks from `1 - NO bid` and NO asks from `1 - YES bid`. It does not provide every individual order, trader identity, cancellation/trade event, or guaranteed available liquidity. The book has local received-at timestamp and market ticker; missing, malformed, crossed, stale, or mismatched books cause the new opportunity and execution lanes to WAIT.
+
+**Opportunity detection (new, read-only):** `app/depth_intelligence.py` compares AXIOM's independent estimate to the participant order book, using a hypothetical **10-contract book walk** by default instead of presuming all contracts can be bought at best ask. Computes size-adjusted average/worst entry price, spread, displayed size, estimated fees, potential model-price discrepancy, and explicit WAIT/YES/NO candidate. Unvalidated forecast probabilities, unverified execution costs and unobservable future fills prevent any proven-alpha claim. Price/quote inputs affect the opportunity, not the forecast.
+
+**Execution intelligence (new, read-only):** Separate `execution_intelligence` describes ENTER or WAIT for fresh, sized entry candidates. `paper_position_execution` separately assesses a **one-contract simulated paper position**, if present, to show HOLD or a hypothetical EXIT at size-adjusted resting bids. This cannot read personal/real Kalshi portfolio positions, and it **never** creates/updates real orders. The offline demo includes a clearly labeled synthetic depth feed.
+
+**Dashboard/API:** `GET /api/state` includes `orderbook` with all available levels (plus `best`, level counts, volumes, 5-cent bid imbalance), `depth_opportunity`, `execution_intelligence`, and optional `paper_position_execution`. Mobile UI shows full available YES bid and implied YES ask ladders, the new sized opportunity, and separated execution advice.
+
+**Backward compatibility:** Existing `opportunity` and existing one-contract automatic/manual **paper ledger** remain unchanged and are explicitly labeled a *legacy top-quote paper screen*. No existing positions, historical grades, forecasts, or scoring records were rewritten. The new depth execution recommendations do **not** drive those legacy simulated entries; their entry/exit prices remain hypothetical. This distinction prevents accidentally claiming historical paper trades were full-depth matched.
+
+**Latency and future work:** REST book is a point-in-time snapshot re-polled by AXIOM; it is not a WebSocket update stream and cannot attribute net level changes to cancellations versus trades. Before real or high-speed trading, separately validate authenticated/live exchange connectivity and rate limits, WebSocket snapshot/delta continuity, actual fee schedule, fill availability, risk limits and out-of-sample signal performance. No auto-trading authorization exists.
 
 ## Paper trade handling
 
@@ -93,3 +124,7 @@ See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for exact file provenance
 - Exact implementations of third-party proprietary systems and unlicensed public repositories are **not** included.
 
 **Isolation:** This entire v2 was created only in `/mnt/data/AXIOM_v2_Research_Bot/`. No original GitHub project, branch, Render service, or database was modified.
+
+## Live authenticated BRTI reference (integration candidate)
+
+Set `BRTI_LIVE_ENABLED=1`, `KALSHI_API_KEY_ID` and `KALSHI_PRIVATE_KEY_PEM` in *server-side* environment secrets. AXIOM subscribes to Kalshi's authenticated `cfbenchmarks_value` and `cfbenchmarks_value_5hz` channels for BRTI only. `/api/state.live_briti` displays source and receipt timestamps and provider-reported 60-second/15-minute-window information without exporting credentials or raw frames. It does NOT vote in the uncalibrated forecasting ensemble, trigger paper trades or place real orders. Missing/stale data is marked unavailable. AXIOM's first-observed strike time is not proof of the exchange's first publication. Validate real stream capability using `python -m research.live_brti_probe`. Kalshi official documentation: https://docs.kalshi.com/websockets/cfbenchmarks-value and https://docs.kalshi.com/websockets/cfbenchmarks-value-5hz.

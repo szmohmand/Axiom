@@ -1,0 +1,24 @@
+[Unit]
+Description=AXIOM research API and read-only BTC workers
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=axiom
+Group=axiom
+WorkingDirectory=/opt/axiom/current
+EnvironmentFile=/etc/axiom/axiom.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/axiom/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=25
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/axiom
+
+[Install]
+WantedBy=multi-user.target

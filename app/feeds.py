@@ -3,7 +3,8 @@ import time
 from datetime import datetime, timezone, timedelta
 from urllib.parse import quote as urlquote
 import requests
-from .engine import normalize_candles, market_snapshot, numeric
+from .engine import normalize_candles, market_snapshot, numeric, utc_timestamp
+from .orderbook import normalize_orderbook
 
 KALSHI = 'https://external-api.kalshi.com/trade-api/v2'
 COINBASE = 'https://api.exchange.coinbase.com'
@@ -60,6 +61,8 @@ def contiguous_real_candle_suffix(candles, min_bars=MIN_REAL_ONE_MINUTE_BARS):
 class LiveProvider:
     def __init__(self):
         self.candle_quality = None
+        self.price_source_at = None
+        self.price_received_at = None
         self.session = requests.Session()
         self.session.headers.update({'User-Agent':'ResearchBot/0.1 (read-only market data)', 'Accept':'application/json'})
     def get(self, url, params=None):
@@ -68,21 +71,72 @@ class LiveProvider:
         return response.json()
     def market(self, now=None):
         now = time.time() if now is None else now
-        payload = self.get(f'{KALSHI}/markets', {'series_ticker':'KXBTC15M','status':'open','limit':30})
-        markets = []
-        for obj in payload.get('markets', []):
+        params={'series_ticker':'KXBTC15M','status':'open','limit':30}
+        def eligible(payload):
+            markets=[]
+            for obj in payload.get('markets', []):
+                try:
+                    m=market_snapshot(obj, now)
+                    if m['seconds_left'] > 0: markets.append(m)
+                except (TypeError, ValueError):
+                    pass
+            # Never reuse an expired contract or invent a future strike.
+            return min(markets,key=lambda m:m['seconds_left']) if markets else None
+        # A newly opened contract may be briefly absent from Kalshi's
+        # published list OR the listing endpoint may transiently return 503.
+        # Permit exactly one bounded retry in the first 90s of a REAL 15m
+        # boundary. Outside that interval preserve the original HTTP error.
+        # Never reuse an expired ticker, infer a strike or fabricate a book.
+        rollover = 0 <= (now % 900) <= 90 and abs(time.time()-now) < 30
+        try:
+            active=eligible(self.get(f'{KALSHI}/markets',params))
+        except requests.HTTPError as exc:
+            status=exc.response.status_code if exc.response is not None else None
+            if not rollover or status not in (404,429,500,502,503,504):
+                raise
+            active=None
+        if active:
+            return active
+        if rollover:
+            time.sleep(.4)
             try:
-                m = market_snapshot(obj, now)
-                if m['seconds_left'] > 0: markets.append(m)
-            except (TypeError, ValueError):
-                pass
-        if not markets: return None
-        # Prefer current active window with nearest imminent close.
-        return sorted(markets, key=lambda m:m['seconds_left'])[0]
+                return eligible(self.get(f'{KALSHI}/markets',params))
+            except requests.RequestException:
+                # A second source failure is NOT a valid market. The poll
+                # publishes unavailable/WAIT; the next normal poll may recover.
+                return None
+        return None
+    def orderbook(self, market, now=None):
+        """Request ALL available aggregated levels (depth=0), no account key.
+
+        This is a single REST snapshot, not a WebSocket history and not
+        visibility into individual user orders or live fills.
+        """
+        if not isinstance(market, dict) or not str(market.get('ticker','')).startswith('KXBTC15M-'):
+            raise ValueError('Full depth requires a valid BTC15m market')
+        ticker=market['ticker']
+        if '/' in ticker or '?' in ticker or '#' in ticker:
+            raise ValueError('Invalid order-book ticker')
+        # Optional depth must never consume the 9-second critical data
+        # timeout; bound its additional latency to 2 seconds.
+        response=self.session.get(f'{KALSHI}/markets/{urlquote(ticker,safe="")}/orderbook',
+                                  params={'depth':0}, timeout=2)
+        response.raise_for_status()
+        raw=response.json()
+        # Timestamp after successful GET: no false claim about exchange event time.
+        # True local receipt AFTER successful network response, never the
+        # poll-start timestamp passed from the main worker.
+        received=time.time()
+        return normalize_orderbook(raw,ticker,received)
     def price(self):
         raw = self.get(f'{COINBASE}/products/BTC-USD/ticker')
         p = numeric(raw.get('price'))
         if p is None or p <= 0: raise ValueError('Invalid Coinbase BTC price')
+        self.price_source_at = utc_timestamp(raw.get('time'))
+        self.price_received_at = time.time()
+        if self.price_source_at is not None and (self.price_source_at > self.price_received_at+2 or
+                                                  self.price_received_at-self.price_source_at > 90):
+            raise ValueError('Coinbase last trade is stale or future-dated')
         return p
     def candles(self):
         now = datetime.now(timezone.utc)
@@ -102,9 +156,17 @@ class LiveProvider:
                 data = self.get(f'{KALSHI}{path}')
                 m = data.get('market') or {}
                 result = str(m.get('result') or '').lower()
-                if result in ('yes','no') and str(m.get('status') or '').lower() in ('settled','finalized'):
+                status=str(m.get('status') or '').lower()
+                if result in ('yes','no') and status in ('settled','finalized'):
                     return result
-                return None
+                if status == 'open':
+                    # Never grade an open contract, even if a stray result
+                    # field appears. Preserve prior ungraded behavior.
+                    return None
+                # A closed/pending live-market record may lag the historical
+                # finalized record. Continue to the historical endpoint
+                # instead of prematurely returning None.
+                continue
             except requests.HTTPError as e:
                 if e.response is not None and e.response.status_code == 404: continue
                 raise
@@ -131,6 +193,21 @@ class DemoProvider:
     def _value(self, t):
         import math
         return self.seed + 200*math.sin(t/180) + 120*math.sin(t/80) + 25*math.sin(t/13)
+    def orderbook(self, market, now=None):
+        """Explicitly synthetic aggregated depth for offline demonstration only."""
+        from decimal import Decimal
+        t=time.time() if now is None else float(now)
+        def levels(top):
+            if top is None: return []
+            p=Decimal(str(top))
+            return [[str(p-Decimal('0.01')*i),str(10+15*i)]
+                    for i in range(3,-1,-1) if Decimal('0')<p-Decimal('0.01')*i<Decimal('1')]
+        payload={'orderbook_fp':{'yes_dollars':levels(market.get('yes_bid')),
+                                 'no_dollars':levels(market.get('no_bid'))}}
+        out=normalize_orderbook(payload,market['ticker'],t)
+        out['source']='synthetic_demo_orderbook'
+        out['reason']='SYNTHETIC aggregated depth; not exchange liquidity'
+        return out
     def price(self): return round(self._value(time.time()),2)
     def candles(self):
         now = int(time.time()//60)*60

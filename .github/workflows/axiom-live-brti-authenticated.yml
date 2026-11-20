@@ -1,0 +1,35 @@
+name: AXIOM LIVE authenticated BRTI point-in-time 1Hz/5Hz probe (read-only)
+on:
+  push:
+    branches:
+      - integrate/axiom-live-brti-release-candidate-2026-11-18
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  live-brti:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      DEMO_MODE: '0'
+      AUTO_PAPER: '0'
+      BRTI_PROBE_SECONDS: '35'
+      AXIOM_LIVE_BRTI_SUMMARY: axiom-live-brti-sanitized-evidence.json
+      KALSHI_API_KEY_ID: ${{ secrets.KALSHI_API_KEY_ID }}
+      KALSHI_PRIVATE_KEY_PEM: ${{ secrets.KALSHI_PRIVATE_KEY_PEM }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Install exact runtime and read-only signing dependencies
+        run: python -m pip install --disable-pip-version-check -r requirements.lock.txt
+      - name: Capture genuine BRTI 1Hz/5Hz source, exchange-received and local-received timestamps
+        run: python -m research.live_brti_probe
+      - name: Save only sanitized counts and lag measurements, NEVER raw index/credentials
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: axiom-live-brti-sanitized-evidence
+          path: axiom-live-brti-sanitized-evidence.json
+          if-no-files-found: warn

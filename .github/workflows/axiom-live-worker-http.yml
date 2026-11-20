@@ -1,6 +1,8 @@
 name: AXIOM live background-worker and HTTP integration acceptance
 on:
   push:
+    branches:
+      - audit/complete-coverage-and-workflows-2026-11-17
     paths:
       - '.github/workflows/axiom-live-worker-http.yml'
   workflow_dispatch:
@@ -16,8 +18,8 @@ jobs:
       POLL_SECONDS: '8'
       DATA_PATH: '/tmp/axiom-live-worker-e2e.sqlite3'
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.13'
       - name: Install locked Python environment

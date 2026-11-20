@@ -22,7 +22,7 @@ button,input{font:inherit}button{cursor:pointer}button:disabled{opacity:.4;curso
     <div class="brand"><div class="mark">A</div><div><div class="brand-name">AXIOM</div><div class="brand-sub">BTC RESEARCH LAB / 15M</div></div></div>
     <div class="status-group"><span id="status" class="pill">CONNECTING</span><span id="mode" class="pill">—</span><span class="version">v2.0 · Multi-engine · Paper only</span></div>
   </header>
-  <div class="topnote" id="notice">AXIOM v2 runs three experimental research engines + Kalshi baseline. Consensus is uncalibrated; paper entries are hypothetical and P&L excludes fees/slippage. Coinbase is not CF Benchmarks BRTI.</div>
+  <div class="topnote" id="notice">AXIOM calculates its own experimental forecasts. Kalshi YES/NO prices come from traders' orders—not a prediction by Kalshi. Those quotes do not vote in AXIOM's forecast. Paper entries are hypothetical; Coinbase is not CF Benchmarks BRTI.</div>
   <div class="hero">
     <div><div class="eyebrow">LIVE MARKET INTELLIGENCE</div><h1 class="headline">Bitcoin, under the microscope.</h1><div class="subtitle" id="marketTitle">Reading live Kalshi and Coinbase feeds…</div></div>
     <div class="clock"><small>CONTRACT CLOSES IN</small><div id="countdown" class="big">—:—</div><small id="marketTicker">KXBTC15M</small></div>
@@ -30,19 +30,19 @@ button,input{font:inherit}button{cursor:pointer}button:disabled{opacity:.4;curso
   <section class="metric-grid">
     <div class="card"><div class="metric-name">BTC Spot · Coinbase</div><div id="spot" class="metric-val">—</div><div class="metric-sub" id="spotLabel">Proxy, not settlement index</div></div>
     <div class="card"><div class="metric-name">Kalshi Official Target</div><div id="strike" class="metric-val">—</div><div id="strikeSub" class="metric-sub">Waiting for contract</div></div>
-    <div class="card"><div class="metric-name">Kalshi ABOVE · Market</div><div id="marketProb" class="metric-val">—</div><div class="metric-sub">Quote-derived mid, not our model</div></div>
+    <div class="card"><div class="metric-name">Kalshi YES · Quote midpoint</div><div id="marketProb" class="metric-val">—</div><div class="metric-sub">Price from traders' bid/ask orders · not a Kalshi prediction</div></div>
     <div class="card"><div class="metric-name">Ensemble ABOVE</div><div id="modelProb" class="metric-val">—</div><div class="metric-sub">Uncalibrated multi-engine median</div></div>
   </section>
   <section class="section" style="margin-bottom:20px">
     <div class="section-header"><h2>Multi-engine intelligence</h2><span class="submark" id="consensusInfo">Experimental ensemble · not validated</span></div>
     <div class="two">
       <div class="card"><div class="card-head"><div class="card-title">Live model comparison</div><span class="submark">One shared snapshot</span></div>
-        <div class="table-wrap"><table class="data-table"><thead><tr><th>Engine</th><th>Above</th><th>Signal</th></tr></thead><tbody id="engineRows"><tr><td colspan="3" class="empty">Waiting for data</td></tr></tbody></table></div>
-        <div class="explain" id="agreementExplain">Engines are compared on the same market; market price is a baseline, not an independent vote.</div>
+        <div class="table-wrap"><table class="data-table"><thead><tr><th>Source / model</th><th>Estimate or price</th><th>Signal</th></tr></thead><tbody id="engineRows"><tr><td colspan="3" class="empty">Waiting for data</td></tr></tbody></table></div>
+        <div class="explain" id="agreementExplain">Forecast models calculate estimates independently; the quoted market price is a non-voting benchmark, not Kalshi's prediction.</div>
       </div>
       <div class="card"><div class="card-head"><div class="card-title">Official outcome scorecards</div><span class="submark">14 / 10 / 5 / 1 min</span></div>
-        <div class="table-wrap"><table class="data-table"><thead><tr><th>Engine · Horizon</th><th>N</th><th>Brier</th><th>vs Kalshi</th></tr></thead><tbody id="engineScoreRows"><tr><td colspan="4" class="empty">Awaiting settled markets</td></tr></tbody></table></div>
-        <div class="explain">Lower Brier is better. Positive improvement means better than the contemporaneous Kalshi midpoint on the same scored snapshots. Preliminary; no validated edge claims.</div>
+        <div class="table-wrap"><table class="data-table"><thead><tr><th>Model / quote · Horizon</th><th>N</th><th>Brier</th><th>vs quote midpoint</th></tr></thead><tbody id="engineScoreRows"><tr><td colspan="4" class="empty">Awaiting settled markets</td></tr></tbody></table></div>
+        <div class="explain">Quote-midpoint Brier treats the traders' market price as a probability-like benchmark for comparison, NOT a Kalshi-generated prediction. A better Brier score is not necessarily tradable profit.</div>
         <div class="trade-actions"><button class="btn small ghost" data-export="engine_snapshots">Export model predictions CSV</button></div>
       </div>
     </div>
@@ -64,10 +64,34 @@ button,input{font:inherit}button{cursor:pointer}button:disabled{opacity:.4;curso
         <div class="progress"><div id="probBar"></div></div><div class="pair"><div class="info-cell"><div class="label">ABOVE likelihood</div><b id="above">—</b></div><div class="info-cell"><div class="label">BELOW likelihood</div><b id="below">—</b></div></div>
         <div class="explain" id="forecastReason">Waiting for enough data. This forecast is not independently calibrated.</div>
       </div>
-      <div class="card"><div class="card-head"><div class="card-title">Contract opportunity</div><span class="submark">Compare model vs quote</span></div><div class="label">Paper contract suggestion</div><div class="signal" id="opSide">WAIT</div>
+      <div class="card"><div class="card-head"><div class="card-title">Normalized-distance research</div><span class="pill">SHADOW · NON-VOTING</span></div>
+        <div class="label">BTC proxy study · not the BRTI index</div><div id="shadowSide" class="signal">WAIT</div>
+        <div class="pair"><div class="info-cell"><div class="label">Distance / volatility (z)</div><b id="shadowZ">—</b></div><div class="info-cell"><div class="label">Real 1m bars used</div><b id="shadowBars">—</b></div></div>
+        <div id="shadowReason" class="explain">Experimental reference only. Does not affect the forecast or trade decisions.</div>
+      </div>
+<div class="card"><div class="card-head"><div class="card-title">Kalshi · full available order-book depth</div><span class="pill">AGGREGATED BIDS</span></div>
+        <div class="label" id="bookStatus">Waiting for full order book</div>
+        <div class="pair"><div class="info-cell"><div class="label">YES bid levels</div><b id="bookYesLevels">—</b></div><div class="info-cell"><div class="label">NO bid levels</div><b id="bookNoLevels">—</b></div></div>
+        <div class="pair"><div class="info-cell"><div class="label">Bid volume imbalance · within 5¢</div><b id="bookImbalance">—</b></div><div class="info-cell"><div class="label">Snapshot source</div><b>Kalshi order book</b></div></div>
+        <div class="label">YES bids · all levels</div><div class="table-wrap" style="max-height:145px;overflow-y:auto"><table class="data-table"><thead><tr><th>Price</th><th>Contracts</th></tr></thead><tbody id="bookBidRows"><tr><td colspan="2">No depth yet</td></tr></tbody></table></div>
+        <div class="label">YES asks · derived from NO bids, all levels</div><div class="table-wrap" style="max-height:145px;overflow-y:auto"><table class="data-table"><thead><tr><th>Price</th><th>Contracts</th></tr></thead><tbody id="bookAskRows"><tr><td colspan="2">No depth yet</td></tr></tbody></table></div>
+        <div class="explain">Kalshi publishes aggregated resting YES/NO bids per price. Asks are the opposite bid's $1 complement. Individual order identities and between-poll changes are not visible. Displayed volume can disappear before a manual trade.</div>
+      </div>
+      <div class="card"><div class="card-head"><div class="card-title">Depth-based opportunity detection</div><span class="pill">NOT THE FORECAST</span></div>
+        <div class="label">Independent model vs participant asking prices</div><div class="signal" id="depthSide">WAIT</div>
+        <div class="pair"><div class="info-cell"><div class="label">Size-adjusted hypothetical entry</div><b id="depthCost">—</b></div><div class="info-cell"><div class="label">Estimated after-fee discrepancy</div><b id="depthEdge">—</b></div></div>
+        <div class="explain" id="depthReason">Waiting for complete, fresh aggregated liquidity and independent forecast.</div>
+      </div>
+      <div class="card"><div class="card-head"><div class="card-title">Execution intelligence</div><span class="pill">NO REAL ORDERS</span></div>
+        <div class="label">Manual execution guidance</div><div class="signal" id="execAction">WAIT</div>
+        <div class="explain" id="execReason">ENTER / WAIT guidance requires a fresh order-book snapshot. HOLD / EXIT analysis requires an explicit hypothetical position, not just a market price.</div>
+        <div class="label">Open paper-position review (one simulated contract only)</div><div class="signal" id="paperExecAction">WAIT</div><div class="explain" id="paperExecReason">No matching open simulated position</div>
+        <div class="explain">No real orders are placed. This panel does not submit trades. Estimated entry and exit prices are book-walk simulations; actual fills, fees and available size can differ.</div>
+      </div>
+            <div class="card"><div class="card-head"><div class="card-title">Legacy top-quote paper screen</div><span class="submark">Top quotes only · NOT depth-gated</span></div><div class="label">Paper contract suggestion</div><div class="signal" id="opSide">WAIT</div>
         <div class="pair"><div class="info-cell"><div class="label">YES ask</div><b id="yesAsk">—</b></div><div class="info-cell"><div class="label">NO ask</div><b id="noAsk">—</b></div></div>
-        <div class="pair"><div class="info-cell"><div class="label">Model edge, gross</div><b id="edge">—</b></div><div class="info-cell"><div class="label">Paper mode</div><b id="autoPaper">—</b></div></div>
-        <div class="explain" id="opReason">A favorable estimated edge does not guarantee profit or execution.</div>
+        <div class="pair"><div class="info-cell"><div class="label">Estimated edge after illustrative fee</div><b id="edge">—</b></div><div class="info-cell"><div class="label">Paper mode</div><b id="autoPaper">—</b></div></div>
+        <div class="explain" id="opReason">AXIOM compares its estimate with participant ask prices; apparent value is unverified and fills are not guaranteed.</div>
         <div class="trade-actions"><button id="paperYes" class="btn yes" disabled>Paper YES</button><button id="paperNo" class="btn no" disabled>Paper NO</button><button id="unlock" class="btn ghost">Unlock manual</button></div><div id="tradeMessage" class="message"></div>
       </div>
       <div class="card"><div class="card-head"><div class="card-title">BTC spot scalping lens</div><span class="pill">INDEPENDENT</span></div>
@@ -81,10 +105,26 @@ button,input{font:inherit}button{cursor:pointer}button:disabled{opacity:.4;curso
   <section class="section"><div class="section-header"><h2>Performance ledger</h2><span class="submark">Official Kalshi grading · gross paper P&L</span></div>
     <div class="metric-grid"><div class="card"><div class="metric-name">Graded first calls</div><div id="graded" class="metric-val">0</div><div class="metric-sub">First calls frozen on trigger</div></div><div class="card"><div class="metric-name">First-call accuracy</div><div id="accuracy" class="metric-val">—</div><div class="metric-sub">Unscored until official result</div></div><div class="card"><div class="metric-name">Settled paper trades</div><div id="tradeN" class="metric-val">0</div><div class="metric-sub" id="tradeWR">No results yet</div></div><div class="card"><div class="metric-name">Gross paper P&L</div><div id="paperPnl" class="metric-val">$0.00</div><div class="metric-sub">Before fees, unrealized excluded</div></div></div>
   </section>
+  <section class="section card" id="decisionSignalsSection"><div class="card-head"><div class="card-title">Integrated BTC dynamics &amp; entry timing</div><span class="submark">Observed inputs · no live orders</span></div>
+    <div class="pair"><div class="info-cell"><div class="label">Distance / volatility / remaining time</div><b id="dynZ">—</b></div><div class="info-cell"><div class="label">Price acceleration (bps/min)</div><b id="dynAccel">—</b></div></div>
+    <div class="pair"><div class="info-cell"><div class="label">Target touch before expiration</div><b id="dynTouch">—</b></div><div class="info-cell"><div class="label">5bp movement within next 2 minutes (either way)</div><b id="dynMove">—</b></div></div>
+    <div class="pair"><div class="info-cell"><div class="label">Early displacement from opening reference (bps)</div><b id="dynEarly">—</b></div><div class="info-cell"><div class="label">Early reversal-risk pattern</div><b id="dynReversal">—</b></div></div>
+    <div class="label">BTC price reference</div><div id="dynRef" class="explain">Awaiting current reference</div>
+    <div class="label">Combined entry decision</div><div id="decisionAction" class="signal">WAIT</div>
+    <div id="decisionReason" class="explain">Awaiting fresh BTC data and full Kalshi order-book depth</div>
+    <div class="micro">Outcome, target touch and movement magnitude are distinct. Touch/volatility do not predict a direction or guarantee a higher resale price.</div>
+  </section>
+  <section class="section card" id="liveBRTISection"><div class="card-head"><div class="card-title">Live CF Benchmarks BRTI · official reference</div><span class="submark">Authenticated read-only WebSocket · fresh reference when available</span></div>
+    <div class="pair"><div class="info-cell"><div class="label">Live BRTI index</div><b id="brtiValue">—</b></div><div class="info-cell"><div class="label">Stream status</div><b id="brtiState">NOT CONNECTED</b></div></div>
+    <div class="pair"><div class="info-cell"><div class="label">Index source → AXIOM receipt</div><b id="brtiLag">—</b></div><div class="info-cell"><div class="label">Last 15m settlement-window average</div><b id="brtiFinal">—</b></div></div>
+    <div id="brtiStrike" class="explain">Strike first-observation timestamp unavailable. The time AXIOM first saw a target is not proof of the exchange\'s first-publication time.</div>
+    <div id="brtiWarning" class="micro">Existing models use Coinbase; the new target-dynamics model can use authenticated fresh BRTI as its distance reference. A stream is not a separate voting engine and does not place orders. A partial 60-second window is not official final settlement.</div>
+  </section>
+  <section class="section card"><div class="card-head"><div class="card-title">Real execution evidence</div><span class="pill">NOT MEASURED</span></div><div class="explain" id="executionEvidence">No authenticated exchange fills or charged-fee records are connected. Actual net P&amp;L cannot be verified from paper win rate, market quotes, or order-book snapshots.</div><div class="micro" id="executionCost">Displayed liquidity is hypothetical; an available bid/ask is not an executed fill.</div></section>
   <section class="grid-history section"><div class="card"><div class="card-head"><div class="card-title">First-call history</div><span class="submark">Most recent</span></div><div class="table-wrap"><table class="data-table"><thead><tr><th>Market</th><th>Call</th><th>Conf.</th><th>Outcome</th></tr></thead><tbody id="callRows"><tr><td colspan="4" class="empty">No calls yet</td></tr></tbody></table></div></div>
   <div class="card"><div class="card-head"><div class="card-title">Paper positions</div><span class="submark">Assumed quoted-ask fill</span></div><div class="table-wrap"><table class="data-table"><thead><tr><th>Market</th><th>Side</th><th>Entry</th><th>P&L</th></tr></thead><tbody id="tradeRows"><tr><td colspan="4" class="empty">No positions yet</td></tr></tbody></table></div></div></section>
   <section class="section card"><div class="card-head"><div class="card-title">Sources and connection health</div><span class="submark" id="refreshed">Checking…</span></div><div class="micro" id="dataErrors">Live feeds are read-only. No Kalshi credentials or orders are required.</div><div class="trade-actions"><button class="btn small ghost" data-export="first_calls">Export calls CSV</button><button class="btn small ghost" data-export="paper_trades">Export paper CSV</button><button class="btn small ghost" data-export="observations">Export observations CSV</button></div><div class="message" id="exportMessage"></div></section>
-  <footer class="footer">AXIOM v1.0 is an original research implementation informed by published market-data conventions. It does not contain private code from any third-party trading bot. Its probabilities have not been fitted or calibrated against independent historical outcomes. Kalshi market data is used for quotes and official grading; Coinbase spot is only a proxy for the settlement benchmark. Paper positions assume instant execution at the displayed ask and exclude exchange fees, spread movement, funding, and slippage. No live orders or wallet access exist in this software.</footer>
+  <footer class="footer">AXIOM v1.0 is an original research implementation informed by published market-data conventions. It does not contain private code from any third-party trading bot. Its probabilities have not been fitted or calibrated against independent historical outcomes. Kalshi contract prices are quotes generated by participant orders, not Kalshi's model predictions. AXIOM uses them only for comparison and hypothetical execution; Coinbase spot is a proxy, not the official settlement benchmark. Paper positions assume instant execution at the displayed ask and exclude exchange fees, spread movement, funding, and slippage. No live orders or wallet access exist in this software.</footer>
 </div>
 <script>
 const $ = id => document.getElementById(id);
@@ -110,20 +150,46 @@ function view(s){latest=s;const m=s.market, f=s.model||{},o=s.opportunity||{},sc
  const status=s.status||'ERROR';set('status',status,status==='LIVE'?'pill live':status==='DEMO'?'pill demo':'pill err');set('mode',s.mode==='DEMO'?'SYNTHETIC DATA':'REAL FEEDS',s.mode==='DEMO'?'pill demo':'pill');
  set('marketTitle',m?`Current Kalshi BTC 15-minute contract · ${m.title}`:'No active KXBTC15M contract available');set('marketTicker',shortTicker(m?.ticker));
  const engines=s.engines||[]; const scores=(s.engine_scores||{}).scores||[];
- $('engineRows').innerHTML=engines.map(e=>`<tr><td title="${safe(e.reason)}">${safe(e.name)}</td><td>${pct(e.prob_above)}</td><td class="${directionClass(e.side)}">${safe(e.available?e.side:'NO DATA')}</td></tr>`).join('') || '<tr><td colspan="3" class="empty">No forecasts available</td></tr>';
- $('engineScoreRows').innerHTML=scores.slice(0,32).map(e=>`<tr><td>${safe(e.engine)} · ${safe(e.checkpoint)}</td><td>${e.n}</td><td>${fmt(e.brier,4)}</td><td class="${e.brier_improvement>0?'green':e.brier_improvement<0?'red':''}">${e.brier_improvement==null?'—':(e.brier_improvement>0?'+':'')+fmt(e.brier_improvement,4)}</td></tr>`).join('')||'<tr><td colspan="4" class="empty">No officially graded model checkpoints yet</td></tr>';
- set('consensusInfo',f.available?`Agree ${f.agreement||0}/3 · Spread ${pct(f.spread)} · UNVALIDATED`:'WAIT · missing inputs');
- set('agreementExplain',f.available?'Median of three distinct model formulas; same spot data can make them correlated. A disagreement >30 points forces WAIT. Baseline is excluded from consensus.': 'Require at least two model estimates on one shared BTC15M contract and candle set.');
- set('spot',money(s.spot));set('strike',money(m?.target));set('strikeSub',m?.target?'Published by Kalshi':'Not published / unavailable');set('marketProb',pct(m?.market_mid));set('modelProb',pct(f?.prob_above));
+ $('engineRows').innerHTML=engines.map(e=>{const quote=e.role==='participant_order_book_price_benchmark'||e.name==='kalshi_market';return `<tr><td title="${safe(e.reason)}">${quote?'Kalshi participant quote midpoint (benchmark)':safe(e.name)}</td><td>${quote?cents(e.prob_above):pct(e.prob_above)}</td><td class="${directionClass(quote?'':e.side)}">${quote?'QUOTE ONLY':safe(e.available?e.side:'NO DATA')}</td></tr>`}).join('') || '<tr><td colspan="3" class="empty">No forecasts available</td></tr>';
+ $('engineScoreRows').innerHTML=scores.slice(0,32).map(e=>`<tr><td>${safe(e.engine==='kalshi_market'?'Kalshi order-book quote':e.engine)} · ${safe(e.checkpoint)}</td><td>${e.n}</td><td>${fmt(e.brier,4)}</td><td class="${e.brier_improvement>0?'green':e.brier_improvement<0?'red':''}">${e.brier_improvement==null?'—':(e.brier_improvement>0?'+':'')+fmt(e.brier_improvement,4)}</td></tr>`).join('')||'<tr><td colspan="4" class="empty">No officially graded model checkpoints yet</td></tr>';
+ set('consensusInfo',f.available?`Agree ${f.agreement||0}/${Math.max(1,engines.filter(e=>e.independent&&e.available).length)} · Spread ${pct(f.spread)} · UNVALIDATED`:'WAIT · missing inputs');
+ set('agreementExplain',f.available?'BTC-derived analytic models, including normalized target distance and bounded acceleration, drive the forecast. Participant contract prices do not vote. Shared BTC inputs may make models correlated; disagreement >30 points forces WAIT.': 'Require at least two model estimates on one shared BTC15M contract and candle set.');
+ set('spot',money(s.spot));set('strike',money(m?.target));set('strikeSub',m?.target?'Published by Kalshi':'Not published / unavailable');set('marketProb',cents(m?.market_mid));set('modelProb',pct(f?.prob_above));
  set('distance',Number.isFinite(s.spot)&&Number.isFinite(m?.target)?(s.spot-m.target>=0?'+':'')+money(s.spot-m.target):'—');set('vol',f.sigma_1m!=null?pct(f.sigma_1m):'—');set('candles',s.candles?.length||0);
  const above=f.available?f.prob_above:null;set('forecastSide',f.available?f.side:'WAIT','direction '+directionClass(f.side));set('above',pct(above));set('below',pct(f.available?f.prob_below:null));$('probBar').style.width=f.available?(100*above).toFixed(1)+'%':'50%';set('forecastReason',f.reason||'Insufficient data');
  set('yesAsk',cents(m?.yes_ask));set('noAsk',cents(m?.no_ask));set('opSide',o.side||'WAIT','signal '+directionClass(o.side));set('edge',pct(o.edge));set('autoPaper',s.paper_auto_enabled?'ON':'OFF');set('opReason',o.reason||'No available research opportunity');
+ const br=s.live_briti||{};
+  set('brtiValue',br.status==='STREAMING' && br.latest_value_usd!=null?money(Number(br.latest_value_usd)):'—');
+  set('brtiState',br.status||'UNAVAILABLE');
+  set('brtiLag',br.source_to_axiom_ms!=null?fmt(br.source_to_axiom_ms,0)+' ms':'—');
+  const qavg=br.quarter_hour_final_minute_provider;
+  set('brtiFinal',qavg?money(Number(qavg.value_usd))+' · '+qavg.window_size+'/60 ticks · '+(qavg.is_full_60?'FULL OBSERVED WINDOW':'PARTIAL, NOT SETTLEMENT'):'—');
+  const seen=br.first_observed_market;
+  set('brtiStrike',seen?('First AXIOM REST observation of '+shortTicker(seen.ticker)+' target '+money(Number(seen.target_usd))+' at '+new Date(seen.axiom_first_observed_at_ms).toLocaleTimeString()+'. Exchange first-publication time is NOT verified.'):'No verified first-publication time; awaiting first AXIOM observation of an active Kalshi contract.');
+  const sh=s.research_shadow||{};set('shadowSide',sh.available?sh.side:'WAIT','signal '+directionClass(sh.side));set('shadowZ',fmt(sh.z_score,3));set('shadowBars',sh.vol_minutes??'—');set('shadowReason',sh.reason||'Research model unavailable; not used for trading decisions');
+ const dyn=s.btc_signals||{},plan=s.trade_decision||{};
+  set('dynZ',fmt(dyn.distance_volatility_z,3));set('dynAccel',fmt(dyn.acceleration_bps_per_min,3));
+  set('dynTouch',pct(dyn.target_touch_probability));set('dynMove',pct(dyn.movement_2m_probability_5bp));
+  set('dynEarly',fmt(dyn.early_displacement_bps,2));set('dynReversal',dyn.first_two_minute_reversal_flag||'—');
+  set('dynRef',dyn.available?dyn.price_reference+' · '+money(dyn.reference_value)+' · long-memory volatility '+pct(dyn.volatility_1m_long)+(dyn.settlement_proxy_warning?' · Coinbase is NOT BRTI settlement':' · authenticated current BRTI reference'):dyn.reason||'No fresh signals');
+  set('decisionAction',plan.action||'WAIT','signal '+directionClass(plan.side));set('decisionReason',plan.reason||'No qualifying entry');
+  const book=s.orderbook||{},dp=s.depth_opportunity||{},ex=s.execution_intelligence||{},sel=dp.selected||{};
+ set('bookStatus',book.available?`Current aggregated price levels · ${(book.received_at?new Date(book.received_at*1000).toLocaleTimeString():'time unavailable')}`:`WAIT · ${book.reason||'No valid order-book depth'}`);
+ set('bookYesLevels',book.available?(book.levels?.YES??0):'—');set('bookNoLevels',book.available?(book.levels?.NO??0):'—');
+ set('bookImbalance',book.available?pct(book.book_imbalance_5c):'—');
+ const row=(x)=>`<tr><td>${cents(x.price)}</td><td>${fmt(x.size,2)}</td></tr>`;
+ $('bookBidRows').innerHTML=book.available?(book.bids?.YES||[]).map(row).join('')||'<tr><td colspan="2">No YES bids</td></tr>':'<tr><td colspan="2">No reliable full depth</td></tr>';
+ $('bookAskRows').innerHTML=book.available?(book.asks?.YES||[]).map(row).join('')||'<tr><td colspan="2">No YES asks</td></tr>':'<tr><td colspan="2">No reliable full depth</td></tr>';
+ set('depthSide',dp.side||'WAIT','signal '+directionClass(dp.side));set('depthCost',cents(sel.ask_sweep?.average_price));set('depthEdge',pct(sel.net_estimated_model_minus_cost));
+ set('depthReason',dp.reason||'Waiting for fresh independently assessed depth');set('execAction',ex.action||'WAIT','signal '+directionClass(ex.side));set('execReason',ex.reason||'No qualified order-book execution guidance');
+ const pex=s.paper_position_execution||{};set('paperExecAction',pex.action||'WAIT','signal '+directionClass(pex.side));set('paperExecReason',pex.reason||'No open simulated paper position; this does not track real Kalshi holdings');
  set('scalpSide',sc.side||'WAIT','signal '+directionClass(sc.side));set('scalpEntry',money(sc.entry));set('scalpAtr',money(sc.atr));set('scalpStop',money(sc.stop));set('scalpTarget',money(sc.target));set('scalpReason',sc.reason||'No spot setup');
  let call=(s.calls||[]).find(x=>x.ticker===m?.ticker);set('firstCall',call?`${call.side} ${pct(call.probability)}`:'WATCHING','direction '+directionClass(call?.side));set('holdTime',call?'LOCKED':s.watch?`${s.watch.held_seconds}s / 10s`:'—');
  set('gateExplanation',call?'First call is frozen for this market and will be scored against the official result.':s.watch?`Threshold crossed for ${s.watch.side}. The signal must remain over 85% for 10 seconds across fresh polls.`:'A first call is recorded only after the model stays at least 85% confident on the same side for 10 seconds.');
  const ledgerReady=s.ledger_available!==false;
  set('graded',ledgerReady?(st.graded_calls??0):'—');set('accuracy',ledgerReady?pct(st.first_call_accuracy):'—');set('tradeN',ledgerReady?(st.settled_paper_trades??0):'—');
  set('tradeWR',ledgerReady?`${st.winning_paper_trades??0} wins · ${pct(st.paper_win_rate)} win rate`:'Ledger temporarily unavailable');
+ const evidence=s.execution_evidence||{};set('executionEvidence',`Actual verified fills: ${evidence.authenticated_fill_records??0} · Real net P&L: NOT MEASURED · Fees: NOT VERIFIED. Paper results and model accuracy are research-only.`);const scenario=evidence.scenarios?.YES;set('executionCost',scenario?.same_snapshot_spread_crossing_cost_usd!=null?`Indicative YES spread-crossing cost at ${evidence.size_contracts} contracts: ${money(scenario.same_snapshot_spread_crossing_cost_usd)} (same snapshot; not an executable or fee-adjusted P&L).`:'No complete, fresh two-sided order-book sweep available; executable return unverified.');
  const pnl=st.gross_paper_pnl??0;set('paperPnl',ledgerReady?(pnl>=0?'+':'−')+money(Math.abs(pnl)):'—','metric-val '+(ledgerReady?(pnl>0?'green':pnl<0?'red':''):''));
  $('paperYes').disabled=!s.ok||!s.manual_paper_available||!m||!m.yes_ask||requestPending;$('paperNo').disabled=!s.ok||!s.manual_paper_available||!m||!m.no_ask||requestPending;
  const colorResult=(r,side)=>!r?'OPEN':((side==='ABOVE'||side==='YES')===(r==='yes')?'RIGHT':'WRONG');

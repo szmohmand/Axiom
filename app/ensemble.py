@@ -5,7 +5,7 @@ Provenance:
  - kalshibot_headstart: uses the published MIT head-start feature from
    jaldrich2023/KalshiBot Predictor.swift, but NOT its trained predictor.
  - axiom_volatility: original AXIOM v1 GBM-inspired forecast.
- - market_baseline: contemporaneous Kalshi midpoint; not independent alpha.
+ - market_baseline: participant order-book YES midpoint; NOT a Kalshi prediction.
 
 The ensemble is not calibrated and none of the above is verified profitable.
 """
@@ -34,7 +34,7 @@ def log_returns(closes: list[float]) -> list[float]:
     return [math.log(b/a) for a,b in zip(closes,closes[1:]) if a>0 and b>0]
 
 
-def engine_pack(spot: float | None, market: dict | None, candles: list[dict]) -> dict:
+def engine_pack(spot: float | None, market: dict | None, candles: list[dict], signals: dict | None = None) -> dict:
     """Run available engines on the SAME market/spot snapshot.
 
     Each engine reports its source and provenance; no fabricated ML outputs or
@@ -43,9 +43,15 @@ def engine_pack(spot: float | None, market: dict | None, candles: list[dict]) ->
     """
     engines=[]
     mid=market.get('market_mid') if market else None
-    engines.append(engine_result('kalshi_market',mid,'market-baseline',
-                                 'Kalshi quote-derived midpoint; comparator, not independent prediction',
-                                 independent=False))
+    # Retain the historical 'kalshi_market' name for scorecard and export
+    # compatibility, but do NOT treat participant order-book quotes as a model.
+    # A 70-cent price is a price, not Kalshi's 70% winning prediction.
+    quote_benchmark=engine_result('kalshi_market',mid,'orderbook-quote-benchmark',
+                                  'YES bid/ask midpoint set by participant orders; NOT Kalshi\'s prediction',
+                                  independent=False,is_model_prediction=False,
+                                  role='participant_order_book_price_benchmark')
+    quote_benchmark['side']='N/A'  # A quote cannot issue a direction signal.
+    engines.append(quote_benchmark)
     if not market:
         return {'available':False, 'prob_above':None,'prob_below':None,'side':'WAIT',
                 'reason':'No active Kalshi BTC15M market', 'engines':engines,
@@ -86,7 +92,25 @@ def engine_pack(spot: float | None, market: dict | None, candles: list[dict]) ->
         engines.append(engine_result('kalshibot_headstart',cdf(headstart),'adapted-MIT-feature',
                                      'KalshiBot head-start distance feature mapped through normal CDF; NOT trained Predictor',
                                      independent=True, z_score=round(headstart,4)))
-    good=[e['prob_above'] for e in engines if e.get('independent') and e['available']]
+    # When called by the live application, include the point-in-time analytic
+    # target model in the existing integrated ensemble. Standalone legacy
+    # engine_pack calls without a signals snapshot retain their original
+    # three-engine semantics and archived regression scorecards.
+    if isinstance(signals,dict) and signals.get('available'):
+        d=signals
+        engines.append(engine_result('axiom_target_dynamics',
+            d.get('prob_above') if d.get('available') else None,
+            'analytic-distance-volatility-acceleration',
+            d.get('reason','Fresh target dynamics unavailable'),independent=True,
+            reference=d.get('price_reference'),
+            target_touch_probability=d.get('target_touch_probability'),
+            movement_2m_probability_5bp=d.get('movement_2m_probability_5bp'),
+            calibrated=False))
+    # Only named BTC-derived models may vote. Quotes remain a comparison even
+    # if an accidental future flag labels the quote benchmark independent.
+    voting_models=frozenset(('axiom_volatility','aaryann_fair','kalshibot_headstart','axiom_target_dynamics'))
+    good=[e['prob_above'] for e in engines
+          if e['name'] in voting_models and e.get('independent') and e['available']]
     if len(good)<2:
         return {'available':False,'prob_above':None,'prob_below':None,'side':'WAIT','reason':'At least 2 independent estimates required',
                 'engines':engines,'agreement':None,'spread':None,'alpha_vs_market':None,
@@ -95,13 +119,19 @@ def engine_pack(spot: float | None, market: dict | None, candles: list[dict]) ->
     spread=max(good)-min(good)
     side='ABOVE' if p>=.60 else 'BELOW' if p<=.40 else 'WAIT'
     if spread>.30: side='WAIT'
-    agreement=sum((e['prob_above']>.5)==(p>.5) for e in engines if e.get('independent') and e['available'])
+    agreement=sum((e['prob_above']>.5)==(p>.5) for e in engines
+                  if e['name'] in voting_models and e.get('independent') and e['available'])
     reason=('Consensus withheld: engines strongly disagree' if spread>.30 else
             'Consensus near 50%: no directional call' if side=='WAIT' else
             'Experimental median of independent models; NOT yet validated vs Kalshi')
     return {'available':True,'prob_above':round(p,5),'prob_below':round(1-p,5),'side':side,
             'reason':reason,'engines':engines,'agreement':agreement,
-            'spread':round(spread,5),'alpha_vs_market':round(p-mid,5) if mid is not None else None,
+            'spread':round(spread,5),
+            # Preserve legacy alpha_vs_market for existing API consumers;
+            # this is only a model-minus-order-book-mid quote discrepancy.
+            'alpha_vs_market':round(p-mid,5) if mid is not None else None,
+            'forecast_minus_quote_mid':round(p-mid,5) if mid is not None else None,
+            'quote_discrepancy_is_validated_alpha':False,
             'validated':False,'method':'experimental-median-consensus'}
 
 
@@ -112,7 +142,10 @@ def taker_fee(price: float, count: int=1) -> float:
 
 
 def execution_screen(ensemble:dict, market:dict|None, min_edge:float=.08)->dict:
-    """Gross and approximate after-fee paper opportunity. No live orders."""
+    """Compare independent model estimate to participant offers, not Kalshi forecasts.
+
+    Gross/approximate after-fee paper opportunity only; no guaranteed fills.
+    """
     out={'side':'WAIT','edge':None,'gross_edge':None,'entry_price':None,'fee_estimate':None,
          'reason':'No independent ensemble estimate / valid quotes'}
     if not market or not ensemble.get('available') or ensemble.get('side')=='WAIT': return out
@@ -133,7 +166,7 @@ def execution_screen(ensemble:dict, market:dict|None, min_edge:float=.08)->dict:
     if (side==('YES' if ensemble['side']=='ABOVE' else 'NO') and edge>=min_edge and
         .05<=ask<=.90 and market['seconds_left']>=120 and
         spread is not None and 0 <= spread <= .04):
-        out.update(side=side,reason='Experimental after-fee paper candidate, not verified alpha or guaranteed fill')
+        out.update(side=side,reason='Independent model minus participant ask (estimated fee); unverified value, not a guaranteed fill')
     else:
         out['reason']='No qualifying consensus-aligned opportunity after fee, spread, price and time screens'
     return out

@@ -69,7 +69,7 @@ def test_auto_paper_database_error_rolls_back_all_poll_writes(env,monkeypatch):
     monkeypatch.setattr(main.ledger,'trade',original)
     main.update_once()
     assert main.ledger.conn.execute('SELECT COUNT(*) FROM observations').fetchone()[0]==1
-    assert main.ledger.conn.execute('SELECT COUNT(*) FROM engine_snapshots').fetchone()[0]==5
+    assert main.ledger.conn.execute('SELECT COUNT(*) FROM engine_snapshots').fetchone()[0]==6
     assert main.ledger.conn.execute('SELECT COUNT(*) FROM paper_trades').fetchone()[0]==1
 
 

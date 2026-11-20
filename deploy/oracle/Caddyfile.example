@@ -1,0 +1,6 @@
+# Replace with your real domain and point DNS A to the Oracle public IP.
+# Configure OCI inbound firewall for TCP 80/443. Keep port 8000 private.
+axiom.example.com {
+    encode zstd gzip
+    reverse_proxy 127.0.0.1:8000
+}

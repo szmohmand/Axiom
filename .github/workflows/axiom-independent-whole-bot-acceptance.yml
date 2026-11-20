@@ -1,0 +1,115 @@
+name: AXIOM independent whole-bot read-only worker acceptance (isolated)
+on:
+  push:
+    branches:
+      - main
+      - deploy/axiom-oracle-preparation-2026-11-19
+      - tests/axiom-full-lifecycle-audit-2026-11-17
+      - fix/rollover-brti-execution-evidence-2026-11-17
+      - integrate/axiom-live-brti-release-candidate-2026-11-18
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  whole-bot-real-readonly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    env:
+      DEMO_MODE: '0'
+      AUTO_PAPER: '0'
+      POLL_SECONDS: '5'
+      DATA_PATH: '/tmp/axiom-independent-whole-bot-readonly.sqlite3'
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Install locked application and test packages
+        run: python -m pip install --disable-pip-version-check -r requirements.lock.txt
+      - name: Real FastAPI lifespan, two complete independent worker polls, orderbook, health, UI, and storage
+        shell: bash
+        run: |
+          set -o pipefail
+          PYTHONPATH=. python - <<'PY' | tee axiom-whole-bot-real-worker.jsonl
+          import json,threading,time
+          from fastapi.testclient import TestClient
+          from app import main
+
+          assert not main.DEMO and not main.AUTO_PAPER
+          assert main.POLL_SECONDS == 5
+          samples=[]
+          healthy=[]
+          valid_depth=0
+          start=time.monotonic()
+          with TestClient(main.app) as client:
+              threads={thread.name for thread in threading.enumerate()}
+              assert {'research-data-worker','research-settlement-worker'}<=threads, threads
+              assert client.get('/').status_code==200
+              while time.monotonic()-start < 85:
+                  health=client.get('/health')
+                  state=client.get('/api/state')
+                  assert state.status_code in (200,503)
+                  h=health.json(); s=state.json()
+                  assert not main.AUTO_PAPER
+                  assert main.ledger.data()['count']['paper']==0
+                  assert s['execution_intelligence']['order_placed'] is False
+                  assert s['depth_opportunity']['read_only'] is True
+                  assert s['execution_intelligence']['read_only'] is True
+                  assert s['depth_opportunity']['uses_orderbook_quotes_as_forecast'] is False
+                  tick=s.get('market',{}).get('ticker') if s.get('market') else None
+                  book=s.get('orderbook') or {}
+                  row={'time_utc':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),
+                       'health':h['status'],'healthy':h['ok'],'market':tick,
+                       'last_attempt':h['last_attempt'],'engine_count':len(s.get('engines') or []),
+                       'model_available':(s.get('model') or {}).get('available'),
+                       'depth_ok':book.get('available',False),
+                       'depth_levels':book.get('levels'),
+                       'opportunity':(s.get('depth_opportunity') or {}).get('side'),
+                       'execution':(s.get('execution_intelligence') or {}).get('action'),
+                       'error_components':list(h.get('errors',{}))}
+                  print(json.dumps(row,sort_keys=True),flush=True)
+                  samples.append(row)
+                  if h['ok']:
+                      assert health.status_code==200 and state.status_code==200
+                      assert s['status']=='LIVE' and s['model']['available']
+                      assert len(s['engines'])==5
+                      assert s['btc_signals']['available'] is True
+                      assert s['trade_decision']['order_placed'] is False
+                      assert len(s['candles'])>=31
+                      assert all(b['t']-a['t']==60 for a,b in zip(s['candles'],s['candles'][1:]))
+                      assert s['scalp']['side'] in ('LONG','SHORT','WAIT')
+                      assert s['opportunity']['side'] in ('YES','NO','WAIT')
+                      if book.get('available'):
+                          assert book['ticker']==tick
+                          assert book['is_full_aggregated_depth']
+                          assert book['individual_orders_visible'] is False
+                          assert sum(book['levels'].values())>2
+                          valid_depth+=1
+                      healthy.append(row)
+                  else:
+                      assert health.status_code==503
+                      assert s['depth_opportunity']['status']=='WAIT'
+                      assert s['execution_intelligence']['action']=='WAIT'
+                  if (len(set(x['last_attempt'] for x in healthy))>=2
+                      and valid_depth>=1):
+                      break
+                  time.sleep(5)
+              assert len(set(x['last_attempt'] for x in healthy))>=2, 'Missing two independent healthy live worker polls'
+              assert valid_depth>=1, 'No real full-depth market book was validated'
+              assert main.ledger.conn.execute('select count(*) from observations').fetchone()[0]>=2
+              assert client.post('/api/paper',json={'side':'YES'}).status_code==403
+              assert client.post('/api/orders',json={}).status_code==404
+          assert not any(t.name=='research-data-worker' and t.is_alive()
+                         for t in threading.enumerate()), 'Worker failed to shut down'
+          print(json.dumps({'kind':'summary','status':'PASS','healthy_polls':len(healthy),
+              'distinct_worker_iterations':len(set(x['last_attempt'] for x in healthy)),
+              'real_depth_samples':valid_depth,'paper_trades':0,
+              'no_real_orders':True},sort_keys=True),flush=True)
+          PY
+      - name: Preserve real evidence even if acceptance fails
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: whole-bot-real-readonly-worker-evidence
+          path: axiom-whole-bot-real-worker.jsonl
+          if-no-files-found: warn

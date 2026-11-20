@@ -66,8 +66,8 @@ def test_settlement_failures_are_individually_tracked_and_retried(env):
     assert s['status']=='DEGRADED'
     assert s['settlement']['failed']==1
     assert first_ticker in s['errors']['settlement']
-    assert main.ledger.conn.execute('SELECT count(*) FROM engine_snapshots WHERE result IS NULL').fetchone()[0] == 5
-    assert main.ledger.conn.execute('SELECT count(*) FROM engine_snapshots WHERE result=?',('no',)).fetchone()[0] == 5
+    assert main.ledger.conn.execute('SELECT count(*) FROM engine_snapshots WHERE result IS NULL').fetchone()[0] == 6
+    assert main.ledger.conn.execute('SELECT count(*) FROM engine_snapshots WHERE result=?',('no',)).fetchone()[0] == 6
     assert second_ticker in first_attempts and first_ticker in first_attempts
     main.update_once()
     assert 'settlement' in client.get('/health').json()['errors']
@@ -140,7 +140,7 @@ def test_official_grading_rolls_back_if_paper_write_fails(env, monkeypatch):
     monkeypatch.setattr(storage,'paper_result',real_paper_result)
     main.grade_once()
     assert client.get('/health').json()['ok'] is True
-    assert main.ledger.conn.execute('SELECT count(*) FROM engine_snapshots WHERE result IS NOT NULL').fetchone()[0] == 5
+    assert main.ledger.conn.execute('SELECT count(*) FROM engine_snapshots WHERE result IS NOT NULL').fetchone()[0] == 6
     assert main.ledger.conn.execute('SELECT count(*) FROM paper_trades WHERE result IS NOT NULL').fetchone()[0] == 1
 
 

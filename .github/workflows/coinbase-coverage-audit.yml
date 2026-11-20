@@ -1,6 +1,8 @@
 name: AXIOM Coinbase 12-hour real data completeness investigation
 on:
   push:
+    branches:
+      - audit/complete-coverage-and-workflows-2026-11-17
     paths:
       - '.github/workflows/coinbase-coverage-audit.yml'
   workflow_dispatch:
@@ -11,8 +13,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.13'
       - name: Install locked HTTP packages

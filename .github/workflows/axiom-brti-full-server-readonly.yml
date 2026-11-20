@@ -1,0 +1,86 @@
+name: AXIOM real integrated FastAPI + authenticated live BRTI worker (read-only)
+on:
+  push:
+    branches:
+      - main
+      - deploy/axiom-oracle-preparation-2026-11-19
+      - integrate/axiom-live-brti-release-candidate-2026-11-18
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  integrated-real:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 7
+    env:
+      DEMO_MODE: '0'
+      AUTO_PAPER: '0'
+      BRTI_LIVE_ENABLED: '1'
+      POLL_SECONDS: '5'
+      DATA_PATH: '/tmp/axiom-brti-integrated-readonly.sqlite3'
+      KALSHI_API_KEY_ID: ${{ secrets.KALSHI_API_KEY_ID }}
+      KALSHI_PRIVATE_KEY_PEM: ${{ secrets.KALSHI_PRIVATE_KEY_PEM }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Install exact dependencies
+        run: python -m pip install --disable-pip-version-check -r requirements.lock.txt
+      - name: Start ALL production research workers and verify real BRTI via HTTP API
+        shell: bash
+        run: |
+          set -o pipefail
+          PYTHONPATH=. python - <<'PY' | tee axiom-brti-integrated-sanitized.jsonl
+          import json,threading,time
+          from fastapi.testclient import TestClient
+          from app import main
+          assert not main.DEMO and not main.AUTO_PAPER and main.BRTI_LIVE_ENABLED
+          samples=[]
+          latest=None
+          with TestClient(main.app) as client:
+              threads={t.name for t in threading.enumerate()}
+              assert {'research-data-worker','research-settlement-worker',
+                      'read-only-live-brti-worker'}<=threads,threads
+              assert client.get('/').status_code==200
+              started=time.monotonic()
+              while time.monotonic()-started<105:
+                  health=client.get('/health')
+                  response=client.get('/api/state')
+                  assert response.status_code in (200,503)
+                  state=response.json()
+                  b=state['live_briti']
+                  assert b['votes_in_ensemble'] is False and b['orders_placed'] is False
+                  assert state['execution_intelligence']['order_placed'] is False
+                  assert main.ledger.data()['count']['paper']==0
+                  assert state['manual_paper_available'] is False
+                  assert b['live_strike_first_publication_proven'] is False
+                  latest=b
+                  row={'type':'sample','http':response.status_code,
+                       'stream_status':b['status'],'channels':b['received_counts'],
+                       'last_source_to_axiom_ms':b['source_to_axiom_ms'],
+                       'strike_first_observed':bool(b['first_observed_market']),
+                       'settlement':health.json()['settlement']['status']}
+                  print(json.dumps(row,sort_keys=True),flush=True)
+                  if (b['status']=='STREAMING' and
+                      all(v>0 for v in b['received_counts'].values()) and
+                      b['source_to_axiom_ms'] is not None and
+                      b['source_to_axiom_ms']<15000):
+                      break
+                  time.sleep(3)
+              else:
+                  raise AssertionError('No fresh authenticated 1Hz+5Hz BRTI in integrated real app')
+              assert client.post('/api/orders',json={}).status_code==404
+              assert client.post('/api/paper',json={'side':'YES'}).status_code==403
+          print(json.dumps({'kind':'summary','verdict':'PASS','no_real_orders':True,
+                'both_briti_channels':True,'source_timestamps_verified':True,
+                'official_first_publication_verified':False,
+                'last_source_age_ms':latest['source_to_axiom_ms']},sort_keys=True))
+          PY
+      - name: Upload SANITIZED integrated HTTP/worker evidence only
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: axiom-integrated-live-brti-readonly
+          path: axiom-brti-integrated-sanitized.jsonl
+          if-no-files-found: warn
