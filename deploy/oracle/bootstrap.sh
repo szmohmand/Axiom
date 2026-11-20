@@ -2,8 +2,8 @@
 # Manual preparation only: no server starts, public ports or real orders.
 set -Eeuo pipefail
 REPO_URL='https://github.com/szmohmand/Axiom.git'
-DEPLOY_BRANCH='deploy/axiom-oracle-preparation-2026-11-19'
-VERIFIED_BASE='c20242bf66ee63ec555b67119d4f92d395f0f74a'
+DEPLOY_BRANCH='main'
+VERIFIED_BASE='6f4ace73e0627e23824df09e0bf4039b94fe2dc0'
 if [[ $EUID -ne 0 ]]; then echo 'Run with sudo' >&2; exit 2; fi
 . /etc/os-release
 if [[ $ID != ubuntu || $(uname -m) != aarch64 ]]; then
@@ -20,7 +20,8 @@ install -d -m 0755 /opt/axiom
 install -d -m 0700 /etc/axiom
 git clone --branch "$DEPLOY_BRANCH" --depth 20 "$REPO_URL" /opt/axiom/current
 cd /opt/axiom/current
-if ! git cat-file -e "$VERIFIED_BASE^{commit}" 2>/dev/null; then
+if ! git cat-file -e "$VERIFIED_BASE^{commit}" 2>/dev/null ||
+   ! git merge-base --is-ancestor "$VERIFIED_BASE" HEAD; then
   echo 'Verified integration SHA not reachable; stop' >&2; exit 3
 fi
 # Only deployment files and static tests may differ from verified source.

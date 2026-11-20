@@ -9,8 +9,10 @@ def test_oracle_installer_syntax_and_manual_activation():
     body = script.read_text()
     lines = [x.strip() for x in body.splitlines() if x.lstrip().startswith("systemctl ")]
     assert lines == ["systemctl daemon-reload"]
-    assert "VERIFIED_BASE='c20242bf66ee63ec555b67119d4f92d395f0f74a'" in body
+    assert "VERIFIED_BASE='6f4ace73e0627e23824df09e0bf4039b94fe2dc0'" in body
     assert "python -m pytest -q" in body
+    assert "DEPLOY_BRANCH='main'" in body
+    assert "git merge-base --is-ancestor" in body
 
 def test_read_only_one_worker_and_persistent_database():
     svc = (ROOT / "axiom.service").read_text()
