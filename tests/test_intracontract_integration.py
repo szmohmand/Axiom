@@ -195,3 +195,25 @@ def test_full_fastapi_poll_api_paper_and_rollover_are_separate_from_final_winner
     assert not degraded["ok"] and degraded["resale_setup"]["action"]=="WAIT"
     assert not degraded["intracontract"]["available"]
     assert client.get("/api/state").json()["resale_setup"]["action"]=="WAIT"
+
+
+def test_corrupt_snapshot_analysis_is_localized_and_does_not_touch_settlement(env,monkeypatch):
+    main,clock,provider,client,_=env
+    main.AUTO_PAPER=False
+    clock.now=provider.close-600
+    provider.orderbook=lambda market,now=None: data(
+        clock.now,ticker=market["ticker"])[1]
+    original=main.update_once()
+    assert original["ok"] and original["model"]["available"]
+    calls=main.ledger.data()["count"]["calls"]
+    def broken_history(*args,**kwargs):
+        raise ValueError("injected invalid book-history analysis")
+    monkeypatch.setattr(main.movement_tracker,"observe",broken_history)
+    clock.now+=5
+    result=main.update_once()
+    assert result["ok"] and result["model"]["available"]
+    assert not result["intracontract"]["available"]
+    assert result["resale_setup"]["action"]=="WAIT"
+    assert not result["resale_setup"]["order_placed"]
+    assert result["execution_intelligence"]["order_placed"] is False
+    assert main.ledger.data()["count"]["calls"]==calls
