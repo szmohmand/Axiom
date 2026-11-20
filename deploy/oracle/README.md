@@ -2,7 +2,7 @@
 
 ## Source and status
 Oracle prep ships with AXIOM's unified application implementation.
-The verified integrated source checkpoint is a1542a3bc62f39116bec54006ba47d9fd6597f4c.
+The verified integrated source checkpoint is 16e37f0660068a304c3e44980aef942c1b2cd3a6.
 Its release candidate passed all six GitHub gates: complete offline regression
 and full synthetic lifecycle, public Kalshi/Coinbase, genuine worker/full-depth,
 authenticated BRTI 1Hz/5Hz, strict measured branch coverage and real Chromium
@@ -98,3 +98,12 @@ book receipt can create a quote-delay WATCH; size-adjusted YES/NO asks,
 funding context, current full depth and independent after-fee outcomes decide
 whether an illustrative BUY_CANDIDATE is displayed. This is NOT a validated
 execution edge; Binance BTCUSDT is not the BRTI settlement benchmark.
+
+## Binance read-only workers
+For live operation, keep BINANCE_INTELLIGENCE_ENABLED=1. The Binance spot
+BTCUSDT public WebSocket and perpetual funding REST require access from the
+Oracle VM and are individually stale-guarded. A Binance move and Kalshi quote
+must have verified event/receipt ordering before the lag lane can alert; a
+candidate is not an exchange-proven stale price, a fill or verified profit.
+If the Oracle region cannot reach Binance, the feature will show UNAVAILABLE
+and will NOT silently substitute Coinbase/BRTI/other funding venues.
