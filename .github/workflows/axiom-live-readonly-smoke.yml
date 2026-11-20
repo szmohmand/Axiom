@@ -55,7 +55,9 @@ jobs:
               if snapshot['status']=='LIVE':
                   assert snapshot['model']['available']
                   assert health.status_code==200
-                  assert len(snapshot['engines'])==4
+                  assert len(snapshot['engines'])==5
+                  assert snapshot['btc_signals']['available'] is True
+                  assert snapshot['trade_decision']['order_placed'] is False
                   assert len(snapshot['candles'])>=31
                   assert all(right['t']-left['t']==60 for left,right in zip(snapshot['candles'],snapshot['candles'][1:]))
                   break

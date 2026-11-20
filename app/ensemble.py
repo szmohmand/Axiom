@@ -96,8 +96,8 @@ def engine_pack(spot: float | None, market: dict | None, candles: list[dict], si
     # target model in the existing integrated ensemble. Standalone legacy
     # engine_pack calls without a signals snapshot retain their original
     # three-engine semantics and archived regression scorecards.
-    if signals is not None:
-        d=signals if isinstance(signals,dict) else {}
+    if isinstance(signals,dict) and signals.get('available'):
+        d=signals
         engines.append(engine_result('axiom_target_dynamics',
             d.get('prob_above') if d.get('available') else None,
             'analytic-distance-volatility-acceleration',

@@ -9,7 +9,7 @@ def fixture():
         t=T-3600+i*60
         price=60000+i*2+6*sin(i*.7)
         candles.append({"t":t,"close":price,"open":price-1.5,"high":price+3,"low":price-3,"volume":3})
-    market={"ticker":"KXBTC15M-TEST","target":60090,"close_ts":T+300,
+    market={"ticker":"KXBTC15M-TEST","target":60116,"close_ts":T+300,
             "seconds_left":300,"market_mid":.5}
     return market, candles[-1]["close"],candles
 
