@@ -538,3 +538,18 @@ def test_unchanged_live_venue_book_stays_ready_through_normal_feed_gap():
         assert flow.diagnostics(NOW+20)[venue]["book_ready"] is True
         assert flow.diagnostics(NOW+38)[venue]["book_ready"] is False
         assert flow.diagnostics(NOW+38)[venue]["trade_ready"] is False
+
+
+def test_api_read_race_accepts_immediate_ws_book_and_trade_but_not_future_data():
+    flow = brain.ConstituentFlow()
+    flow.connection_event("bitstamp", "SUBSCRIPTION_SENT", now=NOW-60)
+    # HTTP request time captured just BEFORE a legitimate WS packet arrived.
+    flow._book("bitstamp", {100.: 3.}, {101.: 4.}, NOW+.25, snapshot=True)
+    flow._trade("bitstamp", "next", "sell", .3, NOW+.25)
+    state = flow.diagnostics(NOW)["bitstamp"]
+    assert state["book_ready"] is True and state["trade_ready"] is True
+    assert state["last_valid_book_age_seconds"] == 0
+    assert "bitstamp" in flow.snapshot(NOW)["venues"]
+    # A timestamp several seconds ahead is not a read race and must fail closed.
+    assert flow.diagnostics(NOW-3)["bitstamp"]["ready"] is False
+    assert "bitstamp" not in flow.snapshot(NOW-3)["venues"]
