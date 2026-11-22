@@ -287,6 +287,17 @@ for _ in range(35):
         sc,s=read('/api/state')
         if hc!=200 or sc!=200 or not h.get('ok'):
             raise RuntimeError('live API is degraded')
+        if s.get('price_source')!='CF_BENCHMARKS_BRTI':
+            raise RuntimeError('Running app does not use CF Benchmarks BRTI as primary price')
+        live=s.get('live_briti') or {}
+        if live.get('status')!='STREAMING' or not live.get('authenticated_stream_verified'):
+            raise RuntimeError('Authenticated BRTI index not actively streaming')
+        forecast=s.get('model') or {}
+        if not forecast.get('available'):
+            if not s.get('forecast_warming'):
+                raise RuntimeError('Forecast not available and not in genuine BRTI candle warmup')
+            if s.get('manual_paper_available'):
+                raise RuntimeError('Warmup exposed paper entry without any valid prediction')
         if 'contract_repricing' not in s or 'higher_timeframes' not in s:
             raise RuntimeError('integrated BTC/contract-pricing API fields missing')
         if s.get('paper_auto_enabled') is not False:
