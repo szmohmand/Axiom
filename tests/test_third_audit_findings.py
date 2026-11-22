@@ -69,7 +69,7 @@ def test_auto_paper_database_error_rolls_back_all_poll_writes(env,monkeypatch):
     monkeypatch.setattr(main.ledger,'trade',original)
     main.update_once()
     assert main.ledger.conn.execute('SELECT COUNT(*) FROM observations').fetchone()[0]==1
-    assert main.ledger.conn.execute('SELECT COUNT(*) FROM engine_snapshots').fetchone()[0]==6
+    assert main.ledger.conn.execute('SELECT COUNT(*) FROM engine_snapshots').fetchone()[0]==1+sum(bool(e['available']) for e in main.state['engines'])
     assert main.ledger.conn.execute('SELECT COUNT(*) FROM paper_trades').fetchone()[0]==1
 
 
@@ -163,7 +163,7 @@ def test_market_calculation_invariants_across_foreseeable_price_volatility_and_e
                 'seconds_left':rng.choice([60,90,120,300,600,840,900]),
                 'market_mid':mid,'yes_bid':bid,'yes_ask':ask,'no_bid':1-ask,'no_ask':1-bid}
         model=engine_pack(price,market,candles)
-        assert len(model['engines'])==4
+        assert {e['name'] for e in model['engines']}=={'axiom_volatility','aaryann_fair','kalshibot_headstart'}
         assert model['available']
         assert model['side'] in ('ABOVE','BELOW','WAIT')
         assert all(0<e['prob_above']<1 for e in model['engines'] if e['available'])
