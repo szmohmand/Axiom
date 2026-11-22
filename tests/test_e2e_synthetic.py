@@ -175,7 +175,7 @@ def test_feed_failures_are_exposed_and_do_not_generate_new_ledger_entries(env):
     clock.now+=20
     next_state=main.update_once()
     assert next_state['status']=='DEGRADED'
-    assert 'coinbase_ticker' in next_state['errors']
+    assert 'brti_stream' in next_state['errors']
     assert not client.get('/health').json()['ok']
     assert next_state['last_success']==success
     assert main.ledger.data()['count']==baseline
@@ -192,7 +192,7 @@ def test_feed_failures_are_exposed_and_do_not_generate_new_ledger_entries(env):
     provider.fail_candles=True
     clock.now+=20
     next_state=main.update_once()
-    assert 'coinbase_candles' in next_state['errors']
+    assert 'brti_stream' in next_state['errors']
     assert next_state['model']['available'] is False
     assert main.ledger.data()['count']==baseline
 
