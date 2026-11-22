@@ -117,8 +117,8 @@ class DepthFlowTracker:
                   "spot":_num(spot)}
         prev=self.last
         self.last=snapshot
-        if prev and prev["ticker"]==snapshot["ticker"] and
-           0<snapshot["ts"]-prev["ts"]<=120:
+        if (prev and prev["ticker"]==snapshot["ticker"] and
+            0<snapshot["ts"]-prev["ts"]<=120):
             # Positive imbalance in replenishment is a separate feature from
             # static walls, and can reveal shifts within the contract.
             delta_yes=snapshot["yes"]-prev["yes"]
