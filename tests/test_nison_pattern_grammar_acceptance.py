@@ -101,7 +101,7 @@ def test_nison_rough_candle_state_and_missing_volume(monkeypatch):
 
 
 @pytest.mark.parametrize("modify",[
-    lambda c:c.pop(),
+    lambda c:c.__delitem__(slice(0,40)),
     lambda c:c.__setitem__(0,False),
     lambda c:c.__setitem__(0,{**c[0],"high":float("nan")}),
     lambda c:c.__setitem__(0,{**c[0],"volume":-1}),
