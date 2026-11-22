@@ -25,6 +25,9 @@ from .candlestick_challenger import derive_candlestick_challenger, unavailable a
 from .orderbook import unavailable as unavailable_book
 from .execution_evidence import examine_liquidity
 from .brti_live import BRTITracker, run_worker as brti_reference_worker
+from .settlement_probability import forecast as brti_settlement_forecast
+from .axiom_brain import ConstituentFlow, MarketTape, decide as axiom_decide, start_flow_workers
+from .paper_exits import evaluate_exit
 from .decision_signals import derive_signals, unavailable as unavailable_signals, execution_decision
 from .intracontract import (IntracontractTracker, unavailable as unavailable_timeline,
                             wait as wait_resale, resale_screen, resale_position_review)
@@ -35,15 +38,17 @@ from .depth_intelligence import (analyze_opportunities, execution_guidance,
 
 ROOT = Path(__file__).parent
 DEMO = os.environ.get('DEMO_MODE', '0') == '1'
-AUTO_PAPER = os.environ.get('AUTO_PAPER', '1') == '1'
+AUTO_PAPER = os.environ.get('AUTO_PAPER', '0') == '1'
 POLL_SECONDS = max(5, int(os.environ.get('POLL_SECONDS', '15')))
 DATA_PATH = os.environ.get('DATA_PATH', str(ROOT.parent/'data'/'bot.sqlite3'))
 ADMIN_TOKEN = os.environ.get('BOT_ADMIN_TOKEN','')
 BRTI_LIVE_ENABLED = (not DEMO and os.environ.get('BRTI_LIVE_ENABLED','1') == '1')
-BINANCE_INTELLIGENCE_ENABLED = (not DEMO and os.environ.get('BINANCE_INTELLIGENCE_ENABLED','1') == '1')
+BINANCE_INTELLIGENCE_ENABLED = False  # Phase 1: no Binance connection or active input
 # Opt-in shadow grading ONLY: no voting, execution, or historical rewriting.
 CANDLESTICK_SHADOW_GRADING_ENABLED = os.environ.get('CANDLESTICK_SHADOW_GRADING_ENABLED','0') == '1'
 brti_tracker = BRTITracker(enabled=BRTI_LIVE_ENABLED)
+flow_tracker = ConstituentFlow()
+market_tape = MarketTape()
 binance_telemetry = BinanceTelemetry(enabled=BINANCE_INTELLIGENCE_ENABLED)
 provider = DemoProvider() if DEMO else LiveProvider()
 ledger = Ledger(DATA_PATH)
@@ -69,7 +74,8 @@ state = {'mode':'DEMO' if DEMO else 'LIVE','last_attempt':None,'last_success':No
           'higher_timeframes':timeframes([],time.time()),
           'market_microstructure':{'available':False,'reason':'Awaiting genuine BTC exchange trade flow'},
           'contract_repricing':unavailable_contract_repricing('Waiting for observed quotes'),
-         'errors':{},'paper_auto_enabled':AUTO_PAPER,'watch':None,'candle_quality':None,'status':'STARTING',
+         'errors':{},'paper_auto_enabled':AUTO_PAPER,'watch':None,'candle_quality':None,
+         'warmup':{'status':'STARTING'},'paper_exit':None,'status':'STARTING',
          'settlement':{'status':'NOT_CHECKED','last_attempt':None,'last_success':None,
                        'checked':0,'failed':0}}
 shutdown = threading.Event()
@@ -117,7 +123,8 @@ def _view_locked(now):
     data['errors'] = dict(state['errors'])
     data['settlement'] = dict(state['settlement'])
     data['live_briti'] = brti_tracker.snapshot()
-    data['binance_intelligence'] = binance_telemetry.snapshot(now)
+    if DEMO:
+        data['binance_intelligence'] = binance_telemetry.snapshot(now)
     attempted = state['last_attempt']
     data['heartbeat_age_seconds'] = None if attempted is None else max(0, round(now-attempted, 2))
     stale_limit = max(60, 3*POLL_SECONDS)
@@ -126,6 +133,25 @@ def _view_locked(now):
     if data['status'] in ('LIVE','DEMO') and data['errors']:
         data['status'] = 'DEGRADED'
     data['ok'] = data['status'] in ('LIVE','DEMO') and not data['errors']
+    if not DEMO:
+        # No legacy shadow, Nison, Binance, repricing or extra execution
+        # advisory paths run in live production, including degraded state.
+        if not data['ok']:
+            data['opportunity']={'side':'WAIT','edge':None,'entry_price':None,
+                                 'reason':'Missing healthy authenticated BRTI'}
+            data['depth_opportunity']=unavailable_opportunity('No healthy live BRTI/book')
+            data['trade_decision']={'action':'WAIT','side':None,
+                                     'order_placed':False,'read_only':True,
+                                     'reason':'Live BRTI or Kalshi input unavailable'}
+            data['execution_intelligence']=unavailable_execution('No healthy live BRTI/book')
+        if 'worker_stale' in data['errors']:
+            data['orderbook']=unavailable_book(
+                data['market'].get('ticker') if data['market'] else None,
+                'Worker stale; depth invalid')
+            data['model']={'available':False,'side':'WAIT','prob_above':None,
+                           'reason':'Market worker stale','engines':[]}
+            data['engines']=[]
+        return data
     if not data['ok']:
         # Previous opportunity quotes must not look actionable during an
         # outage even if they were calculated before the failure became known.
@@ -157,8 +183,235 @@ def _view_locked(now):
     return data
 
 
+
+def _brti_only_update_once(now):
+    """Phase 3 live path: one BRTI brain and independent paper-exit processing."""
+    errors = {}
+    try:
+        market = provider.market(now)
+        if market:
+            brti_tracker.observe_market(market, at_ms=int(now*1000))
+        else:
+            errors["kalshi"] = "No active Kalshi BTC15M contract"
+    except Exception as exc:
+        market = None
+        errors["kalshi"] = _error_message(exc)
+
+    try:
+        reference = brti_tracker.snapshot(now_ms=int(now*1000))
+        if reference.get("status") != "STREAMING":
+            spot, candles = None, []
+            errors["brti_stream"] = "Authenticated CF Benchmarks BRTI stream unavailable"
+        else:
+            value = reference.get("latest_value_usd")
+            spot = float(value) if value is not None else None
+            candles = reference.get("btc_1m_candles") or []
+            if spot is None or not math.isfinite(spot) or spot <= 0:
+                spot = None
+                errors["brti_stream"] = "Invalid authenticated CF Benchmarks BRTI index value"
+    except (KeyError, TypeError, ValueError, OverflowError) as exc:
+        reference = {"status": "UNAVAILABLE", "reason": _error_message(exc)}
+        spot, candles = None, []
+        errors["brti_stream"] = "Invalid authenticated BRTI snapshot"
+
+    five = reference.get("btc_5m_candles") or []
+    book = unavailable_book(market.get("ticker") if market else None, "No current Kalshi depth")
+    if market:
+        reader = getattr(provider, "orderbook", None)
+        if callable(reader):
+            try:
+                book = reader(market, now)
+            except Exception as exc:
+                book = unavailable_book(market["ticker"], _error_message(exc))
+    # The received Kalshi book may postdate the poll-start clock by up to 2s.
+    signal_now = max(now, float(book.get("received_at") or now))
+    flow = flow_tracker.snapshot(signal_now)
+    decision = {"action": "WAIT", "setup_type": "NONE", "fair_prob": None,
+                "entry_price": None, "take_profit": None,
+                "invalidation_rule": None, "invalidation_price": None,
+                "kill_switch_triggered": False, "exit_signal": None,
+                "side": None, "prob_above": None, "prob_below": None,
+                "forecast_available": False, "order_placed": False,
+                "read_only": True, "reason": "Awaiting authenticated BRTI and Kalshi"}
+    position = None
+    paper_exit = None
+    # Close existing paper positions even when independent forecasting or
+    # constituent buffers are warming. One authenticated BRTI source only;
+    # early resale requires actual current displayed one-contract bid depth.
+    if market:
+        try:
+            position = ledger.open_paper(market["ticker"])
+            if position:
+                suggestion = evaluate_exit(position, market, reference, candles,
+                                           book, flow, signal_now)
+                if suggestion:
+                    paper_exit = ledger.close_paper(
+                        market["ticker"], suggestion["exit_price"],
+                        suggestion["exit_reason"], signal_now)
+        except (ValueError, TypeError, KeyError, ArithmeticError) as exc:
+            errors["paper_exit"] = _error_message(exc)
+        except Exception as exc:
+            errors["ledger_write"] = _error_message(exc)
+    if market and spot is not None and not errors:
+        try:
+            market_tape.observe(market, book, spot, signal_now)
+            # Independent exit engine owns exits. Do not use the old advisory
+            # SELL_CANDIDATE as an execution state.
+            decision = axiom_decide(
+                market, reference, candles, five, book, flow, signal_now,
+                tape=market_tape, open_side=None)
+        except (KeyError, TypeError, ValueError, OverflowError, ArithmeticError) as exc:
+            errors["forecast"] = _error_message(exc)
+    # Never open a second position for the same ticker, even on an exit poll.
+    if position:
+        decision.update(action="WAIT", side=None, entry_price=None,
+                        take_profit=None, invalidation_rule=None,
+                        reason=("Paper position closed: " + paper_exit["exit_reason"]
+                                if paper_exit else "Paper position already open"),
+                        exit_signal=paper_exit)
+
+    available = bool(decision["forecast_available"])
+    # An incomplete genuine BRTI buffer is warmup, not a failing HTTP worker.
+    warming = bool(market and spot is not None and not errors and
+                   reference.get("status") == "STREAMING" and not available)
+    tape_status = market_tape.snapshot(market, signal_now) if market else {}
+    flow_ready = flow.get("available") is True
+    rolling_ready = (len(five) >= 12 and
+                     reference.get("brti_sigma_5s_3m") is not None and
+                     flow_ready and flow.get("cvd_60_span", 0) >= 45)
+    warmup = {
+        "status": "WARMING" if warming or not available or not rolling_ready else "READY",
+        "brti_fair_ready": available,
+        "brti_1m_bars": len(candles),
+        "brti_5m_bars": len(five),
+        "brti_5s_3m_ready": reference.get("brti_sigma_5s_3m") is not None,
+        "constituent_venues": flow.get("venues", []),
+        "flow_60s_ready": flow_ready and flow.get("cvd_60_span", 0) >= 45,
+        "flow_90s_ready": flow_ready and flow.get("cvd_90s_span", 0) >= 75,
+        "flow_5m_ready": flow_ready and flow.get("cvd_5m_span", 0) >= 240,
+        "kalshi_iv_24h_ready": tape_status.get("implied_history_ready") is True,
+        "brti_feed_status": reference.get("status", "UNAVAILABLE"),
+    }
+    side = "ABOVE" if decision["action"] == "BUY_YES" else (
+           "BELOW" if decision["action"] == "BUY_NO" else "WAIT")
+    voter = {"name": "axiom_brti_settlement", "available": available,
+             "prob_above": decision.get("prob_above"),
+             "prob_below": decision.get("prob_below"),
+             "side": side, "method": decision.get("model_method"),
+             "independent": True, "calibrated": False}
+    model = {"available": available, "prob_above": decision.get("prob_above"),
+             "prob_below": decision.get("prob_below"), "side": side,
+             "reason": decision.get("reason"), "engines": [voter] if available else [],
+             "method": "single-axiom-brain-brti-student-t",
+             "active_predictive_models": ["axiom_brti_settlement"] if available else [],
+             "agreement": 1 if available else None, "calibrated": False}
+    with state_lock:
+        persistent_faults = any(k in state["errors"] for k in
+                                ("settlement", "settlement_worker",
+                                 "ledger_read", "ledger_connection"))
+    if errors or persistent_faults:
+        decision.update(action="WAIT", setup_type="NONE", side=None,
+                        entry_price=None, take_profit=None, invalidation_price=None,
+                        invalidation_rule=None, fair_prob=None,
+                        kill_switch_triggered=True, reason="Live input or ledger unavailable")
+        model["side"] = "WAIT"
+        if model["engines"]:
+            model["engines"][0]["side"] = "WAIT"
+    chosen = decision["action"] in ("BUY_YES", "BUY_NO")
+    op = {"side": decision["side"] if chosen else "WAIT",
+          "entry_price": decision.get("entry_price"),
+          "edge": (round(decision["fair_prob"]-decision["entry_price"], 5)
+                   if chosen else None), "reason": decision["reason"]}
+    depth = unavailable_opportunity(decision["reason"])
+    if chosen:
+        depth.update(status="CANDIDATE", side=decision["side"],
+                     selected={"side": decision["side"],
+                               "entry_price": decision["entry_price"],
+                               "setup_type": decision["setup_type"]})
+    inactive = {"status": "DISABLED", "available": False, "action": "WAIT",
+                "order_placed": False, "read_only": True}
+    watch = None
+    if market and available and not errors and not persistent_faults:
+        try:
+            with ledger.atomic_cycle():
+                ledger.observed(market, model, spot, now)
+                ledger.engine_snapshots(market, model, now)
+                ledger.first_call(market, model, spot, now,
+                                  hold_seconds=10, poll_gap=max(40, 3*POLL_SECONDS))
+                if AUTO_PAPER and chosen and position is None:
+                    # Snapshot-sized one-contract paper ask, never a real order.
+                    paper_market = dict(market)
+                    paper_market["yes_ask" if decision["side"] == "YES" else "no_ask"] = (
+                        decision["entry_price"])
+                    try:
+                        ledger.trade(paper_market, decision["side"], now,
+                                     decision["fair_prob"], "AUTO_PAPER",
+                                     take_profit=decision.get("take_profit"),
+                                     invalidation_rule=decision.get("invalidation_rule"))
+                    except ValueError:
+                        pass
+                watch = ledger.watch_info(market["ticker"])
+        except Exception as exc:
+            errors["ledger_write"] = _error_message(exc)
+            decision.update(action="WAIT", setup_type="NONE", side=None,
+                            entry_price=None, take_profit=None, invalidation_price=None,
+                            invalidation_rule=None, fair_prob=None,
+                            kill_switch_triggered=True, reason="Ledger write failed")
+            chosen = False
+            op = {"side": "WAIT", "edge": None, "entry_price": None,
+                  "reason": "Ledger write failed"}
+            depth = unavailable_opportunity("Ledger write failed")
+    if errors:
+        ledger.reset_watches()
+    with state_lock:
+        for component in ("settlement", "settlement_worker", "ledger_read", "ledger_connection"):
+            if component in state["errors"]:
+                errors[component] = state["errors"][component]
+        state.update({"last_attempt": now, "market": market, "spot": spot,
+                      "candles": candles[-75:], "model": model,
+                      "engines": model["engines"],
+                      "price_source": "CF_BENCHMARKS_BRTI",
+                      "forecast_warming": warming,
+                      "candle_quality": reference.get("candle_quality"),
+                      "warmup": warmup, "paper_exit": paper_exit,
+                      "orderbook": book, "opportunity": op,
+                      "depth_opportunity": depth, "trade_decision": decision,
+                      "execution_intelligence": {
+                          "action": decision["action"], "side": decision.get("side"),
+                          "entry_price": decision.get("entry_price"),
+                          "take_profit": decision.get("take_profit"),
+                          "invalidation_price": decision.get("invalidation_price"),
+                          "invalidation_rule": decision.get("invalidation_rule"),
+                          "kill_switch_triggered": decision.get("kill_switch_triggered"),
+                          "exit_signal": paper_exit or decision.get("exit_signal"),
+                          "order_placed": False, "read_only": True,
+                          "reason": decision["reason"]},
+                      "btc_signals": {
+                          "available": available, "side": model["side"],
+                          "prob_above": model["prob_above"],
+                          "price_reference": "CF_BENCHMARKS_BRTI",
+                          "reference_value": spot},
+                      "higher_timeframes": timeframes(five, now),
+                      "market_microstructure": flow,
+                      "scalp": inactive, "research_shadow": inactive,
+                      "candlestick_context": inactive,
+                      "candlestick_challenger": inactive,
+                      "intracontract": inactive, "resale_setup": inactive,
+                      "contract_repricing": inactive,
+                      "binance_intelligence": inactive,
+                      "binance_kalshi_delay": inactive,
+                      "errors": errors, "watch": watch,
+                      "paper_auto_enabled": AUTO_PAPER})
+        _refresh_status_locked()
+        if state["status"] in ("LIVE", "DEMO"):
+            state["last_success"] = now
+        return _view_locked(now)
+
+
 def update_once(now=None):
     now = time.time() if now is None else now
+    if not DEMO:
+        return _brti_only_update_once(now)
     errors={}; market=None; spot=None; candles=[]
     try:
         market=provider.market(now)
@@ -531,23 +784,19 @@ async def lifespan(_app):
     market_thread.start()
     grading_thread.start()
     brti_thread = None
+    flow_threads = []
     if BRTI_LIVE_ENABLED:
         brti_thread = threading.Thread(target=brti_reference_worker,
             args=(brti_tracker,shutdown),name='read-only-live-brti-worker',daemon=True)
         brti_thread.start()
-    binance_threads=[]
-    if BINANCE_INTELLIGENCE_ENABLED:
-        for target,name in ((binance_spot_worker,'read-only-binance-spot-worker'),):
-            thread=threading.Thread(target=target,args=(binance_telemetry,shutdown),name=name,daemon=True)
-            thread.start()
-            binance_threads.append(thread)
+        flow_threads = start_flow_workers(flow_tracker, shutdown)
     yield
     shutdown.set()
     market_thread.join(timeout=3)
     grading_thread.join(timeout=3)
     if brti_thread is not None:
         brti_thread.join(timeout=3)
-    for thread in binance_threads:
+    for thread in flow_threads:
         thread.join(timeout=3)
 
 app=FastAPI(title='AXIOM Multi-Engine BTC Research Bot',version='2.0.0',lifespan=lifespan, docs_url=None,redoc_url=None)
@@ -610,7 +859,7 @@ def get_state():
     d['paper_position_execution']=unavailable_execution('No open matching simulated position')
     d['resale_position_review']=wait_resale('No matching simulated position')
     active=d.get('market')
-    if active and d.get('ok'):
+    if DEMO and active and d.get('ok'):
         for trade in d.get('trades',[]):
             if trade.get('ticker')==active['ticker'] and trade.get('status')=='OPEN':
                 try:
@@ -632,7 +881,7 @@ def get_state():
     d['manual_paper_available']=bool(ADMIN_TOKEN) and d['ok'] and bool(d.get('market')) and bool((d.get('model') or {}).get('available'))
     d['disclaimer']=('Experimental models and gross simulated trading only. SYNTHETIC DEMO BTC spot is NOT the BRTI settlement index. No real orders.'
                     if DEMO else
-                    'Experimental models and gross simulated trading only. Live forecast inputs are authentic CF Benchmarks BRTI; exchange-only signed trade flow is separately identified. BRTI has no traded volume. Kalshi aggregated depth is a participant-order snapshot; no real orders are placed.')
+                    'Phase 3 BRTI-only fair value and USD constituent confirmations; one-contract early-exit paper P&L from live Kalshi depth or official settlement. No real orders.')
     return JSONResponse(d,headers={'Cache-Control':'no-store'})
 
 class PaperRequest(BaseModel):
@@ -652,10 +901,22 @@ def paper(req:PaperRequest, authorization:str|None=Header(default=None)):
     bid=m.get('yes_bid' if req.side.upper()=='YES' else 'no_bid')
     if req.side.upper() in ('YES','NO') and (ask is None or bid is None or ask < bid):
         raise HTTPException(409,'Invalid or crossed contract quote')
-    if m['seconds_left'] < 45 or m['close_ts'] < time.time()+45:
+    if m['seconds_left'] < 20 or m['close_ts'] < time.time()+20:
         raise HTTPException(409,'Contract too close to close')
-    try: entry=ledger.trade(m,req.side,time.time(),source='MANUAL_PAPER')
-    except ValueError as e: raise HTTPException(409,str(e))
+    side=req.side.upper()
+    probability=(snapshot.get('model') or {}).get(
+        'prob_above' if side=='YES' else 'prob_below')
+    target=(max(.60,min(.85,probability))
+            if isinstance(probability,(float,int)) and math.isfinite(probability)
+            else None)
+    live_signal=snapshot.get('trade_decision') or {}
+    rule=(live_signal.get('invalidation_rule')
+          if live_signal.get('side')==side else None)
+    try:
+        entry=ledger.trade(m,side,time.time(),source='MANUAL_PAPER',
+                           take_profit=target,invalidation_rule=rule)
+    except ValueError as e:
+        raise HTTPException(409,str(e))
     return entry
 
 @app.get('/api/export/{kind}')

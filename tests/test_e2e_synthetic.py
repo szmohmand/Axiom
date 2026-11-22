@@ -159,7 +159,7 @@ def test_manual_trade_auth_duplicate_stale_and_near_expiry_guards(env):
     main.update_once()
     clock.now+=99
     assert client.post('/api/paper',json={'side':'YES'},headers={'Authorization':'Bearer synthetic-local-testing-token'}).status_code==409
-    clock.now=provider.close-40
+    clock.now=provider.close-19
     main.update_once()
     assert client.post('/api/paper',json={'side':'YES'},headers={'Authorization':'Bearer synthetic-local-testing-token'}).status_code==409
 

@@ -149,3 +149,272 @@ def test_live_brti_warmup_keeps_server_operational_but_blocks_predictions_and_pa
     auth={"Authorization":"Bearer synthetic-local-testing-token"}
     assert client.post('/api/paper',json={"side":"YES"},headers=auth).status_code==409
     assert main.ledger.data()['count']=={'calls':0,'paper':0}
+
+
+def test_phase2_without_constituent_flow_waits_and_does_not_trade(env, monkeypatch):
+    from app.orderbook import normalize_orderbook
+    main, clock, provider, client, _ = env
+    main.DEMO = False
+    main.AUTO_PAPER = True
+    clock.now = provider.close - 450
+    market = provider.market(clock.now)
+    bars = provider.candles()
+    for b in bars:
+        b["source"] = "cfbenchmarks_brti_authenticated_live"
+        b["volume"] = None
+    snapshot = {
+        "status": "STREAMING", "authenticated_stream_verified": True,
+        "latest_value_usd": market["target"] + 325,
+        "source_ts_ms": int(clock.now * 1000),
+        "axiom_received_at_ms": int(clock.now * 1000),
+        "btc_1m_candles": bars, "btc_5m_candles": [],
+        "completed_minute_sigma_45": .001,
+        "candle_quality": {"status": "FULL_BRTI_LIVE", "bars_used": len(bars)},
+    }
+    monkeypatch.setattr(main.brti_tracker, "snapshot", lambda now_ms=None: snapshot)
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("Removed source/ensemble accessed by live path")
+    provider.price = forbidden
+    provider.candles = forbidden
+    provider.timeframe_candles = forbidden
+    monkeypatch.setattr(main, "engine_pack", forbidden)
+    monkeypatch.setattr(main, "derive_signals", forbidden)
+    def real_book(contract, now=None):
+        return normalize_orderbook({"orderbook_fp": {
+            "yes_dollars": [["0.25", "50"]],
+            "no_dollars": [["0.70", "50"]]}}, contract["ticker"], clock.now)
+    provider.orderbook = real_book
+    updated = main.update_once()
+    assert updated["ok"] and updated["status"] == "LIVE"
+    assert updated["price_source"] == "CF_BENCHMARKS_BRTI"
+    assert updated["model"]["available"]
+    assert updated["model"]["method"] == "single-axiom-brain-brti-student-t"
+    assert [e["name"] for e in updated["engines"]] == ["axiom_brti_settlement"]
+    assert updated["opportunity"]["side"] == "WAIT"
+    assert updated["trade_decision"]["action"] == "WAIT"
+    assert updated["execution_intelligence"]["order_placed"] is False
+    assert main.ledger.data()["count"]["paper"] == 0
+
+
+
+def test_phase2_signed_taker_flow_sustained_two_usd_venues():
+    from app.axiom_brain import ConstituentFlow
+    flow = ConstituentFlow()
+    for step in range(45):
+        now = 1000 + step
+        if step == 0:
+            flow.ingest("coinbase", {"type": "snapshot", "product_id": "BTC-USD",
+                        "bids": [["100", "10"]], "asks": [["101", "10"]]}, now)
+            flow.ingest("kraken", {"channel": "book", "type": "snapshot",
+                        "data": [{"symbol": "BTC/USD", "bids": [{"price": 100, "qty": 10}],
+                                  "asks": [{"price": 101, "qty": 10}]}]}, now)
+        else:
+            flow.ingest("coinbase", {"type": "l2update", "product_id": "BTC-USD",
+                        "changes": [["buy", "100", str(10+step)]]}, now)
+            flow.ingest("kraken", {"channel": "book", "type": "update",
+                        "data": [{"symbol": "BTC/USD",
+                                  "bids": [{"price": 100, "qty": 10+step}],
+                                  "asks": []}]}, now)
+        flow.ingest("coinbase", {"type": "match", "product_id": "BTC-USD",
+                    "trade_id": step, "side": "sell", "size": "0.2"}, now)
+        flow.ingest("kraken", {"channel": "trade", "type": "update",
+                    "data": [{"symbol": "BTC/USD", "trade_id": step,
+                              "side": "buy", "qty": 0.3}]}, now)
+    snap = flow.snapshot(1044)
+    assert snap["available"]
+    assert snap["confirmed_direction"] == "UP"
+    assert snap["cvd_30"] > 0 and snap["cvd_60"] > 0
+    assert snap["cvd_180"] >= snap["cvd_60"] > 0  # 45s observed: both include all trades
+    assert snap["ofi_30"] > 0 and snap["ofi_60"] > 0
+    flow.reset("coinbase")
+    assert not flow.snapshot(1044)["available"]
+
+
+def test_phase2_student_t_is_symmetric_and_heavier_tailed():
+    from app.settlement_probability import _student_t_cdf, NU
+    assert NU == 4.5
+    assert abs(_student_t_cdf(0)-.5) < 1e-12
+    assert abs(_student_t_cdf(-2) - (1-_student_t_cdf(2))) < 1e-10
+    assert _student_t_cdf(-4) > .0001
+
+
+def test_phase2_compression_breakout_student_t_and_macro_kill(monkeypatch):
+    from app.axiom_brain import decide
+    from app.brti_candles import completed_five_minute
+    from app.orderbook import normalize_orderbook
+    import math
+    base = 1800000000  # 03:00 ET, outside macro and TWAP windows
+    now = base + 65*60 + 1
+    bars = []
+    for i in range(65):
+        t = base+i*60
+        if i < 54:
+            price = 100+.35*math.sin(i*.7)
+            bar = {"t":t,"open":price-.06,"close":price,
+                   "high":price+.10,"low":price-.10}
+        elif i < 64:
+            bar = {"t":t,"open":100.,"close":100.,
+                   "high":100.02,"low":99.98}
+        else:
+            bar = {"t":t,"open":100.,"close":100.4,
+                   "high":100.42,"low":99.99}
+        bars.append({**bar,"source":"cfbenchmarks_brti_authenticated_live",
+                     "volume":None})
+    five = completed_five_minute(bars)
+    market = {"ticker":"KXBTC15M-PHASE2","target":100.48,
+              "close_ts":now+450,"seconds_left":450}
+    brti = {"status":"STREAMING","authenticated_stream_verified":True,
+            "latest_value_usd":"100.4","source_ts_ms":int(now*1000),
+            "axiom_received_at_ms":int(now*1000),
+            "completed_minute_sigma_45":.001,"brti_sigma_5s_3m":.0006}
+    book = normalize_orderbook({"orderbook_fp":{
+            "yes_dollars":[["0.30","10"]],"no_dollars":[["0.68","10"]]}},
+            market["ticker"],now)
+    flow = {"available":True,"confirmed_direction":"UP",
+            "CVD_norm_90s":.5,"cvd_90s_span":85,
+            "trade_count_90s":80,"taker_buy_share_90s":.75,
+            "taker_sell_share_90s":.25,
+            "depth_depletion":{"coinbase":{
+                "bid":{"ratio_to_normal":.7,"below_half_for_15s":False},
+                "ask":{"ratio_to_normal":.7,"below_half_for_15s":False}}},
+            "delta_venue":None,"delta_venue_pct":None,
+            "synthetic_price":None,"OBI_spot":.3,"D_spot":50}
+    class Tape:
+        def snapshot(self, *_):
+            return {"implied_sigma_quartile_24h":.003,
+                    "implied_history_ready":True,"mid_jump_20s":0}
+    signal = decide(market,brti,bars,five,book,flow,now,tape=Tape())
+    assert signal["action"] == "BUY_YES", signal
+    assert signal["setup_type"] == "COMPRESSION_BREAKOUT"
+    assert signal["entry_price"] == .32
+    assert signal["fair_prob_side"] == "YES"
+    assert signal["take_profit"] == max(.60,min(.85,signal["fair_prob"]))
+    assert signal["invalidation_rule"]["type"] == "BRTI_CLOSE_BACK_INSIDE_RANGE"
+    assert signal["kill_switch_triggered"] is False
+    assert decide(market,brti,bars,five,book,{**flow,"available":False},now,tape=Tape())["action"] == "WAIT"
+    # Cold start never bypasses IV: a real BRTI-derived ceiling substitutes
+    # for the unavailable 24h observed Kalshi bottom-quartile threshold.
+    from app import axiom_brain
+    class ColdTape:
+        def snapshot(self, *_):
+            return {"implied_sigma_quartile_24h": None,
+                    "implied_history_ready": False, "mid_jump_20s": 0}
+    monkeypatch.setattr(axiom_brain, "_implied_minute_sigma",
+                        lambda *args: .0004)
+    allowed = decide(market,brti,bars,five,book,flow,now,tape=ColdTape())
+    assert allowed["action"] == "BUY_YES", allowed
+    assert allowed["iv_guard"] == "cold_start_ceiling"
+    assert 0 < allowed["iv_ceiling_1m"] <= .0012
+    assert allowed["details"]["iv_guard"] == "cold_start_ceiling"
+    monkeypatch.setattr(axiom_brain, "_implied_minute_sigma",
+                        lambda *args: .002)
+    blocked = decide(market,brti,bars,five,book,flow,now,tape=ColdTape())
+    assert blocked["action"] == "WAIT"
+    assert blocked["iv_guard"] == "cold_start_ceiling"
+    assert blocked["implied_sigma_1m"] > blocked["iv_ceiling_1m"]
+
+
+def test_phase2_twap_drift_sweep_fade_and_read_only_time_stop():
+    from app.axiom_brain import decide
+    from app.brti_candles import completed_five_minute
+    from app.orderbook import normalize_orderbook
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    from math import sin
+    et = ZoneInfo("America/New_York")
+    now = datetime(2026,11,23,10,30,5,tzinfo=et).timestamp()
+    base = int(now//60)*60 - 65*60
+    bars = [{"t":base+i*60,"open":100+.02*sin(i),"high":100.1,
+             "low":99.9,"close":100+.02*sin(i),
+             "source":"cfbenchmarks_brti_authenticated_live","volume":None}
+            for i in range(65)]
+    five = completed_five_minute(bars)
+    market = {"ticker":"KXBTC15M-TWAP","target":100.,
+              "close_ts":now+450,"seconds_left":450}
+    brti = {"status":"STREAMING","authenticated_stream_verified":True,
+            "latest_value_usd":"100.04","source_ts_ms":int(now*1000),
+            "axiom_received_at_ms":int(now*1000),
+            "completed_minute_sigma_45":.001}
+    book = normalize_orderbook({"orderbook_fp":{
+            "yes_dollars":[[".32","10"]],"no_dollars":[[".66","10"]]}},
+            market["ticker"],now)
+    flow = {"available":True,"CVD_norm_5m":.55,"rho_trade":.35,
+            "cvd_5m_span":285,"delta_venue":None,
+            "delta_venue_pct":None,"synthetic_price":None}
+    out = decide(market,brti,bars,five,book,flow,now)
+    assert out["action"] == "BUY_YES",out
+    assert out["setup_type"] == "US_SESSION_TWAP_DRIFT"
+    assert out["invalidation_rule"]["type"] == "BRTI_STRIKE_BAND_OR_CVD_FLIP"
+    # TWAP remains eligible with 36 real BRTI candles while 60m regime
+    # buffers are warming; Student-t fair value has its own shorter minimum.
+    twap_warm = decide(market,brti,bars[-36:],
+                       completed_five_minute(bars[-36:]),book,flow,now)
+    assert twap_warm["action"] == "BUY_YES",twap_warm
+    assert twap_warm["regime"] == "WARMING"
+    # Macro windows suppress a nominally identical otherwise-qualified signal.
+    macro_now = datetime(2026,11,23,10,0,0,tzinfo=et).timestamp()
+    macro_brti = {**brti,"source_ts_ms":int(macro_now*1000),
+                  "axiom_received_at_ms":int(macro_now*1000)}
+    macro = decide({**market,"close_ts":macro_now+450},
+                   macro_brti,bars,five,book,flow,macro_now)
+    assert macro["action"] == "WAIT" and macro["kill_switch_triggered"]
+    end = decide({**market,"close_ts":now+120},
+                 brti,bars,five,book,{**flow,"CVD_norm_60s":-.3},
+                 now,open_side="YES")
+    assert end["action"] == "WAIT" and end["kill_switch_triggered"]
+    assert end["exit_signal"]["action"] == "SELL_CANDIDATE"
+    assert end["exit_signal"]["reason"] == "CVD_SIGN_FLIP"
+    assert end["exit_signal"]["paper_execution_performed"] is False
+
+    # Outside the institutional TWAP window, a persistent one-venue
+    # depletion after an aggressive quote jump can qualify as a fade.
+    after = datetime(2026,11,23,12,0,5,tzinfo=et).timestamp()
+    fade_market = {**market,"close_ts":after+450}
+    fade_brti = {**brti,"latest_value_usd":"100.",
+                 "source_ts_ms":int(after*1000),
+                 "axiom_received_at_ms":int(after*1000)}
+    fade_book = normalize_orderbook({"orderbook_fp":{
+            "yes_dollars":[[".70","10"]],"no_dollars":[[".27","10"]]}},
+            market["ticker"],after)
+    fade_flow = {**flow,"delta_venue":.12,"delta_venue_pct":.0012,
+                 "synthetic_price":100.,"outlier_venue":"coinbase",
+                 "venue_midpoints":{"coinbase":100.12,"kraken":100.,
+                                    "bitstamp":99.98},
+                 "depth_depletion":{"coinbase":{
+                     "ask":{"below_half_for_15s":True,"ratio_to_normal":.4}}}}
+    class FadeTape:
+        def snapshot(self,*_):
+            return {"mid_jump_20s":.2}
+    fade = decide(fade_market,fade_brti,bars,five,fade_book,
+                  fade_flow,after,tape=FadeTape())
+    assert fade["action"] == "WAIT"  # old BRTI candles are stale; no fake signal
+    shifted = [{**bar,"t":bar["t"]+int(after-now)} for bar in bars]
+    fresh = decide(fade_market,fade_brti,shifted,
+                   completed_five_minute(shifted),fade_book,
+                   fade_flow,after,tape=FadeTape())
+    assert fresh["action"] == "BUY_NO",fresh
+    assert fresh["setup_type"] == "SINGLE_VENUE_SWEEP_FADE"
+    assert fresh["entry_price"] == .30
+    assert fresh["take_profit"] == max(.60,min(.85,fresh["fair_prob"]))
+    fade_warm = decide(fade_market,fade_brti,shifted[-36:],
+                       completed_five_minute(shifted[-36:]),fade_book,
+                       fade_flow,after,tape=FadeTape())
+    assert fade_warm["action"] == "BUY_NO",fade_warm
+    assert fade_warm["regime"] == "WARMING"
+
+
+
+def test_phase2_paper_position_lookup_does_not_write_or_change_trade_state(env):
+    main, clock, provider, _, _ = env
+    market = provider.market(clock.now)
+    main.ledger.trade(market, "YES", clock.now, source="PHASE2_READONLY")
+    conn = main.ledger.conn
+    before = [tuple(row) for row in conn.execute("SELECT * FROM paper_trades")]
+    changed = conn.total_changes
+    first = main.ledger.open_paper(market["ticker"])
+    assert first["side"] == "YES" and first["entry"] == market["yes_ask"]
+    first["side"] = "NO"  # Mutating a returned copy cannot alter SQLite.
+    assert main.ledger.open_paper(market["ticker"])["side"] == "YES"
+    assert main.ledger.open_paper("KXBTC15M-UNKNOWN") is None
+    assert conn.total_changes == changed
+    assert [tuple(row) for row in conn.execute("SELECT * FROM paper_trades")] == before

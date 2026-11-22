@@ -20,10 +20,12 @@ import statistics
 
 from .engine import numeric
 
+NU = 4.5
+
 
 def unavailable(reason):
     return {"available": False, "prob_above": None, "reason": reason,
-            "method": "brti-60s-average-conditional-normal",
+            "method": "brti-60s-average-student-t-4.5",
             "forecast_type": "official_benchmark_settlement_average",
             "calibrated": False, "trading_actions_enabled": False}
 
@@ -43,6 +45,87 @@ def _sigma_benchmark_only(candles):
     result = statistics.stdev(returns[-45:])
     return result if math.isfinite(result) and result >= 1e-7 else None
 
+
+
+def _beta_cf(a, b, x):
+    """Bounded continued fraction for the regularized incomplete beta."""
+    tiny = 1e-300
+    qab, qap, qam = a+b, a+1, a-1
+    c, d = 1., 1. - qab*x/qap
+    if abs(d) < tiny:
+        d = tiny
+    d = 1./d
+    h = d
+    for m in range(1, 201):
+        m2 = 2*m
+        aa = m*(b-m)*x/((qam+m2)*(a+m2))
+        d = 1.+aa*d
+        if abs(d) < tiny:
+            d = tiny
+        c = 1.+aa/c
+        if abs(c) < tiny:
+            c = tiny
+        d = 1./d
+        h *= d*c
+        aa = -(a+m)*(qab+m)*x/((a+m2)*(qap+m2))
+        d = 1.+aa*d
+        if abs(d) < tiny:
+            d = tiny
+        c = 1.+aa/c
+        if abs(c) < tiny:
+            c = tiny
+        d = 1./d
+        delta = d*c
+        h *= delta
+        if abs(delta-1.) < 3e-13:
+            break
+    return h
+
+
+def _regularized_beta(x, a, b):
+    if x <= 0:
+        return 0.
+    if x >= 1:
+        return 1.
+    factor = math.exp(math.lgamma(a+b)-math.lgamma(a)-math.lgamma(b)
+                      + a*math.log(x)+b*math.log1p(-x))
+    if x < (a+1)/(a+b+2):
+        return factor*_beta_cf(a,b,x)/a
+    return 1.-factor*_beta_cf(b,a,1-x)/b
+
+
+def _student_t_cdf(z, nu=NU):
+    if z == 0:
+        return .5
+    x = nu/(nu+z*z)
+    tail = .5*_regularized_beta(x,nu/2,.5)
+    return 1-tail if z > 0 else tail
+
+
+def _brti_sigmas(candles, measured_long):
+    """Only source-tagged, contiguous BRTI minute closes enter volatility."""
+    if not isinstance(candles, list) or len(candles) < 31:
+        return None, measured_long
+    tail = candles[-46:]
+    if any(not isinstance(c, dict) or c.get("source") !=
+           "cfbenchmarks_brti_authenticated_live" for c in tail):
+        return None, measured_long
+    if any("t" not in c for c in tail):
+        # Older source-tagged fixtures omit timestamps; preserve their
+        # validated long-sigma fallback without fabricating candle times.
+        return None, (measured_long if measured_long is not None else
+                      _sigma_benchmark_only(candles))
+    if any(b["t"]-a["t"] != 60 for a,b in zip(tail,tail[1:])):
+        return None, measured_long
+    closes = [numeric(c.get("close")) for c in tail]
+    if any(p is None or p <= 0 for p in closes):
+        return None, measured_long
+    returns = [math.log(b/a) for a,b in zip(closes,closes[1:])]
+    short = statistics.stdev(returns[-8:])
+    long = statistics.stdev(returns[-45:])
+    return ((short if math.isfinite(short) and short >= 1e-7 else None),
+            (measured_long if measured_long is not None else
+             long if math.isfinite(long) and long >= 1e-7 else None))
 
 def forecast(market, brti, candles, now):
     if not isinstance(market, dict) or not isinstance(brti, dict):
@@ -68,13 +151,15 @@ def forecast(market, brti, candles, now):
         return unavailable("BRTI benchmark stale, invalid or future-dated")
 
     measured_sigma = numeric(brti.get("completed_minute_sigma_45"))
-    if measured_sigma is not None and 1e-7 <= measured_sigma <= .10:
-        sigma, sigma_source = measured_sigma, "authenticated_BRTI_completed_minutes"
-    else:
-        sigma = _sigma_benchmark_only(candles)
-        sigma_source = "authenticated_BRTI_completed_minutes"
-    if sigma is None:
-        return unavailable("No valid recent volatility; cannot price settlement uncertainty")
+    if measured_sigma is None or not 1e-7 <= measured_sigma <= .10:
+        measured_sigma = None
+    short, long = _brti_sigmas(candles, measured_sigma)
+    sigma = (.6*short+.4*long if short is not None and long is not None
+             else long)
+    sigma_source = ("authenticated_BRTI_short8_long45" if short is not None
+                    else "authenticated_BRTI_completed_minutes")
+    if sigma is None or not math.isfinite(sigma) or sigma < 1e-7:
+        return unavailable("No valid recent BRTI volatility; cannot price settlement uncertainty")
 
     partial_count = 0
     estimated_average = reference
@@ -116,16 +201,21 @@ def forecast(market, brti, candles, now):
         return unavailable("Invalid conditional variance or benchmark average")
     z = math.log(estimated_average / target) / (
         sigma * math.sqrt(effective_variance_minutes))
-    p = max(.0005, min(.9995, .5 * math.erfc(-z / math.sqrt(2))))
+    # Student-t scale is variance-matched to realized BRTI sigma.
+    z *= math.sqrt(NU/(NU-2))
+    p = max(.0005, min(.9995, _student_t_cdf(z)))
     return {
         "available": True, "prob_above": round(p, 5),
         "prob_below": round(1 - p, 5),
-        "method": "brti-60s-average-conditional-normal",
+        "method": "brti-60s-average-student-t-4.5",
         "conditional_method": method, "calibrated": False,
         "forecast_type": "official_benchmark_settlement_average",
         "source": "authenticated_live_CF_BRTI_only",
         "volatility_source": sigma_source,
         "volatility_1m": round(sigma, 9),
+        "volatility_short_1m": round(short, 9) if short is not None else None,
+        "volatility_long_1m": round(long, 9) if long is not None else None,
+        "student_t_nu": NU,
         "effective_variance_minutes": round(effective_variance_minutes, 7),
         "estimated_final_mean_usd": round(estimated_average, 3),
         "observed_final_minute_seconds": partial_count,
