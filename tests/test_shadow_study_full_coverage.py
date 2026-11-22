@@ -162,6 +162,8 @@ def test_isolated_candle_study_cli_modes_and_exception_recovery(tmp_path,monkeyp
                         lambda *a:(_ for _ in ()).throw(ValueError("outage")))
     assert candle.main()==0
     assert '"status": "SKIPPED"' in capsys.readouterr().out
+    monkeypatch.setattr(candle,"record_snapshot",lambda *a:{"status":"OBSERVING"})
+    assert candle.main()==0  # No false claim that a checkpoint was recorded.
     ledger=str(tmp_path/"bot.sqlite3")
     with sqlite3.connect(ledger) as con:
         con.execute("CREATE TABLE engine_snapshots(ticker TEXT,result TEXT)")
@@ -235,6 +237,12 @@ def test_nison_full_study_cli_once_report_collect(tmp_path,monkeypatch,capsys):
     monkeypatch.setattr(sys,"argv",["full","collect","--db",db])
     assert full.main() is None
     class LoopTerminated(Exception): pass
+    monkeypatch.setattr(full,"observe",lambda *a:{"status":"RECORDED"})
+    monkeypatch.setattr(full.time,"sleep",
+                        lambda seconds:(_ for _ in ()).throw(LoopTerminated(seconds)))
+    with pytest.raises(LoopTerminated):
+        full.main()
+    assert '"status": "RECORDED"' in capsys.readouterr().out
     monkeypatch.setattr(full,"observe",
                         lambda *a:(_ for _ in ()).throw(ValueError("test fault")))
     monkeypatch.setattr(full.time,"sleep",
