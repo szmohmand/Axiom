@@ -8,7 +8,6 @@ to separate execution / value / spread / contract-repricing analysis.
 from __future__ import annotations
 
 import math
-import statistics
 
 
 def _num(v):
@@ -74,8 +73,8 @@ def timeframes(five_minute,now):
             "last_completed_bar_end":clean[-1]["t"]+300}
 
 
-class DepthFlowTracker:
-    """Backward-compatible name; the forecast adapter is BTC-ONLY.
+class BTCFlowTracker:
+    """Forecast adapter is BTC-only.
 
     The arguments 'book'/'market' are deliberately ignored, even if callers
     supply Kalshi bid/ask/mid/orderbook data. No historical quote state is kept
@@ -110,6 +109,9 @@ class DepthFlowTracker:
         result.update(available=bool(result["directional_components"]),
                       reason="Real Binance BTC trade-flow signals, never Kalshi contract prices")
         return result
+
+# Compatibility for archived readers; both names refer to BTC-only flow.
+DepthFlowTracker=BTCFlowTracker
 
 _BTC_PREDICTIVE_FEATURES=frozenset((
     "30m_efficiency","30m_close_location",
