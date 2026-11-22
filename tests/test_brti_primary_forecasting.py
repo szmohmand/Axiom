@@ -42,7 +42,8 @@ def test_real_received_index_samples_build_price_only_candles_and_live_frames():
     assert bars[-1]["t"] + 60 <= end / 1000
     assert snap["completed_minute_sigma_45"] is not None
     five = snap["btc_5m_candles"]
-    assert five and all(bar["volume"] is None for bar in five)
+    assert len(five)>=25, (len(bars),len(five),bars[0]['t'],bars[-1]['t'])
+    assert all(bar["volume"] is None for bar in five)
     higher = timeframes(five, end / 1000)
     assert higher["available"] and higher["source"] == "cfbenchmarks_brti_authenticated_live"
     assert {"30m","1h","2h"} <= set(higher["frames"])
