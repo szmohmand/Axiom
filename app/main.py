@@ -231,7 +231,7 @@ def _brti_only_update_once(now):
             candles=reference.get('btc_1m_candles') or []
             if spot is None or not math.isfinite(spot) or spot<=0:
                 spot=None
-                errors['brti_stream']='Invalid authenticated BRTI index'
+                errors['brti_stream']='Invalid authenticated CF Benchmarks BRTI index value'
     except (KeyError,TypeError,ValueError,OverflowError) as exc:
         reference={'status':'UNAVAILABLE','reason':_error_message(exc)}
         spot=None; candles=[]
