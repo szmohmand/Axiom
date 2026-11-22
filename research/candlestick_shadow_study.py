@@ -246,9 +246,9 @@ def make_report(conn: sqlite3.Connection, result_map: dict[str,str]) -> dict:
         score["snapshots"] = len(rows)
         score["missing_snapshots"] = enrolled-len(rows)
         output["checkpoint_results"][name]=score
-    output["note"]="Negative challenger-minus-baseline Brier means better. "
-                   "No improvement, accuracy, or trading profit is assumed. "
-                   "If checkpoints are missing, results do not represent all 100 contracts."
+    output["note"]=("Negative challenger-minus-baseline Brier means better. "
+                    "No improvement, accuracy, or trading profit is assumed. "
+                    "If checkpoints are missing, results do not represent all 100 contracts.")
     return output
 
 
