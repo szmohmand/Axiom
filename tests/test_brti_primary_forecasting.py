@@ -108,3 +108,43 @@ def test_settlement_model_final_minute_uses_actual_received_prefix_not_only_last
     assert not settlement_forecast(market,brti,[],now)["available"]
     brti["status"]="STALE"
     assert not settlement_forecast(market,brti,[],now)["available"]
+
+
+def test_live_brti_warmup_keeps_server_operational_but_blocks_predictions_and_paper(env, monkeypatch):
+    # Real authenticated reference, but <31 completed BRTI candles since start.
+    main,clock,provider,client,_=env
+    main.DEMO=False
+    clock.now=provider.close-600
+    candles=provider.candles()[-12:]
+    for b in candles:
+        b["source"]="cfbenchmarks_brti_authenticated_live"
+        b["volume"]=None
+    sample={
+        "status":"STREAMING", "authenticated_stream_verified":True,
+        "latest_value_usd":"90325.0",
+        "source_ts_ms":int(clock.now*1000),
+        "axiom_received_at_ms":int(clock.now*1000)+10,
+        "btc_1m_candles":candles,"btc_5m_candles":[],
+        "candle_quality":{"status":"WARMING_BRTI_LIVE","bars_used":12,
+                          "missing_seconds_filled":0},
+    }
+    monkeypatch.setattr(main.brti_tracker,"snapshot",lambda now_ms=None:sample)
+    def forbidden(*args,**kwargs):
+        raise AssertionError("Forbidden Coinbase access during live BRTI warmup")
+    provider.price=forbidden
+    provider.candles=forbidden
+    provider.timeframe_candles=forbidden
+    out=main.update_once()
+    assert out["status"]=="LIVE" and out["ok"] is True
+    assert out["price_source"]=="CF_BENCHMARKS_BRTI"
+    assert out["forecast_warming"] is True
+    assert out["model"]["available"] is False
+    assert out["opportunity"]["side"]=="WAIT"
+    assert out["execution_intelligence"]["order_placed"] is False
+    assert client.get('/health').status_code==200
+    state=client.get('/api/state')
+    assert state.status_code==200
+    assert state.json()["manual_paper_available"] is False
+    auth={"Authorization":"Bearer synthetic-local-testing-token"}
+    assert client.post('/api/paper',json={"side":"YES"},headers=auth).status_code==409
+    assert main.ledger.data()['count']=={'calls':0,'paper':0}
