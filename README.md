@@ -53,6 +53,40 @@ Permanent regression suite `tests/test_market_quote_is_not_forecast.py` checks f
 5. Use the final consensus to screen hypothetical YES/NO opportunities at the quoted ask, subtracting an **illustrative** taker fee. It checks spread, entry price, model confidence, time left, and edge. Real fee schedules may differ.
 6. Independently, the existing EMA(9/21)+ATR(14) BTC scalp lens reports `LONG`, `SHORT`, or `WAIT` with indicative entry/stop/target. No actual scalp trades are executed or P&L tracked.
 
+## Candlestick intelligence — Nison-inspired shadow challenger (isolated)
+
+The 1-minute Coinbase Exchange **completed** OHLCV bar stream now supports
+`candlestick_context` in `GET /api/state`, with trend-conditioned hammers,
+shooting stars, engulfing real bodies, doji, wick rejection and directional
+real bodies. The module checks genuine contiguous bars, rejects stale/invalid
+prices, and uses levels formed **before** the possible pattern. No chart image,
+Kalshi quote or future/unfinished candle becomes a prediction input.
+
+`candlestick_challenger` is a deliberately small, **uncalibrated**, non-voting
+research probability adjustment to the current ensemble on **corroborated**
+completed-candle patterns only. Its pattern strength, context and size are
+inspectable. These are research hypotheses inspired by Steve Nison,
+*Japanese Candlestick Charting Techniques*, 2nd ed., especially chapters 3–8,
+11, 15 and 17; the rules are an original implementation, not book text.
+A doji or an unconfirmed hanging man is **not** assumed to predict reversal.
+
+The production consensus, old engine list, safety gates, all actual/paper
+trading behavior and existing historical scorecards are unchanged. To opt into
+*future* separate shadow-grade snapshots in an evaluated deployment, set
+`CANDLESTICK_SHADOW_GRADING_ENABLED=1` in the process environment; the default
+is `0`. This never authorizes real orders. New snapshots use the same 14m,
+10m, 5m and 1m scorecard checkpoints and official Kalshi settlements, but
+only on the subset with qualified candle patterns. Compare the candidate
+with **ensemble on exactly those same market/checkpoint observations** and
+with matching quote-midpoint observations before drawing conclusions.
+
+**Release gate:** New candidate predictions must improve paired, chronological
+held-out Brier/log-loss across sufficient contracts, retain acceptable
+calibration and not harm early checkpoints before any consideration of voting
+or deployment as a decision component. No profitable advantage is asserted.
+Existing archived scores do not contain replayable OHLCV at each checkpoint;
+this feature must be evaluated prospectively rather than inventing history.
+
 ## Individual model evaluations
 
 AXIOM v2 records an immutable, same-market snapshot of every available engine at **14, 10, 5 and 1 minutes remaining** (within 30 seconds of the corresponding checkpoint). It includes the Kalshi midpoint for a fair paired comparison.
