@@ -151,7 +151,7 @@ def test_kraken_bitstamp_normalization_and_three_venue_dispersion():
     assert snapshot["outlier_venue"]=="coinbase"
     assert snapshot["delta_venue"]>0
     assert snapshot["source_price_role"]=="dispersion_diagnostic_only"
-    flow._book("kraken",{100.:0},{101.:0},NOW,snapshot=True)
+    flow.reset("kraken")
     assert "kraken" not in flow.snapshot(NOW)["venue_midpoints"]
     assert flow.snapshot(NOW+100)["venues"]==[]
 
@@ -210,7 +210,7 @@ def test_bars_implied_sigma_tape_volume_gate_and_breakouts():
     state=tape.snapshot(m,NOW+5)
     assert state["mid_jump_20s"] is not None
     assert state["implied_samples_24h"]<=2
-    tape.mid_history=deque([(NOW-1,m["ticker"],.4),(NOW-1,m["ticker"],.5)])
+    tape.mid_history=deque([(NOW,m["ticker"],.4),(NOW,m["ticker"],.5)])
     assert tape.snapshot(m,NOW)["mid_jump_20s"] is None
     tape.implied_24h=deque((NOW-23*3600-100+i*837, .0005+i*.000001) for i in range(100))
     assert tape.snapshot(m,NOW)["implied_history_ready"]
@@ -270,10 +270,13 @@ def test_mock_public_ws_sessions_reconnect_and_nonblocking_threads(monkeypatch):
     for venue, sends in [("coinbase",1),("kraken",2),("bitstamp",2)]:
         asyncio.run(brain._session(flow,venue,stop))
         assert len(sockets[-1].sent)==sends
-    monkeypatch.setattr(brain.asyncio,"run",lambda *_:None)
+    def finished(coro):
+        coro.close()
+    monkeypatch.setattr(brain.asyncio,"run",finished)
     brain._venue_worker(flow,"coinbase",stop)
     assert stop.waits[-1]==2
-    def fail(*_):
+    def fail(coro):
+        coro.close()
         raise OSError("disconnected")
     monkeypatch.setattr(brain.asyncio,"run",fail)
     stop.stopped=False

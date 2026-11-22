@@ -110,7 +110,7 @@ def test_brti_rules_reject_stale_missing_and_check_both_directions():
     assert not exits._invalidated(p,brti(),[{**newest,"close":"bad"}],NOW)
     assert exits._invalidated(p,brti(),valid,NOW)
     assert not exits._invalidated(position(rule=up|{"level_usd":63800.}),brti(),valid,NOW)
-    assert exits._invalidated(position(rule=down),brti(),valid,NOW)
+    assert exits._invalidated(position(rule=down),brti(),[{**newest,"close":63950.}],NOW)
     assert not exits._invalidated(position(rule=down|{"level_usd":64000.}),brti(),valid,NOW)
     strike={"type":"BRTI_STRIKE_BAND_OR_CVD_FLIP","strike":64000.,
             "max_deviation_bps":10}

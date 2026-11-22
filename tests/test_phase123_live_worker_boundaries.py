@@ -84,8 +84,12 @@ def test_bad_stream_and_book_unavailability_fail_closed(live,monkeypatch):
                         lambda now_ms=None:_stream(clock,provider,latest_value_usd="nan"))
     bad=main.update_once()
     assert "brti_stream" in bad["errors"]
+    attempts={"n":0}
     def raise_invalid(**_kw):
-        raise ValueError("bad BRTI snapshot")
+        attempts["n"]+=1
+        if attempts["n"]==1:
+            raise ValueError("bad BRTI snapshot")
+        return _stream(clock,provider)
     monkeypatch.setattr(main.brti_tracker,"snapshot",raise_invalid)
     bad=main.update_once()
     assert "brti_stream" in bad["errors"]
