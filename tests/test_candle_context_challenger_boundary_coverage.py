@@ -49,7 +49,10 @@ def test_candle_context_defensively_rejects_invalid_raw_data(variant):
     if variant=="row_not_dict":data[0]=False
     if variant=="bad_number":data[0]["open"]=float("inf")
     if variant=="bad_gap":data[3]["t"]+=60
-    if variant=="future":data[-1]["t"]=NOW+120
+    if variant=="future":
+        # Entire time series remains strictly 60-second spaced; only the
+        # as-of future-timestamp defense may reject these real-shaped bars.
+        for row in data:row["t"]+=3600
     if variant=="bad_ohlc":data[0]["high"]=0
     if variant=="bad_volume":data[0]["volume"]=-1
     if variant=="short":data=data[:10]
@@ -171,3 +174,16 @@ def test_challenger_takes_correlated_observations_only_when_supported():
         result=ch.derive_candlestick_challenger(
             candidate,{"available":True,"prob_above":prob})
         assert not result["available"] and "cap" in result["reason"]
+
+
+def test_wick_only_rejection_has_its_own_market_read_not_forced_breakout():
+    data=replace_tail(candle_bars(0),0,4,up=1,down=7,volume=8)
+    result=cc.read_candlestick_context(data,NOW)
+    assert result["available"]
+    assert result["market_read"]=="LOCAL_REJECTION_OBSERVED"
+    assert "LOWER_WICK_REJECTION" in names(result)
+    # Recognized but uncorroborated pattern does not vote in the legacy shadow.
+    context={"available":True,"prior_trend":"DOWN",
+             "formations":[{"name":"HAMMER","confluence":[]}]}
+    assert not ch.derive_candlestick_challenger(
+        context,{"available":True,"prob_above":.55})["available"]
