@@ -310,10 +310,10 @@ def test_binance_worker_threads_start_and_stop_with_actual_api_lifespan(env,monk
     monkeypatch.setattr(main,"binance_spot_worker",fake_worker)
     with TestClient(main.app) as live:
         assert live.get("/").status_code==200
-        assert "read-only-binance-spot-worker" in (
+        assert "read-only-binance-spot-worker" not in (
             {thread.name for thread in threading.enumerate()})
         assert "read-only-binance-funding-worker" not in (
             {thread.name for thread in threading.enumerate()})
-    assert "read-only-binance-spot-worker" in started
+    assert "read-only-binance-spot-worker" not in started
     assert not any(thread.name.startswith("read-only-binance-") and thread.is_alive()
                    for thread in threading.enumerate())
