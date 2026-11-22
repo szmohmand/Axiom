@@ -374,6 +374,7 @@ class ConstituentFlow:
                 "ofi_30": round(o30, 5), "ofi_60": round(o60, 5),
                 "cvd_30": round(sum(p[0] for p in cvd30), 8),
                 "cvd_60": round(sum(p[0] for p in cvd60), 8),
+                "cvd_60_span": (now-min((p[3] for p in cvd60 if p[3] is not None), default=now)),
                 "cvd_180": round(sum(p[0] for p in cvd180), 8),
                 "cvd_ratio_30": round(c30, 5), "cvd_ratio_60": round(c60, 5),
                 "confirmed_direction": direction,

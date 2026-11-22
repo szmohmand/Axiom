@@ -1,5 +1,7 @@
 """SQLite event journal. One worker per database (set WEB_CONCURRENCY=1)."""
 import sqlite3
+import json
+from decimal import Decimal, ROUND_CEILING
 from contextlib import contextmanager
 import threading
 import time
@@ -44,6 +46,17 @@ class Ledger:
             );
             CREATE INDEX IF NOT EXISTS ix_engine_grades ON engine_snapshots(engine,result);
             ''')
+            # In-place, non-destructive migration of legacy paper rows.
+            columns = {row[1] for row in self.conn.execute('PRAGMA table_info(paper_trades)')}
+            for name, kind in (
+                ('take_profit', 'REAL'), ('invalidation_rule', 'TEXT'),
+                ('entry_fee', 'REAL'), ('exit_fee', 'REAL'),
+                ('exit_price', 'REAL'), ('exit_reason', 'TEXT'),
+                ('exited_at', 'REAL'), ('net_pnl', 'REAL'),
+                ('fee_model', 'TEXT'),
+            ):
+                if name not in columns:
+                    self.conn.execute(f'ALTER TABLE paper_trades ADD COLUMN {name} {kind}')
             self._commit()
     @contextmanager
     def atomic_cycle(self):
@@ -120,29 +133,100 @@ class Ledger:
                 market.get('market_mid'),model.get('prob_above'),model.get('side')))
             self.conn.execute('DELETE FROM observations WHERE id NOT IN (SELECT id FROM observations ORDER BY id DESC LIMIT 7000)')
             self._commit()
-    def trade(self, market, side, now, model_probability=None, source='MANUAL'):
+    @staticmethod
+    def paper_fee(price):
+        """Per one simulated contract: conservative ceil-to-cent taker estimate."""
+        if isinstance(price, bool):
+            raise ValueError('Invalid paper fill')
+        p = Decimal(str(price))
+        if not p.is_finite() or not Decimal('0') <= p <= Decimal('1'):
+            raise ValueError('Invalid paper fill')
+        return float((Decimal('0.07') * p * (1-p) * 100).to_integral_value(
+            rounding=ROUND_CEILING) / 100)
+
+    def trade(self, market, side, now, model_probability=None, source='MANUAL',
+              take_profit=None, invalidation_rule=None):
         side=side.upper()
         if side not in ('YES','NO'): raise ValueError('Side must be YES or NO')
         if market['seconds_left'] < 20: raise ValueError('Less than 20 seconds remain')
         entry=market.get('yes_ask' if side=='YES' else 'no_ask')
         if entry is None or not .01<=entry<=.99: raise ValueError('No valid current ask available')
+        if take_profit is not None and (not isinstance(take_profit,(int,float)) or
+                 isinstance(take_profit,bool) or not math.isfinite(take_profit) or
+                 not 0 < take_profit <= 1):
+            raise ValueError('Invalid take-profit')
+        if invalidation_rule is not None and (not isinstance(invalidation_rule,dict)
+                or invalidation_rule.get('type') not in (
+                'BRTI_CLOSE_BACK_INSIDE_RANGE','BRTI_STRIKE_BAND_OR_CVD_FLIP',
+                'BRTI_CONFIRMED_VENUE_EXTENSION')):
+            raise ValueError('Invalid BRTI invalidation rule')
+        fee=self.paper_fee(entry)
+        rule=json.dumps(invalidation_rule,sort_keys=True) if invalidation_rule else None
         with self.lock:
             try:
-                c=self.conn.execute('''INSERT INTO paper_trades(ticker,side,entry,created,seconds_left,model_prob,source)
-                  VALUES(?,?,?,?,?,?,?)''', (market['ticker'],side,entry,now,market['seconds_left'],
-                          model_probability,source))
+                c=self.conn.execute('''INSERT INTO paper_trades(
+                  ticker,side,entry,created,seconds_left,model_prob,source,
+                  take_profit,invalidation_rule,entry_fee,fee_model)
+                  VALUES(?,?,?,?,?,?,?,?,?,?,?)''', (
+                    market['ticker'],side,entry,now,market['seconds_left'],
+                    model_probability,source,take_profit,rule,fee,
+                    'estimated_taker_7pct_p_times_1_minus_p_ceil_cent'))
                 self._commit()
-                return {'id':c.lastrowid,'ticker':market['ticker'],'side':side,'entry':entry,'status':'OPEN'}
+                return {'id':c.lastrowid,'ticker':market['ticker'],'side':side,
+                        'entry':entry,'entry_fee':fee,'take_profit':take_profit,
+                        'status':'OPEN'}
             except sqlite3.IntegrityError:
                 raise ValueError('A paper position already exists for this market')
+
     def open_paper(self, ticker):
-        """Existing open simulated position, read-only; Phase 2 cannot close it."""
+        """Return an immutable SQL observation (independent dictionary copy)."""
         with self.lock:
             row = self.conn.execute(
-                "SELECT ticker,side,entry,created FROM paper_trades "
-                "WHERE ticker=? AND status='OPEN' AND result IS NULL",
+                "SELECT ticker,side,entry,created,take_profit,invalidation_rule,entry_fee "
+                "FROM paper_trades WHERE ticker=? AND status='OPEN' AND result IS NULL",
                 (ticker,)).fetchone()
-            return dict(row) if row else None
+        if not row:
+            return None
+        item=dict(row)
+        item['invalidation_rule'] = (json.loads(item['invalidation_rule'])
+                                     if item['invalidation_rule'] else None)
+        return item
+
+    def close_paper(self, ticker, exit_price, exit_reason, now):
+        """Exactly-once one-contract paper resale; no accounts or real orders."""
+        if exit_reason not in ('TAKE_PROFIT','BRTI_INVALIDATION',
+                               'CVD_SIGN_FLIP','TIME_STOP'):
+            raise ValueError('Unknown paper exit reason')
+        if isinstance(now,bool) or not isinstance(now,(int,float)) or not math.isfinite(now):
+            raise ValueError('Invalid paper exit timestamp')
+        if isinstance(exit_price,bool) or not isinstance(exit_price,(int,float)) or (
+                not math.isfinite(exit_price) or not 0 < exit_price < 1):
+            raise ValueError('Invalid simulated executable bid')
+        with self.lock:
+            row=self.conn.execute("SELECT entry,entry_fee,created FROM paper_trades "
+                      "WHERE ticker=? AND status='OPEN' AND result IS NULL",(ticker,)).fetchone()
+            if row is None:
+                return None
+            if now < row['created']:
+                raise ValueError('Paper exit predates entry')
+            fee_entry = (row['entry_fee'] if row['entry_fee'] is not None
+                         else self.paper_fee(row['entry']))
+            fee_exit=self.paper_fee(exit_price)
+            gross=round(exit_price-row['entry'],6)
+            net=round(gross-fee_entry-fee_exit,6)
+            changed=self.conn.execute("""UPDATE paper_trades SET
+                        status='EXITED',exit_price=?,exit_reason=?,exited_at=?,
+                        entry_fee=?,exit_fee=?,pnl=?,net_pnl=?,
+                        fee_model='estimated_taker_7pct_p_times_1_minus_p_ceil_cent'
+                        WHERE ticker=? AND status='OPEN' AND result IS NULL""",
+                        (exit_price,exit_reason,now,fee_entry,fee_exit,gross,net,ticker))
+            if changed.rowcount != 1:
+                return None
+            self._commit()
+            return {'ticker':ticker,'status':'EXITED','exit_price':exit_price,
+                    'exit_reason':exit_reason,'exited_at':now,
+                    'gross_pnl':gross,'net_pnl':net,
+                    'entry_fee':fee_entry,'exit_fee':fee_exit}
 
     def unresolved(self, max_rows=30, after_ticker=None):
         """Distinct unresolved tickers, deterministically rotated across batches.
@@ -251,31 +335,65 @@ class Ledger:
                 'note':'Order-book midpoints reflect participant quotes, NOT Kalshi predictions. Brier differences are descriptive and NOT validated alpha. Use held-out chronological testing.'}
 
     def grade(self, ticker, result, now):
-        """Atomically grade all tables, or roll back completely if anything fails."""
+        """Grade official outcome without rewriting an already realized resale."""
         if result not in ('yes','no'):
             raise ValueError('Requires Kalshi official yes/no')
         with self.lock, self.conn:
             self.conn.execute('UPDATE first_calls SET result=?, graded=? WHERE ticker=? AND result IS NULL', (result, now, ticker))
             self.conn.execute('UPDATE engine_snapshots SET result=?, graded=? WHERE ticker=? AND result IS NULL', (result, now, ticker))
-            row=self.conn.execute('SELECT side,entry FROM paper_trades WHERE ticker=? AND result IS NULL',(ticker,)).fetchone()
-            if row:
-                pnl=paper_result(row['side'],row['entry'],result)
-                self.conn.execute("UPDATE paper_trades SET result=?,pnl=?,status='SETTLED',graded=? WHERE ticker=? AND result IS NULL",(result,pnl,now,ticker))
+            row=self.conn.execute("SELECT side,entry,entry_fee,status "
+                 "FROM paper_trades WHERE ticker=? AND result IS NULL",
+                 (ticker,)).fetchone()
+            if row is not None:
+                if row['status']=='OPEN':
+                    gross=paper_result(row['side'],row['entry'],result)
+                    fee=row['entry_fee'] if row['entry_fee'] is not None else self.paper_fee(row['entry'])
+                    won=(row['side']=='YES' and result=='yes') or (
+                         row['side']=='NO' and result=='no')
+                    exit_price=1. if won else 0.
+                    self.conn.execute("""UPDATE paper_trades SET
+                          result=?,pnl=?,net_pnl=?,status='SETTLED',graded=?,
+                          exited_at=?,exit_price=?,exit_reason='OFFICIAL_SETTLEMENT',
+                          entry_fee=?,exit_fee=0,
+                          fee_model='estimated_taker_7pct_p_times_1_minus_p_ceil_cent'
+                          WHERE ticker=? AND status='OPEN' AND result IS NULL""",
+                          (result,gross,round(gross-fee,6),now,now,exit_price,fee,ticker))
+                elif row['status']=='EXITED':
+                    # The settlement label is still valuable for analysis, but
+                    # a resale's exit price, realized P&L and time are final.
+                    self.conn.execute("UPDATE paper_trades SET result=?,graded=? "
+                        "WHERE ticker=? AND status='EXITED' AND result IS NULL",
+                        (result,now,ticker))
+
     def data(self, limit=60):
         with self.lock:
             calls=[dict(x) for x in self.conn.execute('SELECT * FROM first_calls ORDER BY created DESC LIMIT ?', (limit,))]
             trades=[dict(x) for x in self.conn.execute('SELECT * FROM paper_trades ORDER BY created DESC LIMIT ?', (limit,))]
             rows=self.conn.execute('SELECT side,result,probability FROM first_calls WHERE result IS NOT NULL').fetchall()
-            completed=[dict(x) for x in self.conn.execute('SELECT pnl FROM paper_trades WHERE status="SETTLED"')]
+            settled=[dict(x) for x in self.conn.execute(
+                "SELECT pnl FROM paper_trades WHERE status='SETTLED'")]
+            closed=[dict(x) for x in self.conn.execute(
+                "SELECT status,pnl,net_pnl FROM paper_trades "
+                "WHERE status IN ('EXITED','SETTLED')")]
             total=len(rows); correct=sum((x['side']=='ABOVE') == (x['result']=='yes') for x in rows)
-            pcount=len(completed); wins=sum(x['pnl']>0 for x in completed); pnl=sum(x['pnl'] for x in completed)
+            pcount=len(settled); wins=sum(x['pnl']>0 for x in settled)
+            gross=sum(x['pnl'] for x in settled)
+            realized=sum(x['pnl'] for x in closed)
+            realized_net=sum(x['net_pnl'] for x in closed if x['net_pnl'] is not None)
             return {'calls':calls,'trades':trades,
-                'stats':{'graded_calls':total,'correct_calls':correct,'first_call_accuracy':round(correct/total,4) if total else None,
+                'stats':{'graded_calls':total,'correct_calls':correct,
+                         'first_call_accuracy':round(correct/total,4) if total else None,
                          'settled_paper_trades':pcount,'winning_paper_trades':wins,
                          'paper_win_rate':round(wins/pcount,4) if pcount else None,
-                         'gross_paper_pnl':round(pnl,4), 'paper_fee_note':'Excludes trading fees and slippage; assumes ask fills'},
+                         'gross_paper_pnl':round(gross,4),
+                         'closed_paper_trades':len(closed),
+                         'early_exit_paper_trades':sum(x['status']=='EXITED' for x in closed),
+                         'realized_gross_paper_pnl':round(realized,4),
+                         'realized_net_paper_pnl':round(realized_net,4),
+                         'paper_fee_note':'Modeled one-contract taker fees; bid/ask paper fills, not executed account trades'},
                 'count':{'calls':self.conn.execute('SELECT count(*) FROM first_calls').fetchone()[0],
                          'paper':self.conn.execute('SELECT count(*) FROM paper_trades').fetchone()[0]}}
+
     def export(self, kind):
         if kind not in ('first_calls','paper_trades','observations','engine_snapshots'): raise ValueError('Invalid export')
         with self.lock:
