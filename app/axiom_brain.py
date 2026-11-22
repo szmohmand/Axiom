@@ -21,6 +21,8 @@ URLS = {
     "bitstamp": "wss://ws.bitstamp.net",
 }
 BRTI_SOURCE = "cfbenchmarks_brti_authenticated_live"
+# 1m log-return sigma; conservative temporary ceiling until 24h IV history.
+COLD_START_IV_MAX_1M = 0.0012
 
 
 def _positive(value):
@@ -704,14 +706,24 @@ def decide(market, brti, candles, five, book, flow, now, *,
         if setup is None and out["regime"] == "SQUEEZE":
             sigma_5s = _positive(brti.get("brti_sigma_5s_3m"))
             sigma_1m = _implied_minute_sigma(market, book, spot, now)
-            quartile = history.get("implied_sigma_quartile_24h")
+            quartile = _positive(history.get("implied_sigma_quartile_24h"))
+            iv_ready = history.get("implied_history_ready") is True
+            # No 24h samples yet: remain filtered, not permanently blocked or
+            # allowed through unchecked. Use only measured BRTI volatility.
+            brti_sigma = _positive(fair.get("volatility_1m"))
+            iv_ceiling = (quartile if iv_ready else
+                          min(COLD_START_IV_MAX_1M, .85*brti_sigma)
+                          if brti_sigma is not None else None)
+            out["iv_guard"] = "24h_bottom_quartile" if iv_ready else "cold_start_ceiling"
+            out["iv_ceiling_1m"] = iv_ceiling
+            out["implied_sigma_1m"] = sigma_1m
             ratio_depth = [
                 x["ratio_to_normal"]
                 for side in (flow.get("depth_depletion") or {}).values()
                 for x in side.values()
                 if x["ratio_to_normal"] is not None and x["ratio_to_normal"]>0]
             if (sigma_5s is not None and sigma_1m is not None and
-                quartile is not None and sigma_1m <= quartile and
+                iv_ceiling is not None and sigma_1m <= iv_ceiling and
                 ratio_depth and flow.get("cvd_90s_span",0) >= 75 and
                 flow.get("trade_count_90s",0) >= 30):
                 thinning = min(2.,max(1.,1./statistics.median(ratio_depth)))
@@ -730,7 +742,9 @@ def decide(market, brti, candles, five, book, flow, now, *,
                                         "direction":direction}
                         details = {"R_sigma":round(r_sigma,6),
                                    "implied_sigma_1m":sigma_1m,
-                                   "implied_sigma_q25_24h":quartile,
+                                   "implied_sigma_q25_24h":quartile if iv_ready else None,
+                                   "implied_sigma_ceiling_1m":iv_ceiling,
+                                   "iv_guard":out["iv_guard"],
                                    "taker_share_90s":max(share_up,share_dn)}
     if setup is None or direction is None:
         out["reason"] = ("No qualified TWAP drift" if twap else

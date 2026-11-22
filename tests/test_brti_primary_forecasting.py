@@ -238,7 +238,7 @@ def test_phase2_student_t_is_symmetric_and_heavier_tailed():
     assert _student_t_cdf(-4) > .0001
 
 
-def test_phase2_compression_breakout_student_t_and_macro_kill():
+def test_phase2_compression_breakout_student_t_and_macro_kill(monkeypatch):
     from app.axiom_brain import decide
     from app.brti_candles import completed_five_minute
     from app.orderbook import normalize_orderbook
@@ -292,6 +292,26 @@ def test_phase2_compression_breakout_student_t_and_macro_kill():
     assert signal["invalidation_rule"]["type"] == "BRTI_CLOSE_BACK_INSIDE_RANGE"
     assert signal["kill_switch_triggered"] is False
     assert decide(market,brti,bars,five,book,{**flow,"available":False},now,tape=Tape())["action"] == "WAIT"
+    # Cold start never bypasses IV: a real BRTI-derived ceiling substitutes
+    # for the unavailable 24h observed Kalshi bottom-quartile threshold.
+    from app import axiom_brain
+    class ColdTape:
+        def snapshot(self, *_):
+            return {"implied_sigma_quartile_24h": None,
+                    "implied_history_ready": False, "mid_jump_20s": 0}
+    monkeypatch.setattr(axiom_brain, "_implied_minute_sigma",
+                        lambda *args: .0004)
+    allowed = decide(market,brti,bars,five,book,flow,now,tape=ColdTape())
+    assert allowed["action"] == "BUY_YES", allowed
+    assert allowed["iv_guard"] == "cold_start_ceiling"
+    assert 0 < allowed["iv_ceiling_1m"] <= .0012
+    assert allowed["details"]["iv_guard"] == "cold_start_ceiling"
+    monkeypatch.setattr(axiom_brain, "_implied_minute_sigma",
+                        lambda *args: .002)
+    blocked = decide(market,brti,bars,five,book,flow,now,tape=ColdTape())
+    assert blocked["action"] == "WAIT"
+    assert blocked["iv_guard"] == "cold_start_ceiling"
+    assert blocked["implied_sigma_1m"] > blocked["iv_ceiling_1m"]
 
 
 def test_phase2_twap_drift_sweep_fade_and_read_only_time_stop():
@@ -370,3 +390,20 @@ def test_phase2_twap_drift_sweep_fade_and_read_only_time_stop():
     assert fresh["setup_type"] == "SINGLE_VENUE_SWEEP_FADE"
     assert fresh["entry_price"] == .30
     assert fresh["take_profit"] == max(.60,min(.85,fresh["fair_prob"]))
+
+
+
+def test_phase2_paper_position_lookup_does_not_write_or_change_trade_state(env):
+    main, clock, provider, _, _ = env
+    market = provider.market(clock.now)
+    main.ledger.trade(market, "YES", clock.now, source="PHASE2_READONLY")
+    conn = main.ledger.conn
+    before = [tuple(row) for row in conn.execute("SELECT * FROM paper_trades")]
+    changed = conn.total_changes
+    first = main.ledger.open_paper(market["ticker"])
+    assert first["side"] == "YES" and first["entry"] == market["yes_ask"]
+    first["side"] = "NO"  # Mutating a returned copy cannot alter SQLite.
+    assert main.ledger.open_paper(market["ticker"])["side"] == "YES"
+    assert main.ledger.open_paper("KXBTC15M-UNKNOWN") is None
+    assert conn.total_changes == changed
+    assert [tuple(row) for row in conn.execute("SELECT * FROM paper_trades")] == before
