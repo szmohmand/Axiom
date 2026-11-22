@@ -9,6 +9,7 @@ from app.candlestick_context import read_candlestick_context
 from app.candlestick_challenger import derive_candlestick_challenger
 from app.ensemble import engine_pack
 from app.storage import Ledger
+from test_e2e_synthetic import env
 
 
 def declining_bars(n=40):
