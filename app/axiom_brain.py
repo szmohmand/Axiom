@@ -636,10 +636,11 @@ def decide(market, brti, candles, five, book, flow, now, *,
     if not 180 <= remaining <= 720:
         out["reason"] = "Outside 3-12 minute entry window"
         return out
-    if not (_bars_usable(candles,now,61,60) and _bars_usable(five,now,12,300)):
-        out["reason"] = "Insufficient contiguous 1m/5m authenticated BRTI history"
-        return out
-    out["regime"] = _regime(candles,five)
+    # TWAP drift and single-venue sweeps need authenticated BRTI fair value,
+    # not a complete 60-minute regime history. Compression still does.
+    structure_ready = (_bars_usable(candles,now,61,60) and
+                       _bars_usable(five,now,12,300))
+    out["regime"] = _regime(candles,five) if structure_ready else "WARMING"
     if not current_book(book,market["ticker"],now,15):
         out["reason"] = "Stale or incomplete Kalshi book"
         return out
@@ -704,7 +705,7 @@ def decide(market, brti, candles, five, book, flow, now, *,
                                     "beyond_outlier_usd":venue_mid}
                     details = {"kalshi_mid_jump_20s":round(jump,4),
                                "depth_ratio":depletion["ratio_to_normal"]}
-        if setup is None and out["regime"] == "SQUEEZE":
+        if setup is None and structure_ready and out["regime"] == "SQUEEZE":
             sigma_5s = _positive(brti.get("brti_sigma_5s_3m"))
             sigma_1m = _implied_minute_sigma(market, book, spot, now)
             quartile = _positive(history.get("implied_sigma_quartile_24h"))

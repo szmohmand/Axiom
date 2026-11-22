@@ -345,6 +345,12 @@ def test_phase2_twap_drift_sweep_fade_and_read_only_time_stop():
     assert out["action"] == "BUY_YES",out
     assert out["setup_type"] == "US_SESSION_TWAP_DRIFT"
     assert out["invalidation_rule"]["type"] == "BRTI_STRIKE_BAND_OR_CVD_FLIP"
+    # TWAP remains eligible with 36 real BRTI candles while 60m regime
+    # buffers are warming; Student-t fair value has its own shorter minimum.
+    twap_warm = decide(market,brti,bars[-36:],
+                       completed_five_minute(bars[-36:]),book,flow,now)
+    assert twap_warm["action"] == "BUY_YES",twap_warm
+    assert twap_warm["regime"] == "WARMING"
     # Macro windows suppress a nominally identical otherwise-qualified signal.
     macro_now = datetime(2026,11,23,10,0,0,tzinfo=et).timestamp()
     macro_brti = {**brti,"source_ts_ms":int(macro_now*1000),
@@ -390,6 +396,11 @@ def test_phase2_twap_drift_sweep_fade_and_read_only_time_stop():
     assert fresh["setup_type"] == "SINGLE_VENUE_SWEEP_FADE"
     assert fresh["entry_price"] == .30
     assert fresh["take_profit"] == max(.60,min(.85,fresh["fair_prob"]))
+    fade_warm = decide(fade_market,fade_brti,shifted[-36:],
+                       completed_five_minute(shifted[-36:]),fade_book,
+                       fade_flow,after,tape=FadeTape())
+    assert fade_warm["action"] == "BUY_NO",fade_warm
+    assert fade_warm["regime"] == "WARMING"
 
 
 

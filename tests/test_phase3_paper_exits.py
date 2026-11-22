@@ -196,6 +196,6 @@ def test_phase3_constituent_disconnect_resets_only_affected_venue():
     assert snap["available"] is False  # rolling buffers must rebuild
     tracker=BRTITracker(enabled=True)
     tracker.mark(connected=True,subscribed="cfbenchmarks_value_5hz")
-    pending=tracker.snapshot(1001000)
+    pending=tracker.snapshot(1_800_000_001_000)
     assert pending["status"]=="UNAVAILABLE"
     assert pending["brti_sigma_5s_3m"] is None
