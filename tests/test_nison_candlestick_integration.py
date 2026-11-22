@@ -134,3 +134,30 @@ def test_live_pipeline_exposes_shadow_without_change_to_original_model(env):
                for e in result["engines"])
     got=client.get("/api/state").json()
     assert "candlestick_context" in got and "candlestick_challenger" in got
+
+
+def test_springs_upthrusts_and_closed_box_breakouts_use_preexisting_levels():
+    start=1800000000//60*60
+    original=[]
+    for i in range(40):
+        op=60000+(i%2)*2
+        original.append({"t":start+i*60,"open":op,"high":op+5,
+                         "low":op-5,"close":op+(1 if i%2==0 else -1),
+                         "volume":10})
+    t=original[-1]["t"]
+    now=t+60
+    for changes, expected, delta in (
+        ({"open":60001,"high":60020,"low":59998,"close":60000,"volume":100}, "UPTHRUST", -0.035),
+        ({"open":60000,"high":60003,"low":59975,"close":60001,"volume":100}, "SPRING", 0.035),
+        ({"open":60000,"high":60030,"low":59999,"close":60028,"volume":100}, "BOX_BREAKOUT_UP", 0.025),
+        ({"open":60002,"high":60004,"low":59974,"close":59975,"volume":100}, "BOX_BREAKOUT_DOWN", -0.025),
+    ):
+        bars=original[:-1]+[{**original[-1],**changes}]
+        context=read_candlestick_context(bars,now)
+        assert context["available"]
+        assert context["prior_trend"]=="RANGE"
+        assert expected in [event["name"] for event in context["formations"]]
+        candidate=derive_candlestick_challenger(context,{"available":True,"prob_above":0.5})
+        assert candidate["available"]
+        assert math.isclose(candidate["delta"],delta,abs_tol=1e-8)
+        assert candidate["can_trigger_paper_or_orders"] is False
