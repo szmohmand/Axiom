@@ -87,7 +87,10 @@ def test_real_gap_recovery_flows_through_entire_experimental_pipeline(env):
     assert state['ok'] is True and state['status']=='DEMO'
     assert state['candle_quality']['status']=='RECOVERED_REAL_CONTIGUOUS'
     assert state['candle_quality']['bars_used']==42
-    assert len(state['engines'])==5
+    assert {e['name'] for e in state['engines']}=={
+        'axiom_volatility','aaryann_fair','kalshibot_headstart',
+        'axiom_target_dynamics','axiom_gradient_boosted_btc',
+        'axiom_full_nison','axiom_multi_signal_context'}
     assert state['btc_signals']['available'] is True
     assert state['model']['available'] is True
     assert all(b['t']-a['t']==60 for a,b in zip(state['candles'],state['candles'][1:]))
