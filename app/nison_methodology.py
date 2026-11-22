@@ -25,6 +25,7 @@ _WEIGHTS = {
     "HAMMER": 0.8, "HANGING_MAN": -0.5,
     "BULLISH_ENGULFING": 1.0, "BEARISH_ENGULFING": -1.0,
     "DARK_CLOUD_COVER": -0.9, "PIERCING_PATTERN": 0.9,
+    "ABANDONED_BABY_TOP": -1.15, "ABANDONED_BABY_BOTTOM": 1.15,
     "MORNING_STAR": 1.1, "EVENING_STAR": -1.1,
     "MORNING_DOJI_STAR": 1.2, "EVENING_DOJI_STAR": -1.2,
     "SHOOTING_STAR": -0.8, "INVERTED_HAMMER": 0.5,
@@ -54,8 +55,8 @@ _WEIGHTS = {
 
 _COVERAGE = {
     "3": "Implemented OHLC construction, bodies, shadows, doji and spinning tops",
-    "4": "Implemented umbrellas, engulfing, dark-cloud cover, piercing",
-    "5": "Implemented morning/evening (doji) stars and star-related candles; abandoned baby needs true price gaps",
+    "4": "Implemented umbrellas, engulfing, dark-cloud cover, piercing, on-neck, in-neck and thrusting (no false bullish reversal for weak penetration)",
+    "5": "Implemented morning/evening (doji) stars and star-related candles; abandoned baby requires real two-sided price-window gaps",
     "6": "Implemented harami/cross, tweezers, belt-hold, counterattack, crows, soldiers, gap crows; conservative three-mountain/river/Buddha/dumpling/frypan/tower geometric proxies disclosed as judgmental",
     "7": "Implemented real windows, tasuki gap, side-by-side gap, three methods, separating lines, high/low-price gapping plays",
     "8": "Implemented doji, long-legged/rickshaw, dragonfly, gravestone and tri-star",
@@ -227,6 +228,22 @@ def scan_nison(candles:list[dict],now:float)->dict:
         current["open"]<prev["low"] and current["close"]>
         (prev["open"]+prev["close"])/2 and current["close"]<prev["open"]):
         _append(patterns,"PIERCING_PATTERN",4,strict_opening_gap=True)
+    # Nison's on-neck/in-neck/thrusting distinctions concern a white
+    # counter-candle that fails to push halfway through the prior black
+    # real body. It is NOT silently treated as a bullish piercing signal.
+    if (trend2=="DOWN" and pr["down"] and cur["up"] and
+        current["open"]<prev["low"] and current["close"]<=
+        (prev["open"]+prev["close"])/2):
+        penetration=(current["close"]-prev["close"])/max(pr["body"],1e-9)
+        if abs(current["close"]-prev["low"])<=tol and cur["small"]:
+            _append(patterns,"ON_NECK_PATTERN",4,
+                    no_validated_bullish_reversal=True,strict_opening_gap=True)
+        elif 0<penetration<.15 and cur["small"]:
+            _append(patterns,"IN_NECK_PATTERN",4,
+                    no_validated_bullish_reversal=True,strict_opening_gap=True)
+        elif .15<=penetration<=.5:
+            _append(patterns,"THRUSTING_PATTERN",4,
+                    no_validated_bullish_reversal=True,strict_opening_gap=True)
     # Ch 5: Nison discusses flexible middle/last-body gaps on intraday stars,
     # but NOT rewriting strict abandoned-baby shadow gaps as arbitrary overlap.
     if len(b)>=3:
@@ -244,6 +261,13 @@ def scan_nison(candles:list[dict],now:float)->dict:
             nm="EVENING_DOJI_STAR" if ay["doji"] else "EVENING_STAR"
             _append(patterns,nm,5,intraday_body_gap_optional=True,
                     ideal_middle_body_gap=min(y["open"],y["close"])>max(x["open"],x["close"]))
+        # A true abandoned baby is isolated by shadow gaps ON BOTH sides,
+        # not merely by non-touching real bodies. Intraday star flexibility
+        # DOES NOT turn overlapping BTC candles into abandoned babies.
+        if ay["doji"] and x["low"]>y["high"] and z["low"]>y["high"] and earlier=="DOWN" and az["up"]:
+            _append(patterns,"ABANDONED_BABY_BOTTOM",5,strict_two_sided_shadow_gaps=True)
+        if ay["doji"] and x["high"]<y["low"] and z["high"]<y["low"] and earlier=="UP" and az["down"]:
+            _append(patterns,"ABANDONED_BABY_TOP",5,strict_two_sided_shadow_gaps=True)
         if ax["doji"] and ay["doji"] and az["doji"]:
             if earlier=="DOWN" and y["low"]<min(x["low"],z["low"]):
                 _append(patterns,"TRISTAR_BOTTOM",8,confirmed_gaps=False)
@@ -338,6 +362,8 @@ def scan_nison(candles:list[dict],now:float)->dict:
             _append(patterns,"GRAVESTONE_DOJI",8)
         if cur["up_frac"]>=.25 and cur["low_frac"]>=.25:
             _append(patterns,"LONG_LEGGED_DOJI",8)
+            _append(patterns,"RICKSHAW_MAN",8,
+                    synonym_of="LONG_LEGGED_DOJI",no_extra_vote=True)
     elif cur["small"]:
         _append(patterns,"SPINNING_TOP",3)
     # Completed next-candle confirmation of the preceding completed candle.
