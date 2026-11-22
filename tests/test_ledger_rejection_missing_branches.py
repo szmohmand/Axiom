@@ -16,6 +16,15 @@ def test_first_call_unavailable_model_stays_unwatched(tmp_path):
             assert db.first_call(market,model,64000,1800000000) is None
             assert db.watch_info(market["ticker"]) is None
         assert db.conn.execute("SELECT count(*) FROM first_calls").fetchone()[0]==0
+        # Exercise the complementary populated-watch return from inside
+        # the same SQLite lock context; proves the reported synthetic exit
+        # arc is not a missing application decision.
+        assert db.first_call(market,{"available":True,"side":"ABOVE",
+                          "prob_above":.93},64000,1800000000) is None
+        observed=db.watch_info(market["ticker"])
+        assert observed is not None and observed["side"]=="ABOVE"
+        db.reset_watches()
+        assert db.watch_info(market["ticker"]) is None
     finally:
         db.conn.close()
 
