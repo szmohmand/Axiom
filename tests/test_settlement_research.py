@@ -105,10 +105,13 @@ def test_existing_forecast_is_unchanged_and_shadow_publishes_without_voting(monk
         context={'timeframes':state['higher_timeframes'],
                  'microstructure':state['market_microstructure']},now=now)
     assert state['model']==original
-    assert {e['name'] for e in state['model']['engines']}=={
-        'axiom_volatility','aaryann_fair','kalshibot_headstart',
-        'axiom_target_dynamics','axiom_gradient_boosted_btc',
-        'axiom_full_nison','axiom_multi_signal_context'}
+    expected={'axiom_volatility','aaryann_fair','kalshibot_headstart',
+              'axiom_gradient_boosted_btc','axiom_full_nison',
+              'axiom_multi_signal_context'}
+    if state['btc_signals']['available']:
+        expected.add('axiom_target_dynamics')
+    # Target dynamics is included only when its own BTC source signals exist.
+    assert {e['name'] for e in state['model']['engines']}==expected
     assert state['research_shadow']['research_only']
     assert not state['research_shadow']['votes_in_ensemble']
     assert not state['research_shadow']['can_trigger_paper_or_orders']
