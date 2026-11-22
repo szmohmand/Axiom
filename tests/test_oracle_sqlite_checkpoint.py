@@ -6,14 +6,30 @@ rather than merely asserting that a shell script contains backup-related text.
 import os
 import sqlite3
 import stat
+from contextlib import contextmanager
 
 import pytest
 
 from deploy.oracle import upgrade_sqlite as dbupgrade
 
 
+@contextmanager
+def connected(path):
+    # sqlite3.Connection.__exit__ commits but does NOT close the handle.
+    # Restore tests must model a stopped service with zero live DB writers.
+    db=sqlite3.connect(path)
+    try:
+        yield db
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
 def create(path):
-    with sqlite3.connect(path) as db:
+    with connected(path) as db:
         db.execute("PRAGMA journal_mode=WAL")
         db.execute("CREATE TABLE observations(id INTEGER PRIMARY KEY, btc REAL)")
         db.execute("CREATE TABLE paper_trades(id INTEGER PRIMARY KEY, pnl REAL)")
@@ -23,7 +39,7 @@ def create(path):
 
 
 def facts(path):
-    with sqlite3.connect(path) as db:
+    with connected(path) as db:
         return (
             db.execute("PRAGMA integrity_check").fetchone()[0],
             db.execute("SELECT btc FROM observations ORDER BY id").fetchall(),
@@ -41,16 +57,16 @@ def test_real_wal_database_backup_and_migration_rollback(tmp_path):
     assert stat.S_IMODE(backup.stat().st_mode)==0o600
 
     # Simulate future app adding a schema column and new observations.
-    with sqlite3.connect(live) as db:
+    with connected(live) as db:
         db.execute("ALTER TABLE observations ADD COLUMN future_feature REAL")
         db.execute("INSERT INTO observations(btc,future_feature) VALUES(64000,2.1)")
         db.execute("UPDATE paper_trades SET pnl=0")
     assert facts(live)!=before
 
     dbupgrade.restore(str(backup),str(live))
-    assert facts(live)==before
     assert not (tmp_path/"bot.sqlite3-wal").exists()
     assert not (tmp_path/"bot.sqlite3-shm").exists()
+    assert facts(live)==before
 
 
 def test_backup_never_overwrites_a_previous_checkpoint(tmp_path):
@@ -91,7 +107,7 @@ def test_cli_and_ownership_and_permissions(tmp_path):
     uid,gid=live.stat().st_uid,live.stat().st_gid
     os.chmod(live,0o640)
     assert dbupgrade.main(["backup",str(live),str(backup)])==0
-    with sqlite3.connect(live) as db:
+    with connected(live) as db:
         db.execute("INSERT INTO observations(btc) VALUES(65555)")
     assert dbupgrade.main(["restore",str(backup),str(live)])==0
     assert dbupgrade.main(["verify",str(backup),str(live)])==0
