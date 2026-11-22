@@ -120,8 +120,8 @@ def engine_pack(spot: float | None, market: dict | None, candles: list[dict], si
                      'prob_above':None,'reason':'Fitted model input unavailable'}
         engines.append(engine_result('axiom_gradient_boosted_btc',
             learned.get('prob_above') if learned.get('available') else None,
-            'trained-gradient-boosting','Historical BTC 90-day model with actual future BTC outcomes',
-            independent=True,calibrated=False,training='binance_spot_90day',
+            'trained-gradient-boosting','BRTI-trained 180-day model with actual future 60-second BRTI means',
+            independent=True,calibrated=False,training='cf_brti_historical_180day',
             learning_status=learned.get('reason')))
         try:
             report=scan_nison(candles,now)
