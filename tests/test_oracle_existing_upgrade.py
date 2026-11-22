@@ -68,7 +68,8 @@ def test_persistent_sqlite_backup_original_env_and_rollback_are_preserved():
     assert "SWITCHED=1" in s and 'systemctl start "$SERVICE"' in s
     assert "read-only" in s.lower()
     assert "order_placed" in s
-    assert "independent_btc_forecast_changed" in s
+    assert "q.get('status')!='DISABLED'" in s
+    assert "q.get('read_only') is not True" in s
     assert "http://127.0.0.1:8000" in s
 
 
