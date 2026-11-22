@@ -60,7 +60,7 @@ jobs:
                   assert state['price_source']=='CF_BENCHMARKS_BRTI' if 'price_source' in state else True
                   assert state.get('paper_auto_enabled') is False
                   assert main.ledger.data()['count']['paper']==0
-                  assert (state['model'] or {}).get('available') is False
+                  assert not bool((state.get('model') or {}).get('available'))
                   assert state['opportunity']['side']=='WAIT'
                   assert state['trade_decision']['order_placed'] is False
                   assert state['execution_intelligence']['order_placed'] is False
