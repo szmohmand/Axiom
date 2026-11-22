@@ -1,0 +1,76 @@
+name: Export AXIOM pinned source + integrated research (no credentials)
+on:
+  push:
+    branches: [export/axiom-code-research-trading-rules-2026-11-22]
+permissions:
+  contents: read
+jobs:
+  export:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+      - name: Export exact main release from approved paths only
+        shell: bash
+        env:
+          PINNED_RELEASE: '485a4e5aa5fea64feca48c2150a39c83801d2e22'
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth 1 origin "$PINNED_RELEASE"
+          python - <<'PY'
+          import os, subprocess, tarfile, io, re, zipfile, pathlib
+          sha=os.environ['PINNED_RELEASE']
+          source=subprocess.check_output(['git','archive','--format=tar',sha])
+          archive=tarfile.open(fileobj=io.BytesIO(source))
+          allowed_roots=('app/','reports/','research/','research_sources/','tests/','deploy/oracle/')
+          allowed_root_files={
+            'README.md','TEST_REPORT.md','PHASE0_README.md','LICENSE',
+            'THIRD_PARTY_NOTICES.md','requirements.txt','requirements.lock.txt',
+            'requirements-dev.txt','AGENTS.md'
+          }
+          prohibited=re.compile(r'(^|/)(\.git|\.env($|\.)|id_rsa|id_ed25519|private.?key|credentials)(/|$)',re.I)
+          pem=re.compile(rb'-----BEGIN (?:RSA |EC |OPENSSH |ENCRYPTED )?PRIVATE KEY-----')
+          # These rules match only actual exposed assignments, NOT security
+          # code that contains literal strings documenting environment names.
+          secret_assignment=re.compile(rb'(?im)^\s*(?:KALSHI_PRIVATE_KEY_PEM|KALSHI_API_KEY_ID|BOT_ADMIN_TOKEN|API_SECRET|AWS_SECRET_ACCESS_KEY)\s*=\s*([^\s#]+)')
+          metadata=(f'AXIOM authenticated BRTI-first repository export\n'
+                    f'GitHub repository: szmohmand/Axiom\n'
+                    f'Pinned MAIN commit: {sha}\n'
+                    f'Source: immutable GitHub git archive; no running Oracle access\n'
+                    f'Credentials, env files, private PEM keys and source ZIPs excluded\n'
+                    f'Trading is paper-only; rules to be packaged separately.\n')
+          n=0
+          with zipfile.ZipFile('axiom-pinned-sources.zip','w',zipfile.ZIP_DEFLATED,compresslevel=8) as z:
+            z.writestr('SOURCE_PROVENANCE.txt',metadata)
+            for member in sorted(archive.getmembers(),key=lambda x:x.name):
+              name=member.name
+              if not member.isfile():continue
+              if prohibited.search(name):continue
+              allowed=(name.startswith(allowed_roots) or
+                       name in allowed_root_files or
+                       (name.startswith('phase0/') and '/' not in name[7:] and name.endswith(('.json','.md','.txt'))))
+              if not allowed: continue
+              if name.endswith(('.zip','.db','.sqlite3','.pkl','.pem','.key','.env')): continue
+              data=archive.extractfile(member).read()
+              if pem.search(data):
+                raise SystemExit('Private key detected in approved source path: '+name)
+              # Security code and examples are allowed, but a real credential
+              # assignment where value is not a placeholder is prohibited.
+              for match in secret_assignment.finditer(data):
+                value=match.group(1).strip().strip(b'\"\x27')
+                if value and value.lower() not in (b'none',b'false',b'0',b'your-key',b'placeholder',b'<your-key>') and b'os.environ' not in value:
+                  raise SystemExit('Potential credential assignment in '+name)
+              z.writestr(name,data)
+              n+=1
+          print(f'Exported {n} pinned, allowlisted files without private key bytes')
+          assert n>=120,'Export unexpectedly incomplete'
+          PY
+      - name: Upload immutable source and research ZIP
+        uses: actions/upload-artifact@v6
+        with:
+          name: AXIOM-source-research-export-2026-11-22
+          path: axiom-pinned-sources.zip
+          if-no-files-found: error
+          retention-days: 7
