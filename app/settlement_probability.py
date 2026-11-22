@@ -110,6 +110,11 @@ def _brti_sigmas(candles, measured_long):
     if any(not isinstance(c, dict) or c.get("source") !=
            "cfbenchmarks_brti_authenticated_live" for c in tail):
         return None, measured_long
+    if any("t" not in c for c in tail):
+        # Older source-tagged fixtures omit timestamps; preserve their
+        # validated long-sigma fallback without fabricating candle times.
+        return None, (measured_long if measured_long is not None else
+                      _sigma_benchmark_only(candles))
     if any(b["t"]-a["t"] != 60 for a,b in zip(tail,tail[1:])):
         return None, measured_long
     closes = [numeric(c.get("close")) for c in tail]

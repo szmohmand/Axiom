@@ -224,7 +224,7 @@ def test_phase2_signed_taker_flow_sustained_two_usd_venues():
     assert snap["available"]
     assert snap["confirmed_direction"] == "UP"
     assert snap["cvd_30"] > 0 and snap["cvd_60"] > 0
-    assert snap["cvd_180"] > snap["cvd_60"] > 0
+    assert snap["cvd_180"] >= snap["cvd_60"] > 0  # 45s observed: both include all trades
     assert snap["ofi_30"] > 0 and snap["ofi_60"] > 0
     flow.reset("coinbase")
     assert not flow.snapshot(1044)["available"]
