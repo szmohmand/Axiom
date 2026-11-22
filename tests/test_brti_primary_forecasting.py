@@ -151,7 +151,7 @@ def test_live_brti_warmup_keeps_server_operational_but_blocks_predictions_and_pa
     assert main.ledger.data()['count']=={'calls':0,'paper':0}
 
 
-def test_phase1_real_brti_single_decision_and_one_paper_entry(env, monkeypatch):
+def test_phase2_without_constituent_flow_waits_and_does_not_trade(env, monkeypatch):
     from app.orderbook import normalize_orderbook
     main, clock, provider, client, _ = env
     main.DEMO = False
@@ -188,10 +188,95 @@ def test_phase1_real_brti_single_decision_and_one_paper_entry(env, monkeypatch):
     assert updated["ok"] and updated["status"] == "LIVE"
     assert updated["price_source"] == "CF_BENCHMARKS_BRTI"
     assert updated["model"]["available"]
-    assert updated["model"]["method"] == "single-authenticated-brti-settlement"
+    assert updated["model"]["method"] == "single-axiom-brain-brti-student-t"
     assert [e["name"] for e in updated["engines"]] == ["axiom_brti_settlement"]
-    assert updated["opportunity"]["side"] == "YES"
-    assert updated["trade_decision"]["action"] == "BUY_CANDIDATE"
+    assert updated["opportunity"]["side"] == "WAIT"
+    assert updated["trade_decision"]["action"] == "WAIT"
     assert updated["execution_intelligence"]["order_placed"] is False
-    assert main.ledger.data()["count"]["paper"] == 1
-    assert main.ledger.data()["trades"][0]["status"] == "OPEN"
+    assert main.ledger.data()["count"]["paper"] == 0
+
+
+
+def test_phase2_signed_taker_flow_sustained_two_usd_venues():
+    from app.axiom_brain import ConstituentFlow
+    flow = ConstituentFlow()
+    for step in range(45):
+        now = 1000 + step
+        if step == 0:
+            flow.ingest("coinbase", {"type": "snapshot", "product_id": "BTC-USD",
+                        "bids": [["100", "10"]], "asks": [["101", "10"]]}, now)
+            flow.ingest("kraken", {"channel": "book", "type": "snapshot",
+                        "data": [{"symbol": "BTC/USD", "bids": [{"price": 100, "qty": 10}],
+                                  "asks": [{"price": 101, "qty": 10}]}]}, now)
+        else:
+            flow.ingest("coinbase", {"type": "l2update", "product_id": "BTC-USD",
+                        "changes": [["buy", "100", str(10+step)]]}, now)
+            flow.ingest("kraken", {"channel": "book", "type": "update",
+                        "data": [{"symbol": "BTC/USD",
+                                  "bids": [{"price": 100, "qty": 10+step}],
+                                  "asks": []}]}, now)
+        flow.ingest("coinbase", {"type": "match", "product_id": "BTC-USD",
+                    "trade_id": step, "side": "sell", "size": "0.2"}, now)
+        flow.ingest("kraken", {"channel": "trade", "type": "update",
+                    "data": [{"symbol": "BTC/USD", "trade_id": step,
+                              "side": "buy", "qty": 0.3}]}, now)
+    snap = flow.snapshot(1044)
+    assert snap["available"]
+    assert snap["confirmed_direction"] == "UP"
+    assert snap["cvd_30"] > 0 and snap["cvd_60"] > 0
+    assert snap["cvd_180"] > snap["cvd_60"] > 0
+    assert snap["ofi_30"] > 0 and snap["ofi_60"] > 0
+    flow.reset("coinbase")
+    assert not flow.snapshot(1044)["available"]
+
+
+def test_phase2_student_t_is_symmetric_and_heavier_tailed():
+    from app.settlement_probability import _student_t_cdf, NU
+    assert NU == 4.5
+    assert abs(_student_t_cdf(0)-.5) < 1e-12
+    assert abs(_student_t_cdf(-2) - (1-_student_t_cdf(2))) < 1e-10
+    assert _student_t_cdf(-4) > .0001
+
+
+def test_phase2_unified_brain_squeeze_entry_and_exact_brti_invalidation():
+    from app.axiom_brain import decide
+    from app.brti_candles import completed_five_minute
+    from app.orderbook import normalize_orderbook
+    import math
+    base = 1800000000
+    now = base + 65*60 + 1
+    bars = []
+    for i in range(65):
+        t = base+i*60
+        if i < 54:
+            price = 100 + .35*math.sin(i*0.7)
+            bar = {"t": t, "open": price-.06, "close": price,
+                   "high": price+.10, "low": price-.10}
+        elif i < 64:
+            bar = {"t": t, "open": 100., "close": 100.,
+                   "high": 100.02, "low": 99.98}
+        else:
+            bar = {"t": t, "open": 100., "close": 100.4,
+                   "high": 100.42, "low": 99.99}
+        bars.append({**bar, "source": "cfbenchmarks_brti_authenticated_live",
+                     "volume": None})
+    five = completed_five_minute(bars)
+    market = {"ticker": "KXBTC15M-PHASE2", "target": 99.5,
+              "close_ts": now+450, "seconds_left": 450}
+    brti = {"status": "STREAMING", "authenticated_stream_verified": True,
+            "latest_value_usd": "100.4", "source_ts_ms": int(now*1000),
+            "axiom_received_at_ms": int(now*1000),
+            "completed_minute_sigma_45": .001}
+    book = normalize_orderbook({"orderbook_fp": {
+            "yes_dollars": [["0.30", "10"]],
+            "no_dollars": [["0.68", "10"]]}}, market["ticker"], now)
+    aligned = {"available": True, "confirmed_direction": "UP"}
+    signal = decide(market, brti, bars, five, book, aligned, now)
+    assert signal["action"] == "BUY_YES", signal
+    assert signal["setup_type"] == "SQUEEZE_BREAKOUT"
+    assert signal["entry_price"] == .32
+    assert signal["fair_prob"] > signal["entry_price"]
+    assert .62 <= signal["take_profit"] <= .99
+    assert signal["invalidation_price"] == max(b["high"] for b in bars[-11:-1])
+    assert decide(market, brti, bars, five, book, {**aligned, "confirmed_direction": "DOWN"}, now)["action"] == "WAIT"
+    assert decide({**market, "close_ts": now+125}, brti, bars, five, book, aligned, now)["action"] == "WAIT"
