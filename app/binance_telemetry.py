@@ -125,7 +125,6 @@ class BinanceTelemetry:
         with self.lock:
             latest=self.trades[-1].copy() if self.trades else None
             recent=[p.copy() for p in self.trades]
-                    if self.trades else []
             funding=self.funding.copy() if self.funding else None
             err=self.last_error
             f_err=self.last_funding_error
