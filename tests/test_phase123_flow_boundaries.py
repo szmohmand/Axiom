@@ -486,3 +486,55 @@ def test_coinbase_public_websocket_subscription_error_is_not_silent(monkeypatch,
     with pytest.raises(RuntimeError, match="Coinbase subscription rejected"):
         asyncio.run(brain._coinbase_feed(flow, stop, order_book=True))
     assert flow.books["coinbase"] is None
+
+
+def test_crossed_incremental_book_keeps_last_valid_data_without_false_refresh():
+    flow = brain.ConstituentFlow()
+    flow.connection_event("coinbase", "SUBSCRIPTION_SENT", now=NOW-40)
+    flow._book("coinbase", {100.: 4.}, {101.: 6.}, NOW, snapshot=True)
+    flow._trade("coinbase", 1000, "buy", .25, NOW)
+    old_book = flow.books["coinbase"]
+    old_trade = list(flow.trades["coinbase"])
+    # Transient crossed delta cannot invalidate an unrelated trade stream or
+    # renew the freshness clock of a rejected, potentially corrupt book.
+    flow._book("coinbase", {102.: 2.}, {}, NOW+10, snapshot=False)
+    assert flow.books["coinbase"] is old_book
+    assert flow.book_at["coinbase"] == NOW
+    assert list(flow.trades["coinbase"]) == old_trade
+    assert flow.diagnostics(NOW+10)["coinbase"]["ready"] is True
+    assert flow.diagnostics(NOW+31)["coinbase"]["book_ready"] is False
+    assert flow.diagnostics(NOW+31)["coinbase"]["trade_ready"] is True
+    assert flow.diagnostics(NOW+31)["coinbase"]["health_error"] == "No recent valid order book"
+    # A subsequent consistent update re-establishes a genuinely fresh book.
+    flow._book("coinbase", {100.: 5.}, {101.: 7.}, NOW+32, snapshot=False)
+    assert flow.diagnostics(NOW+32)["coinbase"]["ready"] is True
+    assert flow.book_at["coinbase"] == NOW+32
+    assert flow.diagnostics(NOW+46)["coinbase"]["trade_ready"] is False
+
+
+def test_invalid_snapshot_drops_only_book_and_valid_snapshot_recovers():
+    flow = brain.ConstituentFlow()
+    flow._book("kraken", {100.: 1.}, {101.: 2.}, NOW-1, snapshot=True)
+    flow._trade("kraken", "trade-1", "sell", .4, NOW-1)
+    flow._book("kraken", {102.: 1.}, {101.: 1.}, NOW, snapshot=True)
+    assert flow.books["kraken"] is None
+    assert flow.book_at["kraken"] is None
+    assert flow.last_valid_book_at["kraken"] == NOW-1
+    assert flow.trade_at["kraken"] == NOW-1
+    assert len(flow.trades["kraken"]) == 1
+    flow._book("kraken", {100.: 3.}, {101.: 4.}, NOW+1, snapshot=True)
+    assert flow.diagnostics(NOW+1)["kraken"]["book_ready"] is True
+    assert len(flow.trades["kraken"]) == 1
+
+
+def test_unchanged_live_venue_book_stays_ready_through_normal_feed_gap():
+    flow = brain.ConstituentFlow()
+    for venue in brain.VENUES:
+        flow.connection_event(venue, "SUBSCRIPTION_SENT", now=NOW-60)
+        flow._book(venue, {100.: 3.}, {101.: 4.}, NOW-8, snapshot=True)
+        flow._trade(venue, "id-"+venue, "buy", .5, NOW-8)
+        assert flow.diagnostics(NOW)[venue]["ready"] is True
+        assert venue in flow.snapshot(NOW)["venues"]
+        assert flow.diagnostics(NOW+20)[venue]["book_ready"] is True
+        assert flow.diagnostics(NOW+38)[venue]["book_ready"] is False
+        assert flow.diagnostics(NOW+38)[venue]["trade_ready"] is False
