@@ -17,7 +17,7 @@ from .settlement_probability import forecast as brti_settlement_forecast, _stude
 
 VENUES = ("coinbase", "kraken", "bitstamp")
 URLS = {
-    "coinbase": "wss://ws-feed.exchange.coinbase.com",
+    "coinbase": "wss://advanced-trade-ws.coinbase.com",
     "kraken": "wss://ws.kraken.com/v2",
     "bitstamp": "wss://ws.bitstamp.net",
 }
@@ -26,6 +26,7 @@ BRTI_SOURCE = "cfbenchmarks_brti_authenticated_live"
 COLD_START_IV_MAX_1M = 0.0012
 LOG = logging.getLogger(__name__)
 CONSTITUENT_MAX_FRAME_BYTES = 16 * 1024 * 1024
+COINBASE_MATCHES_URL = "wss://ws-feed.exchange.coinbase.com"
 
 
 def _positive(value):
@@ -257,6 +258,34 @@ class ConstituentFlow:
         now = time.time() if now is None else float(now)
         with self.lock:
             if venue == "coinbase":
+                if packet.get("channel") == "l2_data":
+                    for event in packet.get("events", []):
+                        if not isinstance(event, dict) or event.get("product_id") != "BTC-USD":
+                            continue
+                        kind = event.get("type")
+                        if kind not in ("snapshot", "update"):
+                            continue
+                        bids, asks = {}, {}
+                        for row in event.get("updates", []):
+                            if not isinstance(row, dict):
+                                continue
+                            price = _positive(row.get("price_level"))
+                            try:
+                                qty = float(row.get("new_quantity"))
+                            except (TypeError, ValueError, OverflowError):
+                                continue
+                            if price is None or not math.isfinite(qty) or qty < 0:
+                                continue
+                            if kind == "snapshot" and qty == 0:
+                                continue
+                            side = row.get("side")
+                            if side == "bid":
+                                bids[price] = qty
+                            elif side == "offer":
+                                asks[price] = qty
+                        if bids or asks or kind == "snapshot":
+                            self._book(venue, bids, asks, now, snapshot=(kind == "snapshot"))
+                    return
                 kind = packet.get("type")
                 if packet.get("product_id") != "BTC-USD":
                     return
@@ -439,15 +468,42 @@ class ConstituentFlow:
             }
 
 
+async def _coinbase_feed(flow, stop, *, order_book):
+    """Public Advanced Trade L2 plus separate Exchange matches (maker-side semantics)."""
+    import websockets
+    url = URLS["coinbase"] if order_book else COINBASE_MATCHES_URL
+    channel = ({"channel": "level2"} if order_book
+               else {"channels": ["matches"]})
+    async with websockets.connect(url, open_timeout=10, close_timeout=3,
+                                  ping_interval=20, ping_timeout=15,
+                                  max_size=CONSTITUENT_MAX_FRAME_BYTES) as ws:
+        await ws.send(json.dumps({"type": "subscribe", "product_ids": ["BTC-USD"],
+                                  **channel}))
+        flow.connection_event("coinbase", "SUBSCRIPTION_SENT")
+        while not stop.is_set():
+            try:
+                raw = await asyncio.wait_for(ws.recv(), timeout=30)
+            except asyncio.TimeoutError as exc:
+                raise TimeoutError("coinbase WebSocket received no data for 30s") from exc
+            packet = json.loads(raw)
+            if packet.get("type") == "error" or packet.get("channel") == "error":
+                raise RuntimeError("Coinbase subscription rejected: " +
+                                   str(packet.get("reason") or packet.get("message"))[:200])
+            flow.ingest("coinbase", packet)
+
+
 async def _session(flow, venue, stop):
+    if venue == "coinbase":
+        # Exchange level2 requires authentication; use public Advanced Trade
+        # order books and retain public Exchange matches for signed trades.
+        await asyncio.gather(_coinbase_feed(flow, stop, order_book=True),
+                             _coinbase_feed(flow, stop, order_book=False))
+        return
     import websockets
     async with websockets.connect(URLS[venue], open_timeout=10, close_timeout=3,
                                   ping_interval=20, ping_timeout=15,
                                   max_size=CONSTITUENT_MAX_FRAME_BYTES) as ws:
-        if venue == "coinbase":
-            await ws.send(json.dumps({"type": "subscribe", "product_ids": ["BTC-USD"],
-                                      "channels": ["level2", "matches"]}))
-        elif venue == "kraken":
+        if venue == "kraken":
             await ws.send(json.dumps({"method": "subscribe",
                                       "params": {"channel": "book", "symbol": ["BTC/USD"],
                                                  "depth": 100, "snapshot": True}}))
@@ -466,7 +522,6 @@ async def _session(flow, venue, stop):
                 raise TimeoutError(f"{venue} WebSocket received no data for 30s") from exc
             packet = json.loads(raw)
             flow.ingest(venue, packet)
-
 
 def _venue_worker(flow, venue, stop):
     backoff = 2
