@@ -149,6 +149,39 @@ def read_candlestick_context(candles: list[dict], now: float) -> dict[str, Any]:
         common.append("RELATIVE_VOLUME_SPIKE")
 
     events=[]
+    # Nison Ch. 11: a spring/upthrust is a FAILED excursion through an
+    # already-established level, not a touch that predicts a sure reversal.
+    # Extra volume is an AXIOM research corroboration rule, not a quote.
+    if (high_volume and before_last in ("DOWN", "RANGE") and
+            current["low"] < support - .15*atr and
+            current["close"] > support + .10*atr):
+        events.append(_feature(
+            "SPRING", "Prior support briefly broke but the close reclaimed it",
+            "BULLISH_CAUTION", "CLOSED_BACK_INSIDE_RANGE; FOLLOW_THROUGH_REQUIRED",
+            common+["RECLAIMED_PRIOR_SUPPORT"]))
+    if (high_volume and before_last in ("UP", "RANGE") and
+            current["high"] > resistance + .15*atr and
+            current["close"] < resistance - .10*atr):
+        events.append(_feature(
+            "UPTHRUST", "Prior resistance briefly broke but the close fell back beneath it",
+            "BEARISH_CAUTION", "CLOSED_BACK_INSIDE_RANGE; FOLLOW_THROUGH_REQUIRED",
+            common+["REJECTED_PRIOR_RESISTANCE"]))
+    # Nison Ch. 16: a box-range breakout needs a CLOSE beyond the prior
+    # range, directional candle strength and observed volume. It is still
+    # descriptive, not a guaranteed continuation.
+    if high_volume and before_last == "RANGE":
+        if (current["close"] > resistance + .15*atr and
+                sh["body_fraction"] >= .55 and sh["close_location"] >= .75):
+            events.append(_feature(
+                "BOX_BREAKOUT_UP", "Strong completed close above prior 20-minute range",
+                "BULLISH_CAUTION", "CLOSED_ABOVE_RANGE; FOLLOW_THROUGH_REQUIRED",
+                common+["CLOSED_OVER_PRIOR_RESISTANCE"]))
+        elif (current["close"] < support - .15*atr and
+                sh["body_fraction"] >= .55 and sh["close_location"] <= .25):
+            events.append(_feature(
+                "BOX_BREAKOUT_DOWN", "Strong completed close below prior 20-minute range",
+                "BEARISH_CAUTION", "CLOSED_BELOW_RANGE; FOLLOW_THROUGH_REQUIRED",
+                common+["CLOSED_UNDER_PRIOR_SUPPORT"]))
     lower_umbrella=(sh["lower"]>=2*max(sh["body"],.02*sh["span"])
                     and sh["lower_fraction"]>=.55
                     and sh["upper_fraction"]<=.15)
