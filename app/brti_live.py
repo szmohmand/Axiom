@@ -12,6 +12,7 @@ from decimal import Decimal, InvalidOperation
 import json
 import math
 import os
+import statistics
 import threading
 import time
 
@@ -105,6 +106,23 @@ def parse_update(packet, local_ms):
         row["quarter_hour_final_minute_provider"] = _average(
             msg.get("last_60s_windowed_average_15min"))
     return row
+
+
+def _three_minute_five_second_sigma(seconds, source_second):
+    """36 consecutive realized five-second BRTI returns; no synthetic ticks."""
+    final_start = int(source_second // 5) * 5
+    closes = []
+    for start in range(final_start - 185, final_start, 5):
+        observed = [seconds.get(t) for t in range(start, start+5)]
+        valid = [p for p in observed if p is not None and math.isfinite(p) and p > 0]
+        if len(valid) < 3:
+            return None
+        closes.append(valid[-1])
+    returns = [math.log(b/a) for a,b in zip(closes, closes[1:])]
+    if len(returns) != 36:
+        return None
+    sigma = statistics.stdev(returns)
+    return sigma if math.isfinite(sigma) and sigma >= 1e-10 else None
 
 
 class BRTITracker:
@@ -202,6 +220,9 @@ class BRTITracker:
             candles = completed_one_minute(self.seconds, now_ms / 1000) if status == "STREAMING" else []
             five = completed_five_minute(candles)
             sigma = completed_minute_sigma(candles)
+            sigma_5s = (_three_minute_five_second_sigma(
+                self.seconds, current["source_ts_ms"] // 1000)
+                if status == "STREAMING" and current else None)
             market = self.first_observed_market
             prefix = (final_minute_prefix(
                 self.seconds, market.get("close_ts"),
@@ -227,6 +248,7 @@ class BRTITracker:
                     "btc_1m_candles": candles,
                     "btc_5m_candles": five,
                     "completed_minute_sigma_45": sigma,
+                    "brti_sigma_5s_3m": sigma_5s,
                     "settlement_window_stats": prefix,
                     "candle_quality": quality,
                     "price_candle_source": "cfbenchmarks_brti_authenticated_live",

@@ -26,7 +26,7 @@ from .orderbook import unavailable as unavailable_book
 from .execution_evidence import examine_liquidity
 from .brti_live import BRTITracker, run_worker as brti_reference_worker
 from .settlement_probability import forecast as brti_settlement_forecast
-from .axiom_brain import ConstituentFlow, decide as axiom_decide, start_flow_workers
+from .axiom_brain import ConstituentFlow, MarketTape, decide as axiom_decide, start_flow_workers
 from .decision_signals import derive_signals, unavailable as unavailable_signals, execution_decision
 from .intracontract import (IntracontractTracker, unavailable as unavailable_timeline,
                             wait as wait_resale, resale_screen, resale_position_review)
@@ -47,6 +47,7 @@ BINANCE_INTELLIGENCE_ENABLED = False  # Phase 1: no Binance connection or active
 CANDLESTICK_SHADOW_GRADING_ENABLED = os.environ.get('CANDLESTICK_SHADOW_GRADING_ENABLED','0') == '1'
 brti_tracker = BRTITracker(enabled=BRTI_LIVE_ENABLED)
 flow_tracker = ConstituentFlow()
+market_tape = MarketTape()
 binance_telemetry = BinanceTelemetry(enabled=BINANCE_INTELLIGENCE_ENABLED)
 provider = DemoProvider() if DEMO else LiveProvider()
 ledger = Ledger(DATA_PATH)
@@ -181,31 +182,6 @@ def _view_locked(now):
 
 
 
-def _brti_only_model(market, brti, candles, now):
-    """Phase 1 live forecast: one BRTI settlement estimate, zero other votes."""
-    terms={k:market[k] for k in ('ticker','target','close_ts','seconds_left')
-           if k in market}
-    result=brti_settlement_forecast(terms,brti,candles,now)
-    available=bool(result.get('available'))
-    p=result.get('prob_above') if available else None
-    side='ABOVE' if p is not None and p>.5 else (
-         'BELOW' if p is not None and p<.5 else 'WAIT')
-    voter={'name':'axiom_brti_settlement','available':available,
-           'prob_above':p,'prob_below':result.get('prob_below') if available else None,
-           'side':side,'method':result.get('method'),'reason':result.get('reason'),
-           'independent':True,'calibrated':False}
-    return {'available':available,'prob_above':p,
-            'prob_below':result.get('prob_below') if available else None,
-            'side':side,'reason':result.get('reason'),
-            'method':'single-authenticated-brti-settlement',
-            'engines':[voter],'agreement':1 if available else None,
-            'spread':0 if available else None,'validated':False,
-            'active_predictive_models':['axiom_brti_settlement'] if available else [],
-            'missing_predictive_models':[] if available else ['axiom_brti_settlement'],
-            'alpha_vs_market':None,'forecast_minus_quote_mid':None,
-            'all_signal_integration_active':False}
-
-
 def _brti_only_update_once(now):
     """Phase 2 live path: single BRTI settlement + structure + USD flow brain."""
     errors = {}
@@ -245,17 +221,27 @@ def _brti_only_update_once(now):
                 book = reader(market, now)
             except Exception as exc:
                 book = unavailable_book(market["ticker"], _error_message(exc))
-    flow = flow_tracker.snapshot(now)
+    # The received Kalshi book may postdate the poll-start clock by up to 2s.
+    signal_now = max(now, float(book.get("received_at") or now))
+    flow = flow_tracker.snapshot(signal_now)
     decision = {"action": "WAIT", "setup_type": "NONE", "fair_prob": None,
-                "entry_price": None, "take_profit": None, "invalidation_price": None,
+                "entry_price": None, "take_profit": None,
+                "invalidation_rule": None, "invalidation_price": None,
+                "kill_switch_triggered": False, "exit_signal": None,
                 "side": None, "prob_above": None, "prob_below": None,
                 "forecast_available": False, "order_placed": False,
                 "read_only": True, "reason": "Awaiting authenticated BRTI and Kalshi"}
     if market and spot is not None and not errors:
         try:
-            decision = axiom_decide(market, reference, candles, five, book, flow, now)
+            market_tape.observe(market, book, spot, signal_now)
+            position = ledger.open_paper(market["ticker"])
+            decision = axiom_decide(
+                market, reference, candles, five, book, flow, signal_now,
+                tape=market_tape, open_side=position["side"] if position else None)
         except (KeyError, TypeError, ValueError, OverflowError, ArithmeticError) as exc:
             errors["forecast"] = _error_message(exc)
+        except Exception as exc:
+            errors["ledger_read"] = _error_message(exc)
     available = bool(decision["forecast_available"])
     if market and spot is not None and not available and not errors and len(candles) >= 31:
         errors["forecast"] = decision.get("reason", "Unavailable authentic BRTI probability")
@@ -281,7 +267,8 @@ def _brti_only_update_once(now):
     if errors or persistent_faults:
         decision.update(action="WAIT", setup_type="NONE", side=None,
                         entry_price=None, take_profit=None, invalidation_price=None,
-                        fair_prob=None, reason="Live input or ledger unavailable")
+                        invalidation_rule=None, fair_prob=None,
+                        kill_switch_triggered=True, reason="Live input or ledger unavailable")
         model["side"] = "WAIT"
         if model["engines"]:
             model["engines"][0]["side"] = "WAIT"
@@ -321,7 +308,8 @@ def _brti_only_update_once(now):
             errors["ledger_write"] = _error_message(exc)
             decision.update(action="WAIT", setup_type="NONE", side=None,
                             entry_price=None, take_profit=None, invalidation_price=None,
-                            fair_prob=None, reason="Ledger write failed")
+                            invalidation_rule=None, fair_prob=None,
+                            kill_switch_triggered=True, reason="Ledger write failed")
             chosen = False
             op = {"side": "WAIT", "edge": None, "entry_price": None,
                   "reason": "Ledger write failed"}
@@ -345,6 +333,9 @@ def _brti_only_update_once(now):
                           "entry_price": decision.get("entry_price"),
                           "take_profit": decision.get("take_profit"),
                           "invalidation_price": decision.get("invalidation_price"),
+                          "invalidation_rule": decision.get("invalidation_rule"),
+                          "kill_switch_triggered": decision.get("kill_switch_triggered"),
+                          "exit_signal": decision.get("exit_signal"),
                           "order_placed": False, "read_only": True,
                           "reason": decision["reason"]},
                       "btc_signals": {
@@ -842,7 +833,7 @@ def get_state():
     d['manual_paper_available']=bool(ADMIN_TOKEN) and d['ok'] and bool(d.get('market')) and bool((d.get('model') or {}).get('available'))
     d['disclaimer']=('Experimental models and gross simulated trading only. SYNTHETIC DEMO BTC spot is NOT the BRTI settlement index. No real orders.'
                     if DEMO else
-                    'Phase 2 uses authenticated CF Benchmarks BRTI for price and settlement; free USD constituent books and trades confirm manual directional entries. One paper/signal decision; no real orders.')
+                    'Phase 2 uses authenticated CF Benchmarks BRTI for price and settlement. Free USD constituent books/trades measure flow and dispersion only; macro and TWAP gates control manual signals. No real orders.')
     return JSONResponse(d,headers={'Cache-Control':'no-store'})
 
 class PaperRequest(BaseModel):

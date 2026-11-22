@@ -238,45 +238,135 @@ def test_phase2_student_t_is_symmetric_and_heavier_tailed():
     assert _student_t_cdf(-4) > .0001
 
 
-def test_phase2_unified_brain_squeeze_entry_and_exact_brti_invalidation():
+def test_phase2_compression_breakout_student_t_and_macro_kill():
     from app.axiom_brain import decide
     from app.brti_candles import completed_five_minute
     from app.orderbook import normalize_orderbook
     import math
-    base = 1800000000
+    base = 1800000000  # 03:00 ET, outside macro and TWAP windows
     now = base + 65*60 + 1
     bars = []
     for i in range(65):
         t = base+i*60
         if i < 54:
-            price = 100 + .35*math.sin(i*0.7)
-            bar = {"t": t, "open": price-.06, "close": price,
-                   "high": price+.10, "low": price-.10}
+            price = 100+.35*math.sin(i*.7)
+            bar = {"t":t,"open":price-.06,"close":price,
+                   "high":price+.10,"low":price-.10}
         elif i < 64:
-            bar = {"t": t, "open": 100., "close": 100.,
-                   "high": 100.02, "low": 99.98}
+            bar = {"t":t,"open":100.,"close":100.,
+                   "high":100.02,"low":99.98}
         else:
-            bar = {"t": t, "open": 100., "close": 100.4,
-                   "high": 100.42, "low": 99.99}
-        bars.append({**bar, "source": "cfbenchmarks_brti_authenticated_live",
-                     "volume": None})
+            bar = {"t":t,"open":100.,"close":100.4,
+                   "high":100.42,"low":99.99}
+        bars.append({**bar,"source":"cfbenchmarks_brti_authenticated_live",
+                     "volume":None})
     five = completed_five_minute(bars)
-    market = {"ticker": "KXBTC15M-PHASE2", "target": 99.5,
-              "close_ts": now+450, "seconds_left": 450}
-    brti = {"status": "STREAMING", "authenticated_stream_verified": True,
-            "latest_value_usd": "100.4", "source_ts_ms": int(now*1000),
-            "axiom_received_at_ms": int(now*1000),
-            "completed_minute_sigma_45": .001}
-    book = normalize_orderbook({"orderbook_fp": {
-            "yes_dollars": [["0.30", "10"]],
-            "no_dollars": [["0.68", "10"]]}}, market["ticker"], now)
-    aligned = {"available": True, "confirmed_direction": "UP"}
-    signal = decide(market, brti, bars, five, book, aligned, now)
+    market = {"ticker":"KXBTC15M-PHASE2","target":100.48,
+              "close_ts":now+450,"seconds_left":450}
+    brti = {"status":"STREAMING","authenticated_stream_verified":True,
+            "latest_value_usd":"100.4","source_ts_ms":int(now*1000),
+            "axiom_received_at_ms":int(now*1000),
+            "completed_minute_sigma_45":.001,"brti_sigma_5s_3m":.0006}
+    book = normalize_orderbook({"orderbook_fp":{
+            "yes_dollars":[["0.30","10"]],"no_dollars":[["0.68","10"]]}},
+            market["ticker"],now)
+    flow = {"available":True,"confirmed_direction":"UP",
+            "CVD_norm_90s":.5,"cvd_90s_span":85,
+            "trade_count_90s":80,"taker_buy_share_90s":.75,
+            "taker_sell_share_90s":.25,
+            "depth_depletion":{"coinbase":{
+                "bid":{"ratio_to_normal":.7,"below_half_for_15s":False},
+                "ask":{"ratio_to_normal":.7,"below_half_for_15s":False}}},
+            "delta_venue":None,"delta_venue_pct":None,
+            "synthetic_price":None,"OBI_spot":.3,"D_spot":50}
+    class Tape:
+        def snapshot(self, *_):
+            return {"implied_sigma_quartile_24h":.003,
+                    "implied_history_ready":True,"mid_jump_20s":0}
+    signal = decide(market,brti,bars,five,book,flow,now,tape=Tape())
     assert signal["action"] == "BUY_YES", signal
-    assert signal["setup_type"] == "SQUEEZE_BREAKOUT"
+    assert signal["setup_type"] == "COMPRESSION_BREAKOUT"
     assert signal["entry_price"] == .32
-    assert signal["fair_prob"] > signal["entry_price"]
-    assert .62 <= signal["take_profit"] <= .99
-    assert signal["invalidation_price"] == max(b["high"] for b in bars[-11:-1])
-    assert decide(market, brti, bars, five, book, {**aligned, "confirmed_direction": "DOWN"}, now)["action"] == "WAIT"
-    assert decide({**market, "close_ts": now+125}, brti, bars, five, book, aligned, now)["action"] == "WAIT"
+    assert signal["fair_prob_side"] == "YES"
+    assert signal["take_profit"] == max(.60,min(.85,signal["fair_prob"]))
+    assert signal["invalidation_rule"]["type"] == "BRTI_CLOSE_BACK_INSIDE_RANGE"
+    assert signal["kill_switch_triggered"] is False
+    assert decide(market,brti,bars,five,book,{**flow,"available":False},now,tape=Tape())["action"] == "WAIT"
+
+
+def test_phase2_twap_drift_sweep_fade_and_read_only_time_stop():
+    from app.axiom_brain import decide
+    from app.brti_candles import completed_five_minute
+    from app.orderbook import normalize_orderbook
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    from math import sin
+    et = ZoneInfo("America/New_York")
+    now = datetime(2026,11,23,10,30,5,tzinfo=et).timestamp()
+    base = int(now//60)*60 - 65*60
+    bars = [{"t":base+i*60,"open":100+.02*sin(i),"high":100.1,
+             "low":99.9,"close":100+.02*sin(i),
+             "source":"cfbenchmarks_brti_authenticated_live","volume":None}
+            for i in range(65)]
+    five = completed_five_minute(bars)
+    market = {"ticker":"KXBTC15M-TWAP","target":100.,
+              "close_ts":now+450,"seconds_left":450}
+    brti = {"status":"STREAMING","authenticated_stream_verified":True,
+            "latest_value_usd":"100.04","source_ts_ms":int(now*1000),
+            "axiom_received_at_ms":int(now*1000),
+            "completed_minute_sigma_45":.001}
+    book = normalize_orderbook({"orderbook_fp":{
+            "yes_dollars":[[".32","10"]],"no_dollars":[[".66","10"]]}},
+            market["ticker"],now)
+    flow = {"available":True,"CVD_norm_5m":.55,"rho_trade":.35,
+            "cvd_5m_span":285,"delta_venue":None,
+            "delta_venue_pct":None,"synthetic_price":None}
+    out = decide(market,brti,bars,five,book,flow,now)
+    assert out["action"] == "BUY_YES",out
+    assert out["setup_type"] == "US_SESSION_TWAP_DRIFT"
+    assert out["invalidation_rule"]["type"] == "BRTI_STRIKE_BAND_OR_CVD_FLIP"
+    # Macro windows suppress a nominally identical otherwise-qualified signal.
+    macro_now = datetime(2026,11,23,10,0,0,tzinfo=et).timestamp()
+    macro_brti = {**brti,"source_ts_ms":int(macro_now*1000),
+                  "axiom_received_at_ms":int(macro_now*1000)}
+    macro = decide({**market,"close_ts":macro_now+450},
+                   macro_brti,bars,five,book,flow,macro_now)
+    assert macro["action"] == "WAIT" and macro["kill_switch_triggered"]
+    end = decide({**market,"close_ts":now+120},
+                 brti,bars,five,book,{**flow,"CVD_norm_60s":-.3},
+                 now,open_side="YES")
+    assert end["action"] == "WAIT" and end["kill_switch_triggered"]
+    assert end["exit_signal"]["action"] == "SELL_CANDIDATE"
+    assert end["exit_signal"]["reason"] == "CVD_SIGN_FLIP"
+    assert end["exit_signal"]["paper_execution_performed"] is False
+
+    # Outside the institutional TWAP window, a persistent one-venue
+    # depletion after an aggressive quote jump can qualify as a fade.
+    after = datetime(2026,11,23,12,0,5,tzinfo=et).timestamp()
+    fade_market = {**market,"close_ts":after+450}
+    fade_brti = {**brti,"latest_value_usd":"100.",
+                 "source_ts_ms":int(after*1000),
+                 "axiom_received_at_ms":int(after*1000)}
+    fade_book = normalize_orderbook({"orderbook_fp":{
+            "yes_dollars":[[".70","10"]],"no_dollars":[[".27","10"]]}},
+            market["ticker"],after)
+    fade_flow = {**flow,"delta_venue":.12,"delta_venue_pct":.0012,
+                 "synthetic_price":100.,"outlier_venue":"coinbase",
+                 "venue_midpoints":{"coinbase":100.12,"kraken":100.,
+                                    "bitstamp":99.98},
+                 "depth_depletion":{"coinbase":{
+                     "ask":{"below_half_for_15s":True,"ratio_to_normal":.4}}}}
+    class FadeTape:
+        def snapshot(self,*_):
+            return {"mid_jump_20s":.2}
+    fade = decide(fade_market,fade_brti,bars,five,fade_book,
+                  fade_flow,after,tape=FadeTape())
+    assert fade["action"] == "WAIT"  # old BRTI candles are stale; no fake signal
+    shifted = [{**bar,"t":bar["t"]+int(after-now)} for bar in bars]
+    fresh = decide(fade_market,fade_brti,shifted,
+                   completed_five_minute(shifted),fade_book,
+                   fade_flow,after,tape=FadeTape())
+    assert fresh["action"] == "BUY_NO",fresh
+    assert fresh["setup_type"] == "SINGLE_VENUE_SWEEP_FADE"
+    assert fresh["entry_price"] == .30
+    assert fresh["take_profit"] == max(.60,min(.85,fresh["fair_prob"]))

@@ -135,6 +135,15 @@ class Ledger:
                 return {'id':c.lastrowid,'ticker':market['ticker'],'side':side,'entry':entry,'status':'OPEN'}
             except sqlite3.IntegrityError:
                 raise ValueError('A paper position already exists for this market')
+    def open_paper(self, ticker):
+        """Existing open simulated position, read-only; Phase 2 cannot close it."""
+        with self.lock:
+            row = self.conn.execute(
+                "SELECT ticker,side,entry,created FROM paper_trades "
+                "WHERE ticker=? AND status='OPEN' AND result IS NULL",
+                (ticker,)).fetchone()
+            return dict(row) if row else None
+
     def unresolved(self, max_rows=30, after_ticker=None):
         """Distinct unresolved tickers, deterministically rotated across batches.
 
