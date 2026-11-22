@@ -34,7 +34,7 @@ def shadow_forecast_from_candles(candles: list[dict], market: dict | None,
     """Read ONLY completed, consecutive candles; never use future/incomplete bars.
 
     The BRTI event-time version can be evaluated offline on official BRTI,
-    separately from this Coinbase-proxy runtime. That retrospective study
+    separately from this live BRTI benchmark runtime. That retrospective study
     does NOT establish when every strike and index print first arrived.
     """
     if not market:
@@ -97,7 +97,9 @@ def shadow_forecast_from_candles(candles: list[dict], market: dict | None,
     # outcome. Keep the raw experimental probability but explicitly abstain.
     side = 'WAIT' if abs(z) < .5 else 'ABOVE' if z > 0 else 'BELOW'
     return {
-        'available': True, 'status': 'PROXY_ONLY_NOT_CALIBRATED',
+        'available': True, 'status': ('BRTI_NOT_CALIBRATED' if candles and
+            candles[-1].get('source')=='cfbenchmarks_brti_authenticated_live'
+            else 'PROXY_ONLY_NOT_CALIBRATED'),
         'side': side, 'prob_above': round(p, 6),
         'prob_below': round(1-p, 6), 'z_score': round(z, 5),
         'vol_minutes': len(returns), 'completed_bar_end': window[-1][0] + 60,
