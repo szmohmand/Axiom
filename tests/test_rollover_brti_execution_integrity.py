@@ -111,7 +111,7 @@ def test_rollover_retry_stays_fail_closed_when_market_still_not_published(monkey
     assert len(p.session.calls) == 3
 
 
-def test_no_duplicate_market_retry_outside_boundary_and_empty_event_fallback(monkeypatch):
+def test_no_rollover_retry_outside_boundary_or_for_replayed_history(monkeypatch):
     import app.feeds as feeds
     now = _sec(CLOSE) + 140
     monkeypatch.setattr(feeds, "time", SimpleNamespace(time=lambda: now, sleep=lambda x: None))
