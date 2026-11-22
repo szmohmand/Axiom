@@ -1,7 +1,7 @@
 """Multi-timeframe BTC price and exchange trade-flow forecasting features.
 
-Only real BTC exchange OHLCV and Binance aggressor-signed trades enter model
-features. Kalshi quote, depth, bid, ask, midpoint, volume and wall values
+Authenticated CF Benchmarks BRTI OHLC and separate Binance aggressor-signed
+trades enter model features. Kalshi quote, depth, bid, ask, midpoint, volume and wall values
 must never enter a BTC outcome predictor. Kalshi liquidity belongs exclusively
 to separate execution / value / spread / contract-repricing analysis.
 """
@@ -24,7 +24,7 @@ def _sig(value):
 
 
 def timeframes(five_minute,now):
-    unavailable={"available":False,"reason":"No 30m/1h/2h fully closed Coinbase data",
+    unavailable={"available":False,"reason":"No 30m/1h/2h fully closed benchmark data",
                  "source":"coinbase_5m_completed","frames":{},"directional_components":{}}
     if not isinstance(five_minute,list) or len(five_minute)<7:return unavailable
     clean=[];last=None
