@@ -28,12 +28,15 @@ def unavailable(reason):
             "calibrated": False, "trading_actions_enabled": False}
 
 
-def _sigma_coinbase_proxy(candles):
-    """Fallback variance only: NEVER treat Coinbase price as BRTI price."""
+def _sigma_benchmark_only(candles):
+    """Fallback derived from *actual BRTI* closes, never exchange spot."""
     if not isinstance(candles, list):
         return None
-    closes = [numeric(c.get("close")) for c in candles[-46:]
-              if isinstance(c, dict)]
+    if any(not isinstance(c, dict) or
+           c.get("source") != "cfbenchmarks_brti_authenticated_live"
+           for c in candles[-46:]):
+        return None
+    closes = [numeric(c.get("close")) for c in candles[-46:]]
     if len(closes) < 31 or any(p is None or p <= 0 for p in closes):
         return None
     returns = [math.log(b / a) for a, b in zip(closes, closes[1:])]
@@ -68,8 +71,8 @@ def forecast(market, brti, candles, now):
     if measured_sigma is not None and 1e-7 <= measured_sigma <= .10:
         sigma, sigma_source = measured_sigma, "authenticated_BRTI_completed_minutes"
     else:
-        sigma = _sigma_coinbase_proxy(candles)
-        sigma_source = "Coinbase_completed_1m_volatility_proxy"
+        sigma = _sigma_benchmark_only(candles)
+        sigma_source = "authenticated_BRTI_completed_minutes"
     if sigma is None:
         return unavailable("No valid recent volatility; cannot price settlement uncertainty")
 
