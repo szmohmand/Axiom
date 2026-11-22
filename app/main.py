@@ -118,7 +118,8 @@ def _view_locked(now):
     data['errors'] = dict(state['errors'])
     data['settlement'] = dict(state['settlement'])
     data['live_briti'] = brti_tracker.snapshot()
-    data['binance_intelligence'] = binance_telemetry.snapshot(now)
+    if DEMO:
+        data['binance_intelligence'] = binance_telemetry.snapshot(now)
     attempted = state['last_attempt']
     data['heartbeat_age_seconds'] = None if attempted is None else max(0, round(now-attempted, 2))
     stale_limit = max(60, 3*POLL_SECONDS)
@@ -127,6 +128,25 @@ def _view_locked(now):
     if data['status'] in ('LIVE','DEMO') and data['errors']:
         data['status'] = 'DEGRADED'
     data['ok'] = data['status'] in ('LIVE','DEMO') and not data['errors']
+    if not DEMO:
+        # No legacy shadow, Nison, Binance, repricing or extra execution
+        # advisory paths run in live production, including degraded state.
+        if not data['ok']:
+            data['opportunity']={'side':'WAIT','edge':None,'entry_price':None,
+                                 'reason':'Missing healthy authenticated BRTI'}
+            data['depth_opportunity']=unavailable_opportunity('No healthy live BRTI/book')
+            data['trade_decision']={'action':'WAIT','side':None,
+                                     'order_placed':False,'read_only':True,
+                                     'reason':'Live BRTI or Kalshi input unavailable'}
+            data['execution_intelligence']=unavailable_execution('No healthy live BRTI/book')
+        if 'worker_stale' in data['errors']:
+            data['orderbook']=unavailable_book(
+                data['market'].get('ticker') if data['market'] else None,
+                'Worker stale; depth invalid')
+            data['model']={'available':False,'side':'WAIT','prob_above':None,
+                           'reason':'Market worker stale','engines':[]}
+            data['engines']=[]
+        return data
     if not data['ok']:
         # Previous opportunity quotes must not look actionable during an
         # outage even if they were calculated before the failure became known.
