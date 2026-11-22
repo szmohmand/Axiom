@@ -14,10 +14,11 @@ COINBASE = 'https://api.exchange.coinbase.com'
 # This recovery trims only to the most recent TRUE contiguous interval, and
 # only when enough consecutive real observations remain for all engines.
 MIN_REAL_ONE_MINUTE_BARS = 31
-PREFERRED_ONE_MINUTE_BARS = 75
+PREFERRED_ONE_MINUTE_BARS = 61
+ADVANCED_ONE_MINUTE_BARS = 75
 
 
-def contiguous_real_candle_suffix(candles, min_bars=MIN_REAL_ONE_MINUTE_BARS):
+def contiguous_real_candle_suffix(candles, min_bars=MIN_REAL_ONE_MINUTE_BARS, preferred_bars=PREFERRED_ONE_MINUTE_BARS):
     """Return (usable, quality) without fabricating a missing market candle.
 
     Preserve the exact original data on the normal fully continuous path.
@@ -25,9 +26,9 @@ def contiguous_real_candle_suffix(candles, min_bars=MIN_REAL_ONE_MINUTE_BARS):
     sequence. Non-minute cadence, duplicate or reversed timestamps cannot.
     Never return a shortened sequence that fails existing model minima.
     """
-    recent = candles[-PREFERRED_ONE_MINUTE_BARS:]
+    recent = candles[-preferred_bars:]
     quality = {'status': 'FULL', 'bars_available': len(candles),
-               'bars_used': min(len(candles), PREFERRED_ONE_MINUTE_BARS), 'source': 'coinbase_exchange_real_1m',
+               'bars_used': min(len(candles), preferred_bars), 'source': 'coinbase_exchange_real_1m',
                'missing_candles_filled': 0}
     if len(recent) < min_bars:
         quality.update(status='INSUFFICIENT', bars_used=len(candles))
@@ -42,7 +43,7 @@ def contiguous_real_candle_suffix(candles, min_bars=MIN_REAL_ONE_MINUTE_BARS):
             return candles, quality
         gaps.append((i, seconds))
     if not gaps:
-        if len(recent) < 61:
+        if len(recent) < PREFERRED_ONE_MINUTE_BARS:
             quality.update(status='SHORT_BUT_CONTIGUOUS')
         return candles, quality
     last_gap_start = gaps[-1][0]
@@ -147,7 +148,8 @@ class LiveProvider:
             'start': start.isoformat(), 'end': now.isoformat(), 'granularity':60,
         })
         real_bars = normalize_candles(data)
-        usable, quality = contiguous_real_candle_suffix(real_bars)
+        usable, quality = contiguous_real_candle_suffix(real_bars,
+                   preferred_bars=ADVANCED_ONE_MINUTE_BARS)
         self.candle_quality = quality
         return usable
     def timeframe_candles(self, now=None):
