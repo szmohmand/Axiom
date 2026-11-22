@@ -251,9 +251,9 @@ def test_standalone_report_cli_entrypoints_without_network(tmp_path,monkeypatch)
     monkeypatch.setattr(sys,"argv",["candle","report","--database",
          str(tmp_path/"candle.sqlite3"),"--ledger",ledger])
     with pytest.raises(SystemExit) as exc:
-        runpy.run_module("research.candlestick_shadow_study",run_name="__main__")
+        runpy.run_path(candle.__file__,run_name="__main__")
     assert exc.value.code==0
     monkeypatch.setattr(sys,"argv",["full","report","--db",
          str(tmp_path/"full.sqlite3"),"--ledger",ledger])
     # This module's entrypoint calls main() directly and returns.
-    runpy.run_module("research.nison_full_shadow_study",run_name="__main__")
+    runpy.run_path(full.__file__,run_name="__main__")
