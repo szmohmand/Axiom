@@ -70,6 +70,11 @@ def restore(backup_path: str, live_path: str) -> None:
     if not live.is_file() or live.is_symlink():
         raise ValueError("Existing regular live database required")
     _check(str(snapshot))
+    # Validate sidecars BEFORE touching the live main file; a malicious
+    # or unexpected symlink must never leave a half-restored database.
+    for postfix in ("-wal", "-shm"):
+        if Path(str(live) + postfix).is_symlink():
+            raise ValueError("Refusing unexpected SQLite sidecar symlink")
     meta = live.stat()
     descriptor, tmpname = tempfile.mkstemp(prefix=".axiom-restore-", dir=str(live.parent))
     tmp = Path(tmpname)
@@ -88,8 +93,6 @@ def restore(backup_path: str, live_path: str) -> None:
         # schema/version and cannot be replayed on the restored main file.
         for postfix in ("-wal", "-shm"):
             sidecar = Path(str(live) + postfix)
-            if sidecar.is_symlink():
-                raise ValueError("Refusing to remove unexpected SQLite sidecar symlink")
             sidecar.unlink(missing_ok=True)
         fd = os.open(live.parent, os.O_RDONLY)
         try:
