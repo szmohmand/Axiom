@@ -114,15 +114,7 @@ PRECHECK="$BACKUP_DIR/preflight-copy.sqlite3"
 # Online backup while the old service still runs, for a no-downtime migration
 # rehearsal against a real (copied) schema. This cannot modify production DB.
 sqlite_backup() {
-    python3 - "$1" "$2" <<'PY'
-import os,sqlite3,sys
-source=sqlite3.connect('file:'+sys.argv[1]+'?mode=ro',uri=True,timeout=20)
-dest=sqlite3.connect(sys.argv[2])
-with dest: source.backup(dest,pages=1000,sleep=.1)
-if dest.execute('PRAGMA integrity_check').fetchone()[0]!='ok':
-    raise RuntimeError('SQLite snapshot failed integrity check')
-source.close();dest.close();os.chmod(sys.argv[2],0o600)
-PY
+    python3 "$RELEASE/deploy/oracle/upgrade_sqlite.py" backup "$1" "$2"
 }
 sqlite_backup "$DATA_PATH" "$PRECHECK"
 (
@@ -166,26 +158,7 @@ rollback() {
                 # inspection instead of silently discarding the failed DB.
                 sqlite_backup "$DATA_PATH" "$BACKUP_DIR/failed-release.sqlite3" ||
                     msg 'Could not snapshot new release DB; restoring pre-upgrade DB.'
-                python3 - "$BACKUP" "$DATA_PATH" <<'PY'
-import os,shutil,sqlite3,stat,sys,tempfile
-src,dst=sys.argv[1:]
-if sqlite3.connect(src).execute('PRAGMA integrity_check').fetchone()[0]!='ok':
-    raise SystemExit('Refusing to restore damaged backup')
-meta=os.stat(dst)
-fd,temp=tempfile.mkstemp(prefix='.axiom-recovery-',dir=os.path.dirname(dst))
-try:
-    with os.fdopen(fd,'wb') as output, open(src,'rb') as original:
-        shutil.copyfileobj(original,output)
-        output.flush();os.fsync(output.fileno())
-    os.chown(temp,meta.st_uid,meta.st_gid)
-    os.chmod(temp,stat.S_IMODE(meta.st_mode))
-    os.replace(temp,dst)
-    for postfix in ('-wal','-shm'):
-        path=dst+postfix
-        if os.path.exists(path):os.unlink(path)
-finally:
-    if os.path.exists(temp):os.unlink(temp)
-PY
+                python3 "$RELEASE/deploy/oracle/upgrade_sqlite.py" restore "$BACKUP" "$DATA_PATH"
             fi
         else
             msg 'Could not stop failed service; DO NOT overwrite in-use SQLite. Manual recovery required.'
