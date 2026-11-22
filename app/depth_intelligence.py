@@ -105,7 +105,38 @@ def analyze_opportunities(forecast: dict | None, market: dict | None,
                   'EARLY_DOWN_REBOUND_TENDENCY' and side == 'NO' and p > .20):
                 signal_gate = 'Early-down rebound risk'
         can_enter = can_enter and signal_gate == 'OK'
+        # Research on broad Kalshi markets identifies favorite-longshot bias
+        # and worse average taker than maker outcomes. This information
+        # belongs to contract valuation ONLY, and NEVER alters predicted
+        # BTC win probability, historical model weights, or entry eligibility.
+        # A low-cost contract may still appreciate before expiry; those
+        # studies mostly evaluate held-to-settlement returns.
+        passive_bid=best.get("bid")
+        passive_bid=(float(passive_bid) if isinstance(passive_bid,(int,float))
+                     and math.isfinite(passive_bid) and 0<passive_bid<1
+                     else None)
+        maker_improvement=(round(avg_ask-passive_bid,6)
+                           if avg_ask is not None and passive_bid is not None
+                           and passive_bid<=avg_ask else None)
+        price_research={
+            "contract_price_band":("UNDER_10_CENTS" if avg_ask is not None and avg_ask<.10
+                                   else "AT_LEAST_10_CENTS" if avg_ask is not None
+                                   else "NO_EXECUTABLE_ASK"),
+            "cheap_contract_settlement_bias_warning":bool(
+                avg_ask is not None and avg_ask<.10),
+            "bias_source":"Burgi_Deng_Whelan_Kalshi_300k_cross_category",
+            "bias_is_proven_for_btc_15m":False,
+            "bias_is_proven_for_intracontract_resale":False,
+            "longshot_is_automatically_rejected":False,
+            "taker_size_adjusted_ask":round(avg_ask,6) if avg_ask is not None else None,
+            "passive_maker_buy_reference":passive_bid,
+            "potential_price_saving_before_fees":maker_improvement,
+            "passive_order_fill_guaranteed":False,
+            "maker_fee_savings_assumed":False,
+            "observation":"Cross-category settlement bias and maker/taker price tradeoffs; not a BTC forecast",
+        }
         candidates.append({
+            "pricing_research":price_research,
             "side": side, "signal_gate":signal_gate, "model_probability": round(probability, 6),
             "size_contracts": requested, "ask_sweep": buys,
             "bid_sweep": sells, "complete_buy_depth": complete,
