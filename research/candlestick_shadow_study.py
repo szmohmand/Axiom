@@ -269,6 +269,8 @@ def main() -> int:
                 result=record_snapshot(conn,get_live())
                 if result["status"] in ("RECORDED","WARMUP","COHORT_COMPLETE"):
                     print(json.dumps(result),flush=True)
+                if result["status"]=="COHORT_COMPLETE" and args.mode=="collect":
+                    return 0  # Fixed-size trial ends; systemd will not restart success.
             except (OSError,sqlite3.Error,ValueError,TimeoutError,KeyError) as exc:
                 print(json.dumps({"status":"SKIPPED","reason":type(exc).__name__}),
                       flush=True)
