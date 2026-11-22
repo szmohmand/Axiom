@@ -97,12 +97,12 @@ class AuditedWorkers(unittest.TestCase):
         with patch.object(self.provider,"price",return_value=None):
             d=main.update_once(self.now)
         self.assertFalse(d["ok"])
-        self.assertEqual(d["errors"]["coinbase_ticker"],"Missing or invalid BTC spot price")
+        self.assertEqual(d["errors"]["coinbase_ticker"],"Missing or invalid synthetic BTC spot")
         self.assertEqual(d["depth_opportunity"]["status"],"WAIT")
         with patch.object(main,"DEMO",False):
             d=main.update_once(self.now+1000)
         self.assertFalse(d["ok"])
-        self.assertEqual(d["errors"]["coinbase_candles"],"Candles stale")
+        self.assertEqual(d["errors"]["brti_stream"],"Authenticated CF Benchmarks BRTI stream unavailable")
 
     def test_unavailable_forecast_without_source_error_is_explicit(self):
         with patch.object(main,"engine_pack",return_value={
