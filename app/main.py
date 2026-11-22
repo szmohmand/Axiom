@@ -204,7 +204,10 @@ def update_once(now=None):
                 book=unavailable_book(market['ticker'],_error_message(e))
         else:
             book=unavailable_book(market['ticker'],'Provider has no full-depth API')
-    # Inputs to forecast, not merely background telemetry.
+    # BTC-only predictive features. Kalshi book/quotes remain in the
+    # separate entry/exit/price-evaluation path BELOW the forecast.
+    # No forecasting function sees Kalshi bids, asks, midpoints, walls or
+    # book-derived price delay as predictive inputs.
     higher=timeframes([],now)
     if market is not None:
         reader=getattr(provider,'timeframe_candles',None)
@@ -214,8 +217,8 @@ def update_once(now=None):
             except Exception:
                 higher=timeframes([],now)
     try:
-        flow=market_flow_tracker.observe(book,market,binance_before_book,
-                                         spot,time.time())
+        flow=market_flow_tracker.observe(binance=binance_before_book,
+                                         now=time.time())
     except (TypeError,ValueError,ArithmeticError,KeyError,IndexError):
         flow={'available':False,'reason':'Flow feature calculation unavailable',
               'directional_components':{}}
@@ -248,15 +251,20 @@ def update_once(now=None):
         persistent_faults = any(k in state['errors'] for k in
                                 ('settlement','settlement_worker','ledger_read','ledger_connection'))
     if market:
+        # Contract strike and expiration are valid prediction questions;
+        # contract YES/NO QUOTES ARE NOT. Restrict model inputs at the caller.
+        forecast_contract={k:market[k] for k in
+                           ('ticker','target','seconds_left','close_ts')
+                           if k in market}
         try:
-            signals=derive_signals(market,spot,candles,now,
+            signals=derive_signals(forecast_contract,spot,candles,now,
                 brti=brti_tracker.snapshot(now_ms=int(now*1000)) if BRTI_LIVE_ENABLED else None,
                 spot_received_at=getattr(provider,'price_received_at',None),
                 spot_source_at=getattr(provider,'price_source_at',None))
         except (ArithmeticError,TypeError,ValueError,KeyError):
             signals=unavailable_signals('BTC feature calculation rejected invalid inputs')
             errors['btc_signals']='BTC feature calculation rejected invalid inputs'
-        model=engine_pack(spot,market,candles,signals=signals,
+        model=engine_pack(spot,forecast_contract,candles,signals=signals,
                           context=advanced_context,now=now)
         try:
             candle_challenger = derive_candlestick_challenger(candle_context,model)
