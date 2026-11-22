@@ -3,7 +3,6 @@
 Tracks observed, event-time-ordered Binance BTCUSDT spot changes versus
 separately received Kalshi BTC15m aggregate book prices. This is a *possible*
 stale-quote monitor, not an exchange-proven lag measurement or trade fill.
-Funding is a nonvoting context input, never a YES/NO predictor.
 """
 from __future__ import annotations
 import math
@@ -19,14 +18,11 @@ MAX_UNCHANGED_MID = 0.01
 SIZE = 10.0
 
 
-def wait(reason, funding=None):
+def wait(reason, telemetry=None):
     return {"status":"WAIT","action":"WAIT","side":None,"reason":reason,
             "probable_observed_lag":False,"actual_quote_delay_verified":False,
             "measured_binance_move_bps":None,"kalshi_yes_mid_change":None,
             "book_observation_gap_seconds":None,
-            "funding_bias":(funding or {}).get("funding_bias","UNKNOWN"),
-            "funding_percent":(funding or {}).get("funding_percent"),
-            "funding_used_for_direction":False,
             "read_only":True,"order_placed":False,"orders_placed":False,"verified_profit":False}
 
 
@@ -120,6 +116,5 @@ class BinanceKalshiLagTracker:
                 "estimated_entry_fee_per_contract":round(fees,4),
                 "independent_outcome_edge_after_entry_fee":round(edge,5) if edge is not None else None,
                 "contract_size":SIZE,
-                "funding_warning":(binance.get("funding_bias") if binance.get("funding_status")=="LIVE" else "NO_FUNDING_REFERENCE"),
                 "reference_price_is_not_brti":True,
                 "fee_and_slippage_do_not_prove_resale_profit":True}
