@@ -79,7 +79,7 @@ def test_five_minute_history_and_strict_aggregation_guards():
     assert r["frames"]["2h"]["fully_closed_source_bars"]==24
     assert not ms.timeframes(None,NOW)["available"]
     assert not ms.timeframes(valid[:5],NOW)["available"]
-    assert ms.timeframes(valid[:10],NOW)["available"]
+    assert ms.timeframes(valid[-10:],NOW)["available"]
     for invalid in (
         [{**valid[0],"open":"bad"}]+valid[1:],
         [None]+valid[1:],
@@ -139,7 +139,7 @@ def test_boosted_model_inputs_fail_without_fabricated_learned_prediction(invalid
     m={"target":63190,"seconds_left":600}
     if invalid=="none":candles=None
     if invalid=="nondict":candles[0]=False
-    if invalid=="bad_timestamp":candles[0]["t"]+=1
+    if invalid=="bad_timestamp":candles[-1]["t"]+=1
     if invalid=="missing_history":candles=candles[:22]
     if invalid=="history_gap":candles[-8]["t"]+=60
     if invalid=="stale":candles=candles[:-2]
