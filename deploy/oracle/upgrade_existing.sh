@@ -111,12 +111,43 @@ mkdir -p -m 0700 "$BACKUP_DIR"
 BACKUP="$BACKUP_DIR/pre-upgrade.sqlite3"
 PRECHECK="$BACKUP_DIR/preflight-copy.sqlite3"
 
+# Run the COMPLETE regression suite on THIS VM and THIS Python ABI, rather
+# than assuming a green GitHub Linux/Python 3.13 run guarantees Ubuntu 3.12.
+# Tests use a throwaway DB: they never connect to the production ledger.
+msg 'Running complete regression suite in an isolated staging environment.'
+(
+    cd "$RELEASE"
+    DEMO_MODE=1 AUTO_PAPER=0 BRTI_LIVE_ENABLED=0 \
+      DATA_PATH="$BACKUP_DIR/stage-tests.sqlite3" \
+      "$VENV/bin/python" -m pytest -q
+)
+rm -f "$BACKUP_DIR/stage-tests.sqlite3" \
+      "$BACKUP_DIR/stage-tests.sqlite3-wal" \
+      "$BACKUP_DIR/stage-tests.sqlite3-shm"
+
 # Online backup while the old service still runs, for a no-downtime migration
 # rehearsal against a real (copied) schema. This cannot modify production DB.
 sqlite_backup() {
     python3 "$RELEASE/deploy/oracle/upgrade_sqlite.py" backup "$1" "$2"
 }
 sqlite_backup "$DATA_PATH" "$PRECHECK"
+# Monitor the actual archived history during schema migration rehearsal.
+# New tables/columns may be added, but established record counts must stay.
+history_counts() {
+    python3 - "$1" <<'PY'
+import json,sqlite3,sys
+conn=sqlite3.connect(sys.argv[1])
+counts={}
+for table in ('observations','paper_trades','engine_snapshots','contracts'):
+    has=conn.execute('SELECT 1 FROM sqlite_master WHERE type=? AND name=?',
+                     ('table',table)).fetchone()
+    if has:
+        counts[table]=conn.execute('SELECT count(*) FROM "'+table+'"').fetchone()[0]
+print(json.dumps(counts,sort_keys=True))
+conn.close()
+PY
+}
+COUNTS_BEFORE=$(history_counts "$PRECHECK")
 (
     cd "$RELEASE"
     DEMO_MODE=1 AUTO_PAPER=0 BRTI_LIVE_ENABLED=0 DATA_PATH="$PRECHECK" \
@@ -130,6 +161,9 @@ if db.execute('PRAGMA integrity_check').fetchone()[0]!='ok':
     raise SystemExit('Staged migration rehearsal corrupted the copied database')
 db.close()
 PY
+COUNTS_AFTER=$(history_counts "$PRECHECK")
+[[ "$COUNTS_BEFORE" == "$COUNTS_AFTER" ]] ||
+    fail 'Schema rehearsal changed historical observations/trades/grades on a copy; no production changes made.'
 rm -f "$PRECHECK" "$PRECHECK-wal" "$PRECHECK-shm"
 
 # Keep exact previous override; if no override existed, the original service
