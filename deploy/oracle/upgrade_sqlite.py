@@ -20,10 +20,18 @@ from urllib.parse import quote
 
 
 def _check(path: str) -> None:
-    with sqlite3.connect("file:" + quote(str(Path(path).resolve()), safe="/") + "?mode=ro", uri=True) as conn:
+    # sqlite3.Connection context managers commit, but do NOT close! An open
+    # read-only connection can keep SQLite WAL/SHM sidecars alive, defeating
+    # a clean rollback. Explicitly close every validation connection.
+    conn = sqlite3.connect(
+        "file:" + quote(str(Path(path).resolve()), safe="/") + "?mode=ro", uri=True
+    )
+    try:
         result = conn.execute("PRAGMA integrity_check").fetchone()
         if not result or result[0] != "ok":
             raise RuntimeError("SQLite integrity_check failed")
+    finally:
+        conn.close()
 
 
 def backup(src_path: str, dest_path: str) -> None:
@@ -102,6 +110,12 @@ def restore(backup_path: str, live_path: str) -> None:
     finally:
         tmp.unlink(missing_ok=True)
     _check(str(live))
+    # Read-only integrity verification may itself open transient WAL/SHM
+    # handles for a database whose restored journal_mode is WAL. With all
+    # SQLite handles explicitly closed and the service still stopped,
+    # remove any such temporary sidecars before starting the prior version.
+    for postfix in ("-wal", "-shm"):
+        Path(str(live) + postfix).unlink(missing_ok=True)
 
 
 def main(argv: list[str] | None = None) -> int:
