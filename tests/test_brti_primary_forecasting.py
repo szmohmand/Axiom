@@ -149,3 +149,49 @@ def test_live_brti_warmup_keeps_server_operational_but_blocks_predictions_and_pa
     auth={"Authorization":"Bearer synthetic-local-testing-token"}
     assert client.post('/api/paper',json={"side":"YES"},headers=auth).status_code==409
     assert main.ledger.data()['count']=={'calls':0,'paper':0}
+
+
+def test_phase1_real_brti_single_decision_and_one_paper_entry(env, monkeypatch):
+    from app.orderbook import normalize_orderbook
+    main, clock, provider, client, _ = env
+    main.DEMO = False
+    main.AUTO_PAPER = True
+    clock.now = provider.close - 450
+    market = provider.market(clock.now)
+    bars = provider.candles()
+    for b in bars:
+        b["source"] = "cfbenchmarks_brti_authenticated_live"
+        b["volume"] = None
+    snapshot = {
+        "status": "STREAMING", "authenticated_stream_verified": True,
+        "latest_value_usd": market["target"] + 325,
+        "source_ts_ms": int(clock.now * 1000),
+        "axiom_received_at_ms": int(clock.now * 1000),
+        "btc_1m_candles": bars, "btc_5m_candles": [],
+        "completed_minute_sigma_45": .001,
+        "candle_quality": {"status": "FULL_BRTI_LIVE", "bars_used": len(bars)},
+    }
+    monkeypatch.setattr(main.brti_tracker, "snapshot", lambda now_ms=None: snapshot)
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("Removed source/ensemble accessed by live path")
+    provider.price = forbidden
+    provider.candles = forbidden
+    provider.timeframe_candles = forbidden
+    monkeypatch.setattr(main, "engine_pack", forbidden)
+    monkeypatch.setattr(main, "derive_signals", forbidden)
+    def real_book(contract, now=None):
+        return normalize_orderbook({"orderbook_fp": {
+            "yes_dollars": [["0.25", "50"]],
+            "no_dollars": [["0.70", "50"]]}}, contract["ticker"], clock.now)
+    provider.orderbook = real_book
+    updated = main.update_once()
+    assert updated["ok"] and updated["status"] == "LIVE"
+    assert updated["price_source"] == "CF_BENCHMARKS_BRTI"
+    assert updated["model"]["available"]
+    assert updated["model"]["method"] == "single-authenticated-brti-settlement"
+    assert [e["name"] for e in updated["engines"]] == ["axiom_brti_settlement"]
+    assert updated["opportunity"]["side"] == "YES"
+    assert updated["trade_decision"]["action"] == "BUY_CANDIDATE"
+    assert updated["execution_intelligence"]["order_placed"] is False
+    assert main.ledger.data()["count"]["paper"] == 1
+    assert main.ledger.data()["trades"][0]["status"] == "OPEN"
