@@ -16,8 +16,11 @@ from pydantic import BaseModel
 from .feeds import LiveProvider, DemoProvider
 from .engine import scalp_signal
 from .ensemble import engine_pack, execution_screen
+from .market_structure import DepthFlowTracker, timeframes
 from .storage import Ledger
 from .settlement_research import shadow_forecast_from_candles, unavailable as unavailable_research_shadow
+from .candlestick_context import read_candlestick_context, unavailable as unavailable_candle_context
+from .candlestick_challenger import derive_candlestick_challenger, unavailable as unavailable_candle_challenger
 from .orderbook import unavailable as unavailable_book
 from .execution_evidence import examine_liquidity
 from .brti_live import BRTITracker, run_worker as brti_reference_worker
@@ -37,6 +40,8 @@ DATA_PATH = os.environ.get('DATA_PATH', str(ROOT.parent/'data'/'bot.sqlite3'))
 ADMIN_TOKEN = os.environ.get('BOT_ADMIN_TOKEN','')
 BRTI_LIVE_ENABLED = (not DEMO and os.environ.get('BRTI_LIVE_ENABLED','0') == '1')
 BINANCE_INTELLIGENCE_ENABLED = (not DEMO and os.environ.get('BINANCE_INTELLIGENCE_ENABLED','1') == '1')
+# Opt-in shadow grading ONLY: no voting, execution, or historical rewriting.
+CANDLESTICK_SHADOW_GRADING_ENABLED = os.environ.get('CANDLESTICK_SHADOW_GRADING_ENABLED','0') == '1'
 brti_tracker = BRTITracker(enabled=BRTI_LIVE_ENABLED)
 binance_telemetry = BinanceTelemetry(enabled=BINANCE_INTELLIGENCE_ENABLED)
 provider = DemoProvider() if DEMO else LiveProvider()
@@ -44,9 +49,12 @@ ledger = Ledger(DATA_PATH)
 state_lock = threading.RLock()
 movement_tracker = IntracontractTracker()
 binance_lag_tracker = BinanceKalshiLagTracker()
+market_flow_tracker = DepthFlowTracker()
 state = {'mode':'DEMO' if DEMO else 'LIVE','last_attempt':None,'last_success':None,
          'market':None,'spot':None,'model':None,'engines':[],'scalp':None,'opportunity':None,'candles':[],
          'research_shadow':unavailable_research_shadow('No completed research observation yet'),
+         'candlestick_context':unavailable_candle_context('Awaiting fresh completed BTC candles'),
+         'candlestick_challenger':unavailable_candle_challenger('Awaiting independent ensemble and candle context'),
          'orderbook':unavailable_book(None,'No aggregated market depth yet'),
          'depth_opportunity':unavailable_opportunity('No independently evaluated depth yet'),
          'execution_intelligence':unavailable_execution('No independently evaluated depth yet'),
@@ -56,6 +64,8 @@ state = {'mode':'DEMO' if DEMO else 'LIVE','last_attempt':None,'last_success':No
           'resale_setup':wait_resale('Waiting for observed intracontract moves'),
           'binance_intelligence':binance_telemetry.snapshot(),
           'binance_kalshi_delay':wait_binance_lag('Awaiting real Binance and Kalshi quotes'),
+          'higher_timeframes':timeframes([],time.time()),
+          'market_microstructure':{'available':False,'reason':'Awaiting BTC flow and Kalshi depth'},
          'errors':{},'paper_auto_enabled':AUTO_PAPER,'watch':None,'candle_quality':None,'status':'STARTING',
          'settlement':{'status':'NOT_CHECKED','last_attempt':None,'last_success':None,
                        'checked':0,'failed':0}}
@@ -117,6 +127,8 @@ def _view_locked(now):
         data['depth_opportunity'] = unavailable_opportunity('System unhealthy; no depth-based entry advice')
         data['execution_intelligence'] = unavailable_execution('System unhealthy; no execution guidance')
         data['trade_decision'] = execution_decision(None,None,None,None,None,now)
+        data['candlestick_context'] = unavailable_candle_context('Operational health degraded')
+        data['candlestick_challenger'] = unavailable_candle_challenger('Operational health degraded')
         data['intracontract'] = unavailable_timeline('Operational health degraded')
         data['resale_setup'] = wait_resale('Operational health degraded')
         data['binance_kalshi_delay'] = wait_binance_lag('Operational health degraded',data['binance_intelligence'])
@@ -192,6 +204,22 @@ def update_once(now=None):
                 book=unavailable_book(market['ticker'],_error_message(e))
         else:
             book=unavailable_book(market['ticker'],'Provider has no full-depth API')
+    # Inputs to forecast, not merely background telemetry.
+    higher=timeframes([],now)
+    if market is not None:
+        reader=getattr(provider,'timeframe_candles',None)
+        if callable(reader):
+            try:
+                higher=timeframes(reader(),time.time())
+            except Exception:
+                higher=timeframes([],now)
+    try:
+        flow=market_flow_tracker.observe(book,market,binance_before_book,
+                                         spot,time.time())
+    except (TypeError,ValueError,ArithmeticError,KeyError,IndexError):
+        flow={'available':False,'reason':'Flow feature calculation unavailable',
+              'directional_components':{}}
+    advanced_context={'timeframes':higher,'microstructure':flow}
     depth_op=unavailable_opportunity('Independent forecast or depth not available')
     depth_exec=unavailable_execution('No verified live order-book opportunity')
     op={'side':'WAIT','edge':None,'entry_price':None,'reason':'No healthy market forecast'}
@@ -205,6 +233,15 @@ def update_once(now=None):
         except Exception:
             # An optional research probe cannot interrupt the production poll.
             research_shadow = unavailable_research_shadow('Research model calculation failed')
+    # Nison-style market-pressure context uses ONLY fully completed 1m bars.
+    # Optional feature failures never degrade the active trading safeguards.
+    candle_context = unavailable_candle_context('Missing valid completed BTC candles')
+    if candles and not errors:
+        try:
+            candle_context = read_candlestick_context(candles, now)
+        except (TypeError, ValueError, ArithmeticError, KeyError, IndexError):
+            candle_context = unavailable_candle_context('Candle feature computation unavailable')
+    candle_challenger = unavailable_candle_challenger('No ensemble forecast yet')
     with state_lock:
         # Older unresolved settlement/ledger faults are independent of this
         # market poll. Preserve predictions, but suspend new paper decisions.
@@ -219,7 +256,12 @@ def update_once(now=None):
         except (ArithmeticError,TypeError,ValueError,KeyError):
             signals=unavailable_signals('BTC feature calculation rejected invalid inputs')
             errors['btc_signals']='BTC feature calculation rejected invalid inputs'
-        model=engine_pack(spot,market,candles,signals=signals)
+        model=engine_pack(spot,market,candles,signals=signals,
+                          context=advanced_context,now=now)
+        try:
+            candle_challenger = derive_candlestick_challenger(candle_context,model)
+        except (TypeError, ValueError, ArithmeticError, KeyError, IndexError):
+            candle_challenger = unavailable_candle_challenger('Candle candidate computation unavailable')
         if not model.get('available') and not errors:
             errors['forecast']=model.get('reason','Model unavailable')
         if not errors and not persistent_faults:
@@ -247,7 +289,10 @@ def update_once(now=None):
             # may survive. Ledger also serializes concurrent manual writes.
             with ledger.atomic_cycle():
                 ledger.observed(market,model,spot,now)
-                ledger.engine_snapshots(market,model,now)
+                if CANDLESTICK_SHADOW_GRADING_ENABLED:
+                    ledger.engine_snapshots(market,model,now,candle_challenger)
+                else:
+                    ledger.engine_snapshots(market,model,now)
                 ledger.first_call(market,model,spot,now,hold_seconds=10,poll_gap=max(40,3*POLL_SECONDS))
                 if AUTO_PAPER and op['side'] in ('YES','NO'):
                     try:
@@ -292,14 +337,17 @@ def update_once(now=None):
             if component in state['errors']:
                 errors[component] = state['errors'][component]
         state.update({'last_attempt':now,
-            'market':market,'spot':spot,'candles':candles[-70:], 'model':model,'scalp':scalp,
+            'market':market,'spot':spot,'candles':candles[-75:], 'model':model,'scalp':scalp,
             'opportunity':op,'engines':model.get('engines',[]),'errors':errors,'watch':watch,
              'research_shadow':research_shadow,
+             'candlestick_context':candle_context,
+             'candlestick_challenger':candle_challenger,
              'orderbook':book,'depth_opportunity':depth_op,
              'execution_intelligence':depth_exec,
              'btc_signals':signals,'trade_decision':trade_decision,
              'intracontract':intracontract,'resale_setup':resale_setup,
              'binance_intelligence':binance_before_book,'binance_kalshi_delay':binance_lag,
+             'higher_timeframes':higher,'market_microstructure':flow,
             'candle_quality':({'status':'UNAVAILABLE','reason':errors['coinbase_candles']}
                               if 'coinbase_candles' in errors else getattr(provider,'candle_quality',None))})
         _refresh_status_locked()

@@ -4,6 +4,7 @@ from contextlib import contextmanager
 import threading
 import time
 import os
+import math
 from pathlib import Path
 from .engine import paper_result
 
@@ -157,7 +158,7 @@ class Ledger:
                                             (after_ticker, max_rows-len(tickers))).fetchall()
                 tickers.extend(r['ticker'] for r in remainder)
             return tickers
-    def engine_snapshots(self, market, model, now):
+    def engine_snapshots(self, market, model, now, candlestick_challenger=None):
         """Fixed-time forecasts for head-to-head scoring (same contract/clock).
 
         Legacy 'market_prob' SQL field holds the participant order-book YES
@@ -179,6 +180,19 @@ class Ledger:
                 rows.append((market['ticker'],engine['name'],label,now,sec,p,market.get('market_mid')))
         if model.get('available') and model.get('prob_above') is not None:
             rows.append((market['ticker'],'ensemble',label,now,sec,model['prob_above'],market.get('market_mid')))
+        # Optional, opt-in prospective shadow score only. Never alter the
+        # preexisting engines, active median, historical grades, or orders.
+        if (isinstance(candlestick_challenger, dict) and
+                candlestick_challenger.get('available') is True and
+                candlestick_challenger.get('name') == 'nison_candlestick_challenger' and
+                candlestick_challenger.get('votes_in_ensemble') is False and
+                candlestick_challenger.get('can_trigger_paper_or_orders') is False):
+            candidate_p = candlestick_challenger.get('prob_above')
+            if (not isinstance(candidate_p, bool) and
+                    isinstance(candidate_p, (int, float)) and
+                    math.isfinite(candidate_p) and 0 < candidate_p < 1):
+                rows.append((market['ticker'],'nison_candlestick_challenger',
+                             label,now,sec,candidate_p,market.get('market_mid')))
         with self.lock:
             for vals in rows:
                 self.conn.execute('INSERT OR IGNORE INTO engine_snapshots (ticker,engine,checkpoint,ts,seconds_left,prob_above,market_prob) VALUES(?,?,?,?,?,?,?)',vals)

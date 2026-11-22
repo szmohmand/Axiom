@@ -13,6 +13,9 @@ from __future__ import annotations
 import math
 import statistics
 from .engine import volatility_forecast, numeric
+from .boosted_model import boosted_forecast
+from .nison_methodology import scan_nison, forecast_nison_independent
+from .market_structure import pressure_forecast
 
 
 def cdf(z: float) -> float:
@@ -34,7 +37,7 @@ def log_returns(closes: list[float]) -> list[float]:
     return [math.log(b/a) for a,b in zip(closes,closes[1:]) if a>0 and b>0]
 
 
-def engine_pack(spot: float | None, market: dict | None, candles: list[dict], signals: dict | None = None) -> dict:
+def engine_pack(spot: float | None, market: dict | None, candles: list[dict], signals: dict | None = None, *, context: dict | None = None, now: float | None = None) -> dict:
     """Run available engines on the SAME market/spot snapshot.
 
     Each engine reports its source and provenance; no fabricated ML outputs or
@@ -106,22 +109,74 @@ def engine_pack(spot: float | None, market: dict | None, candles: list[dict], si
             target_touch_probability=d.get('target_touch_probability'),
             movement_2m_probability_5bp=d.get('movement_2m_probability_5bp'),
             calibrated=False))
-    # Only named BTC-derived models may vote. Quotes remain a comparison even
-    # if an accidental future flag labels the quote benchmark independent.
-    voting_models=frozenset(('axiom_volatility','aaryann_fair','kalshibot_headstart','axiom_target_dynamics'))
+    # The integrated candidate gives the learned model, complete Nison
+    # methodology and all observed market-context features actual ensemble
+    # votes. Nothing is relegated to "background" merely for being new.
+    # Baseline calls without context preserve historical regression behavior.
+    enhanced=isinstance(context,dict) and now is not None
+    if enhanced:
+        try:
+            learned=boosted_forecast(spot,market,candles,now)
+        except (KeyError,TypeError,ValueError,ArithmeticError):
+            learned={'name':'axiom_gradient_boosted_btc','available':False,
+                     'prob_above':None,'reason':'Fitted model input unavailable'}
+        engines.append(engine_result('axiom_gradient_boosted_btc',
+            learned.get('prob_above') if learned.get('available') else None,
+            'trained-gradient-boosting','Historical BTC 90-day model with actual future BTC outcomes',
+            independent=True,calibrated=False,training='binance_spot_90day',
+            learning_status=learned.get('reason')))
+        try:
+            report=scan_nison(candles,now)
+            japanese=forecast_nison_independent(report,market,spot,now)
+        except (KeyError,TypeError,ValueError,ArithmeticError,IndexError):
+            japanese={'available':False,'prob_above':None,'reason':'Japanese pattern inputs unavailable'}
+            report={'pattern_evidence':[]}
+        engines.append(engine_result('axiom_full_nison',
+            japanese.get('prob_above') if japanese.get('available') else None,
+            'nison-full-book-independent',
+            'Nison candlestick, continuation, structures and convergence; original numeric mapping',
+            independent=True,calibrated=False,
+            detected_patterns=[x.get('name') for x in report.get('pattern_evidence',[])],
+            interpretation=japanese.get('reason')))
+        source_base=next((e['prob_above'] for e in engines if
+                          e['name']=='axiom_volatility' and e.get('available')),None)
+        try:
+            pressure=pressure_forecast(spot,market,source_base,context)
+        except (KeyError,TypeError,ValueError,ArithmeticError,IndexError):
+            pressure={'available':False,'prob_above':None,'reason':'Market feature inputs unavailable'}
+        engines.append(engine_result('axiom_multi_signal_context',
+            pressure.get('prob_above') if pressure.get('available') else None,
+            'multiscale-orderflow-funding-cvd-walls',
+            '30m/60m/120m + book imbalance, liquidity walls, absorption, CVD, funding and large-trade flow',
+            independent=False,calibrated=False,
+            active_factors=pressure.get('components',{}),
+            experimental_z_shift=pressure.get('combined_z_shift')))
+    # Kalshi midpoint quote stays a comparator, not a probability forecast.
+    voting_models=frozenset((
+        'axiom_volatility','aaryann_fair','kalshibot_headstart',
+        'axiom_target_dynamics','axiom_gradient_boosted_btc',
+        'axiom_full_nison','axiom_multi_signal_context'))
     good=[e['prob_above'] for e in engines
-          if e['name'] in voting_models and e.get('independent') and e['available']]
+          if e['name'] in voting_models and e['available']]
     if len(good)<2:
         return {'available':False,'prob_above':None,'prob_below':None,'side':'WAIT','reason':'At least 2 independent estimates required',
                 'engines':engines,'agreement':None,'spread':None,'alpha_vs_market':None,
                 'validated':False,'method':'experimental-median-consensus'}
-    p=statistics.median(good)
+    # In the integrated candidate, use a differentiable model pool. Median
+    # voting could silently ignore entire new models even when their inputs
+    # were real; an equal-weight mean gives every available candidate a
+    # measurable influence, with individual signals visible in diagnostics.
+    p=statistics.fmean(good) if enhanced else statistics.median(good)
     spread=max(good)-min(good)
-    side='ABOVE' if p>=.60 else 'BELOW' if p<=.40 else 'WAIT'
-    if spread>.30: side='WAIT'
+    # Predictive outputs are not silenced just because competing hypotheses
+    # disagree. Expose disagreement numerically for the execution layer.
+    side=('ABOVE' if p>.5 else 'BELOW' if p<.5 else 'WAIT') if enhanced else (
+          'ABOVE' if p>=.60 else 'BELOW' if p<=.40 else 'WAIT')
+    if not enhanced and spread>.30: side='WAIT'
     agreement=sum((e['prob_above']>.5)==(p>.5) for e in engines
-                  if e['name'] in voting_models and e.get('independent') and e['available'])
-    reason=('Consensus withheld: engines strongly disagree' if spread>.30 else
+                  if e['name'] in voting_models and e['available'])
+    reason=('Experimental all-signal consensus; disagreement preserved, not vetoed' if enhanced else
+            'Consensus withheld: engines strongly disagree' if spread>.30 else
             'Consensus near 50%: no directional call' if side=='WAIT' else
             'Experimental median of independent models; NOT yet validated vs Kalshi')
     return {'available':True,'prob_above':round(p,5),'prob_below':round(1-p,5),'side':side,
@@ -132,7 +187,12 @@ def engine_pack(spot: float | None, market: dict | None, candles: list[dict], si
             'alpha_vs_market':round(p-mid,5) if mid is not None else None,
             'forecast_minus_quote_mid':round(p-mid,5) if mid is not None else None,
             'quote_discrepancy_is_validated_alpha':False,
-            'validated':False,'method':'experimental-median-consensus'}
+            'validated':False,'method':'experimental-median-consensus',
+            'all_signal_integration_active':enhanced,
+            'active_predictive_models':[e['name'] for e in engines
+                 if e['name'] in voting_models and e.get('available')],
+            'missing_predictive_models':[e['name'] for e in engines
+                 if e['name'] in voting_models and not e.get('available')]}
 
 
 def taker_fee(price: float, count: int=1) -> float:

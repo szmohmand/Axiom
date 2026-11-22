@@ -15,9 +15,10 @@ COINBASE = 'https://api.exchange.coinbase.com'
 # only when enough consecutive real observations remain for all engines.
 MIN_REAL_ONE_MINUTE_BARS = 31
 PREFERRED_ONE_MINUTE_BARS = 61
+ADVANCED_ONE_MINUTE_BARS = 75
 
 
-def contiguous_real_candle_suffix(candles, min_bars=MIN_REAL_ONE_MINUTE_BARS):
+def contiguous_real_candle_suffix(candles, min_bars=MIN_REAL_ONE_MINUTE_BARS, preferred_bars=PREFERRED_ONE_MINUTE_BARS):
     """Return (usable, quality) without fabricating a missing market candle.
 
     Preserve the exact original data on the normal fully continuous path.
@@ -25,9 +26,9 @@ def contiguous_real_candle_suffix(candles, min_bars=MIN_REAL_ONE_MINUTE_BARS):
     sequence. Non-minute cadence, duplicate or reversed timestamps cannot.
     Never return a shortened sequence that fails existing model minima.
     """
-    recent = candles[-PREFERRED_ONE_MINUTE_BARS:]
+    recent = candles[-preferred_bars:]
     quality = {'status': 'FULL', 'bars_available': len(candles),
-               'bars_used': min(len(candles), PREFERRED_ONE_MINUTE_BARS), 'source': 'coinbase_exchange_real_1m',
+               'bars_used': min(len(candles), preferred_bars), 'source': 'coinbase_exchange_real_1m',
                'missing_candles_filled': 0}
     if len(recent) < min_bars:
         quality.update(status='INSUFFICIENT', bars_used=len(candles))
@@ -63,6 +64,8 @@ class LiveProvider:
         self.candle_quality = None
         self.price_source_at = None
         self.price_received_at = None
+        self._five_minute_cache = []
+        self._five_minute_cache_at = 0.0
         self.session = requests.Session()
         self.session.headers.update({'User-Agent':'ResearchBot/0.1 (read-only market data)', 'Accept':'application/json'})
     def get(self, url, params=None):
@@ -140,14 +143,45 @@ class LiveProvider:
         return p
     def candles(self):
         now = datetime.now(timezone.utc)
-        start = now - timedelta(minutes=65)
+        start = now - timedelta(minutes=85)
         data = self.get(f'{COINBASE}/products/BTC-USD/candles', {
             'start': start.isoformat(), 'end': now.isoformat(), 'granularity':60,
         })
         real_bars = normalize_candles(data)
-        usable, quality = contiguous_real_candle_suffix(real_bars)
+        usable, quality = contiguous_real_candle_suffix(real_bars,
+                   preferred_bars=ADVANCED_ONE_MINUTE_BARS)
         self.candle_quality = quality
         return usable
+    def timeframe_candles(self, now=None):
+        """Real Coinbase 5m OHLCV for 30m/1h/2h BTC structure.
+
+        Uses only EXCHANGE COMPLETED 5m candles and their native UTC slots.
+        Does not manufacture gaps or resample 61m into a fake two-hour chart.
+        One bounded public market-data GET per 90 seconds.
+        """
+        clock=time.time() if now is None else float(now)
+        if self._five_minute_cache and 0<=clock-self._five_minute_cache_at<90:
+            return list(self._five_minute_cache)
+        end=datetime.now(timezone.utc)
+        if now is not None:
+            end=datetime.fromtimestamp(clock,timezone.utc)
+        start=end-timedelta(minutes=740)
+        raw=self.get(f'{COINBASE}/products/BTC-USD/candles',{
+            'start':start.isoformat(),'end':end.isoformat(),'granularity':300,
+        })
+        bars=normalize_candles(raw)
+        complete=[b for b in bars if b['t']%300==0 and
+                  b['t']+300<=clock and b.get('volume',0)>=0]
+        if not complete:
+            return []
+        # A missing bar is not silently replaced with the last known price.
+        k=1
+        while k<len(complete) and complete[-k]['t']-complete[-k-1]['t']==300:
+            k+=1
+        self._five_minute_cache=complete[-k:]
+        self._five_minute_cache_at=clock
+        return list(self._five_minute_cache)
+
     def settlement(self, ticker):
         if not ticker.startswith('KXBTC15M-') or '/' in ticker: raise ValueError('Bad ticker')
         t = urlquote(ticker, safe='')
