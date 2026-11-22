@@ -201,7 +201,9 @@ def test_reconciliation_market_mid_does_not_change_independent_forecast(env):
     main,clock,provider,client,_=env
     from app.ensemble import engine_pack
     market=provider.market(clock.now)
-    candles=__import__('app.engine',fromlist=['normalize_candles']).normalize_candles(provider.candles())
+    # Provider already returns normalized candle dicts; normalizing them
+    # again discards all data and used to test an unavailable forecast.
+    candles=provider.candles()
     original=engine_pack(provider.price(),market,candles)
     changed=engine_pack(provider.price(),{**market,'market_mid':.05,'yes_bid':.02,'yes_ask':.07,'no_bid':.93,'no_ask':.98},candles)
     assert original['prob_above']==changed['prob_above']
