@@ -90,7 +90,7 @@ def test_funding_cannot_change_market_structure_features_or_forecast():
     assert pressure_forecast(64000,m,.52,forecast)==pressure_forecast(64000,m,.52,other)
 
 
-def test_real_kalshi_book_imbalance_and_replenishment_enter_context():
+def test_kalshi_book_imbalance_and_replenishment_never_enter_btc_prediction():
     now=1800007200
     market={"ticker":"KXBTC15M-TEST"}
     tracker=DepthFlowTracker()
@@ -98,14 +98,15 @@ def test_real_kalshi_book_imbalance_and_replenishment_enter_context():
         "yes_dollars":[["0.40","50"],["0.39","40"]],
         "no_dollars":[["0.50","10"],["0.49","12"]]}},market["ticker"],now)
     b=normalize_orderbook({"orderbook_fp":{
-        "yes_dollars":[["0.40","85"],["0.39","45"]],
-        "no_dollars":[["0.50","10"],["0.49","12"]]}},market["ticker"],now+15)
-    first=tracker.observe(a,market,{},64000,now)
-    second=tracker.observe(b,market,{},64003,now+15)
-    assert first["available"] and second["available"]
-    assert "kalshi_near_book_imbalance" in first["directional_components"]
-    assert "kalshi_liquidity_wall_bias" in first["directional_components"]
-    assert "kalshi_depth_replenishment" in second["directional_components"]
+        "yes_dollars":[["0.90","2000"],["0.89","400"]],
+        "no_dollars":[["0.09","1"],["0.08","2"]]}},market["ticker"],now+15)
+    btc={"status":"STREAMING","cvd_2m":{"taker_imbalance":.55,"trades_seen":100}}
+    first=tracker.observe(a,market,btc,64000,now)
+    second=tracker.observe(b,market,btc,64003,now+15)
+    assert first==second
+    assert "btc_taker_cvd_2m" in first["directional_components"]
+    assert not any("kalshi" in key or "quote" in key or "book" in key
+                   for key in first["directional_components"])
 
 
 def test_multi_signal_pressure_directly_changes_probability():
@@ -113,10 +114,10 @@ def test_multi_signal_pressure_directly_changes_probability():
     market={"ticker":"KXBTC15M-TEST","seconds_left":600,"target":64000}
     bullish={"timeframes":{"directional_components":{"30m_efficiency":.9}},
              "microstructure":{"directional_components":{"btc_taker_cvd_2m":.8,
-                                              "kalshi_liquidity_wall_bias":.7}}}
+                                              "btc_taker_cvd_5m":.7}}}
     bearish={"timeframes":{"directional_components":{"30m_efficiency":-.9}},
              "microstructure":{"directional_components":{"btc_taker_cvd_2m":-.8,
-                                              "kalshi_liquidity_wall_bias":-.7}}}
+                                              "btc_taker_cvd_5m":-.7}}}
     up=pressure_forecast(64000,market,.50,bullish)
     down=pressure_forecast(64000,market,.50,bearish)
     assert up["prob_above"]>.5>down["prob_above"]
@@ -135,14 +136,14 @@ def test_every_new_model_voting_and_microstructure_changes_ensemble_probability(
                                       "2h_efficiency":.75}},
           "microstructure":{"available":True,
             "directional_components":{"btc_taker_cvd_2m":.80,
-                                     "kalshi_near_book_imbalance":.8}}}
+                                     "btc_large_aggressive_prints":.8}}}
     bear={"timeframes":{"available":True,
            "directional_components":{"30m_efficiency":-.95,
                                       "1h_efficiency":-.80,
                                       "2h_efficiency":-.75}},
           "microstructure":{"available":True,
             "directional_components":{"btc_taker_cvd_2m":-.80,
-                                     "kalshi_near_book_imbalance":-.8}}}
+                                     "btc_large_aggressive_prints":-.8}}}
     a=engine_pack(spot,market,candles,context=bull,now=now)
     b=engine_pack(spot,market,candles,context=bear,now=now)
     assert a["all_signal_integration_active"]
