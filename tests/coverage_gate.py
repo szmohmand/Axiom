@@ -37,7 +37,9 @@ REVIEWED_MISSING_ARCS = {
     # ingest rejects every venue except Coinbase/Kraken/Bitstamp before
     # the if/elif dispatch, making the final Bitstamp-false arc impossible.
     # Both malformed-book reset and all three venue dispatches are tested.
-    "app/axiom_brain.py": {(173, -143), (257, -198)},
+    # Diagnostic-only methods shifted these existing, proven-unreachable
+    # source guards; no new exception is introduced by this update.
+    "app/axiom_brain.py": {(228, -197), (313, -254)},
     # The source-second loop always contains 37 five-second windows; all
     # accepted iterations append once, yielding 36 returns exactly.
     "app/brti_live.py": {(122, 123)},
