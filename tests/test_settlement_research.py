@@ -99,10 +99,16 @@ def test_existing_forecast_is_unchanged_and_shadow_publishes_without_voting(monk
     monkeypatch.setattr(main,'AUTO_PAPER',False)
     monkeypatch.setattr(main,'DEMO',True)
     # This optional feature must not change normal ensemble outputs.
-    original=engine_pack(c[-1]['close'],m,c)
     state=main.update_once(now=now)
+    original=engine_pack(c[-1]['close'],m,c,
+        signals=state['btc_signals'],
+        context={'timeframes':state['higher_timeframes'],
+                 'microstructure':state['market_microstructure']},now=now)
     assert state['model']==original
-    assert len(state['model']['engines'])==4
+    assert {e['name'] for e in state['model']['engines']}=={
+        'axiom_volatility','aaryann_fair','kalshibot_headstart',
+        'axiom_target_dynamics','axiom_gradient_boosted_btc',
+        'axiom_full_nison','axiom_multi_signal_context'}
     assert state['research_shadow']['research_only']
     assert not state['research_shadow']['votes_in_ensemble']
     assert not state['research_shadow']['can_trigger_paper_or_orders']
@@ -128,7 +134,10 @@ def test_shadow_exception_does_not_interrupt_existing_poll(monkeypatch,tmp_path)
     def boom(*args): raise RuntimeError('simulated shadow outage')
     monkeypatch.setattr(main,'shadow_forecast_from_candles',boom)
     state=main.update_once(now=now)
-    assert state['model']==engine_pack(c[-1]['close'],m,c)
+    assert state['model']==engine_pack(c[-1]['close'],m,c,
+        signals=state['btc_signals'],
+        context={'timeframes':state['higher_timeframes'],
+                 'microstructure':state['market_microstructure']},now=now)
     assert state['research_shadow']['side']=='WAIT'
     assert 'Research model calculation failed' in state['research_shadow']['reason']
 
