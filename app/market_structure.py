@@ -33,7 +33,7 @@ def timeframes(five_minute,now):
         ts=_num(row.get("t"));o=_num(row.get("open"));h=_num(row.get("high"))
         l=_num(row.get("low"));c=_num(row.get("close"))
         raw_volume=row.get("volume");v=_num(raw_volume) if raw_volume is not None else None
-        if (None in (ts,o,h,l,c,v) or ts%300!=0 or ts+300>now or
+        if (None in (ts,o,h,l,c) or ts%300!=0 or ts+300>now or
             (last is not None and ts-last!=300) or not 0<l<=min(o,c)<=max(o,c)<=h or (raw_volume is not None and (v is None or v<0))):
             return unavailable
         clean.append({"t":int(ts),"open":o,"high":h,"low":l,"close":c,"volume":v})
