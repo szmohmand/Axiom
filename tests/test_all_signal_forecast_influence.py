@@ -131,4 +131,4 @@ def test_every_new_model_voting_and_microstructure_changes_ensemble_probability(
     assert {"axiom_gradient_boosted_btc","axiom_full_nison",
             "axiom_multi_signal_context"}<=names
     assert a["prob_above"]>b["prob_above"],(a["prob_above"],b["prob_above"])
-    assert all(e["name"]!="kalshi_market" for e in a["active_predictive_models"])
+    assert "kalshi_market" not in a["active_predictive_models"]
