@@ -243,6 +243,12 @@ def test_nison_full_study_cli_once_report_collect(tmp_path,monkeypatch,capsys):
     with pytest.raises(LoopTerminated):
         full.main()
     assert '"status": "RECORDED"' in capsys.readouterr().out
+    # The monitoring loop must not fake a recorded signal for a contract
+    # observed between its prespecified checkpoints.
+    monkeypatch.setattr(full,"observe",lambda *a:{"status":"OBSERVING"})
+    with pytest.raises(LoopTerminated):
+        full.main()
+    assert '"status": "RECORDED"' not in capsys.readouterr().out
     monkeypatch.setattr(full,"observe",
                         lambda *a:(_ for _ in ()).throw(ValueError("test fault")))
     monkeypatch.setattr(full.time,"sleep",
