@@ -162,7 +162,11 @@ def engine_pack(spot: float | None, market: dict | None, candles: list[dict], si
         return {'available':False,'prob_above':None,'prob_below':None,'side':'WAIT','reason':'At least 2 independent estimates required',
                 'engines':engines,'agreement':None,'spread':None,'alpha_vs_market':None,
                 'validated':False,'method':'experimental-median-consensus'}
-    p=statistics.median(good)
+    # In the integrated candidate, use a differentiable model pool. Median
+    # voting could silently ignore entire new models even when their inputs
+    # were real; an equal-weight mean gives every available candidate a
+    # measurable influence, with individual signals visible in diagnostics.
+    p=statistics.fmean(good) if enhanced else statistics.median(good)
     spread=max(good)-min(good)
     # Predictive outputs are not silenced just because competing hypotheses
     # disagree. Expose disagreement numerically for the execution layer.
