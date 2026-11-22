@@ -128,7 +128,10 @@ def test_live_pipeline_exposes_shadow_without_change_to_original_model(env):
     assert result["candlestick_challenger"]["votes_in_ensemble"] is False
     assert result["candlestick_challenger"]["can_trigger_paper_or_orders"] is False
     original=engine_pack(result["spot"],result["market"],result["candles"],
-                         signals=result["btc_signals"])
+                         signals=result["btc_signals"],
+                         context={"timeframes":result["higher_timeframes"],
+                                  "microstructure":result["market_microstructure"]},
+                         now=clock.now)
     assert result["model"]==original
     assert all(e["name"]!="nison_candlestick_challenger"
                for e in result["engines"])
