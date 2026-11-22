@@ -172,18 +172,17 @@ BUY_CANDIDATE/WAIT without assuming the chosen contract will win settlement;
 for an existing simulated paper position it calculates a depth-backed,
 illustrative after-fee exit review. A threshold future bid is NOT a predicted
 price or an executable fill, and quote-movement correlations are not proven
-trading alpha. Funding rates are intentionally marked NOT_CONNECTED, as
-no verified live funding feed is configured. No real order endpoints exist.
+trading alpha. No real order endpoints exist.
 
-## Public Binance spot-first and perpetual funding intelligence
-The complete FastAPI bot now connects Binance's public BTCUSDT aggregate
-trade WebSocket and the USD-M perpetual published funding/mark-index REST
-reference. It timestamps source events and receipts, checks for stale or
-blocked feeds, and compares Binance-first moves to *later observed* Kalshi
-full-depth quote snapshots on the same BTC15M contract. The lag lane may
-show WATCH or a gated, depth/fee-aware BUY_CANDIDATE without asserting
-that a subsequent price change, fill or profit will occur. Funding sign
-shows who pays whom and mark-index basis but NEVER votes on YES/NO.
+## Public Binance spot-first intelligence (no perpetual funding)
+The FastAPI bot uses Binance's public BTCUSDT aggregate trade WebSocket,
+including signed taker flow for BTC CVD and large-trade observation.
+It timestamps source events and receipts, checks for stale or blocked feeds,
+and compares Binance-first moves to *later observed* Kalshi full-depth quote
+snapshots on the same BTC15M contract. The lag lane may show WATCH or a
+gated, depth/fee-aware BUY_CANDIDATE without asserting that a subsequent
+price change, fill or profit will occur. Perpetual funding and its
+mark/index reference are not collected or used in predictions.
 Coinbase/BRTI remain the original outcome/settlement sources and Binance
 USDT is not BRTI USD. Region-restricted feeds stay explicitly unavailable;
 no quiet venue substitution is performed. Both workers are read-only.
