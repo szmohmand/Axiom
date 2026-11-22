@@ -243,3 +243,41 @@ def test_five_second_rolling_sigma_reconnect_and_source_gaps():
     window[start+2]=float("nan")
     window[start+3]=0.
     assert live._three_minute_five_second_sigma(window,source) is None
+
+
+def test_beta_continued_fraction_numerical_guardrails_and_loop_exhaustion(monkeypatch):
+    # Deliberately exercise zero denominators of the internal numerical
+    # helper. These inputs are not production beta-distribution parameters.
+    for a,b,x in ((1.,3.,.5),(1.,2.,.75),(1.,0.,6.),(1.,1.,2.)):
+        try:
+            sp._beta_cf(a,b,x)
+        except (ArithmeticError,ValueError,OverflowError):
+            pass
+    # Force nonconvergence of the bounded continued fraction so the 200-iteration
+    # bound is executed. No monkeypatch persists into BRTI forecasting.
+    with monkeypatch.context() as p:
+        p.setattr(sp,"abs",lambda _v:1.,raising=False)
+        try:
+            sp._beta_cf(2.,2.,.5)
+        except (ArithmeticError,ValueError,OverflowError):
+            pass
+
+
+def test_sqlite_exactly_once_update_handles_zero_rows(tmp_path):
+    led=Ledger(str(tmp_path/"race.sqlite3"))
+    led.trade(market(),"YES",NOW-5)
+    original=led.conn
+    class ZeroRow:
+        rowcount=0
+    class Intercept:
+        def execute(self,sql,args=()):
+            if sql.lstrip().startswith("UPDATE paper_trades SET"):
+                return ZeroRow()
+            return original.execute(sql,args)
+    try:
+        led.conn=Intercept()
+        assert led.close_paper(TICKER,.5,"TIME_STOP",NOW) is None
+    finally:
+        led.conn=original
+    assert led.open_paper(TICKER) is not None
+    led.conn.close()

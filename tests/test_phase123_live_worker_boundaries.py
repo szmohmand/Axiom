@@ -177,3 +177,52 @@ def test_stale_state_and_worker_status_are_not_reported_healthy(live,monkeypatch
         main._refresh_status_locked()
         assert main.state["status"]=="ERROR"
         main.state["errors"].pop("worker")
+
+
+def test_existing_paper_without_exit_stays_open_and_validation_fault_isolated(live,monkeypatch):
+    main,clock,provider,_=live
+    m=provider.market(clock.now)
+    main.ledger.trade(m,"YES",clock.now-8,take_profit=.95)
+    waiting=main.update_once()
+    assert waiting["paper_exit"] is None
+    assert waiting["trade_decision"]["action"]=="WAIT"
+    assert main.ledger.open_paper(m["ticker"]) is not None
+    def invalid_open(*_args):
+        raise ValueError("malformed stored paper position")
+    monkeypatch.setattr(main.ledger,"open_paper",invalid_open)
+    fault=main.update_once()
+    assert "paper_exit" in fault["errors"]
+    assert fault["trade_decision"]["action"]=="WAIT"
+
+
+def test_duplicate_auto_paper_cannot_be_written(live,monkeypatch):
+    main,clock,provider,_=live
+    main.AUTO_PAPER=True
+    monkeypatch.setattr(main,"axiom_decide",lambda *_a,**_k:_decision("BUY_YES"))
+    def duplicate(*_args,**_kwargs):
+        raise ValueError("Existing paper ticker")
+    monkeypatch.setattr(main.ledger,"trade",duplicate)
+    state=main.update_once()
+    assert state["trade_decision"]["action"]=="BUY_YES"
+    assert main.ledger.data()["count"]["paper"]==0
+
+
+def test_persistent_settlement_fault_blocks_entries_and_marks_model_wait(live,monkeypatch):
+    main,clock,provider,_=live
+    monkeypatch.setattr(main,"axiom_decide",lambda *_a,**_k:_decision("BUY_YES"))
+    with main.state_lock:
+        main.state["errors"]["settlement"]="settlement temporarily offline"
+    result=main.update_once()
+    assert result["model"]["available"] is True
+    assert result["model"]["side"]=="WAIT"
+    assert result["engines"][0]["side"]=="WAIT"
+    assert result["trade_decision"]["action"]=="WAIT"
+    assert "settlement" in result["errors"]
+
+
+def test_demo_market_failure_survives_without_calling_live_exchange(env):
+    main,clock,provider,client,_=env
+    provider.fail_market=True
+    state=main.update_once()
+    assert "kalshi" in state["errors"]
+    assert state["trade_decision"]["order_placed"] is False

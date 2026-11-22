@@ -292,3 +292,46 @@ def test_mock_public_ws_sessions_reconnect_and_nonblocking_threads(monkeypatch):
     threads=brain.start_flow_workers(flow,stop)
     assert len(threads)==3
     assert all(x["daemon"] is True for x in made)
+
+
+def test_remaining_flow_validation_downward_pressure_and_regime():
+    flow=brain.ConstituentFlow()
+    flow._trade("coinbase",None,"buy",1,NOW)
+    assert len(flow.trades["coinbase"])==1
+    flow.ingest("coinbase",{"product_id":"BTC-USD","type":"heartbeat"},NOW)
+    flow.ingest("coinbase",{"product_id":"BTC-USD","type":"l2update",
+                "changes":[["buy","100","nan"],["buy","-1","2"]]},NOW)
+    flow.ingest("kraken",{"channel":"book","type":"snapshot","data":[{
+                "symbol":"BTC/USD",
+                "bids":[["100",3],{"price":"100","qty":3}],
+                "asks":[["101",3],{"price":"101","qty":3}]}]},NOW)
+    flow.ingest("kraken",{"channel":"heartbeat","data":[{"symbol":"BTC/USD"}]},NOW)
+    flow.ingest("bitstamp",{"channel":"heartbeat","event":"data","data":{}},NOW)
+    flow._book("coinbase",{100.:3},{101.:3},NOW,snapshot=True)
+    flow.books["coinbase"]={"bids":{102.:2},"asks":{101.:2}}
+    flow.book_at["coinbase"]=NOW
+    assert "coinbase" not in flow.snapshot(NOW)["venue_midpoints"]
+    down=brain.ConstituentFlow()
+    for venue in ("coinbase","kraken"):
+        _seed(down,venue,NOW-51)
+        for i in range(51):
+            at=NOW-50+i
+            down._book(venue,{100.:10-i*.025},{101.:10+i*.025},
+                       at,snapshot=False)
+            down._trade(venue,("down",i),"sell",.2,at)
+    snap=down.snapshot(NOW)
+    assert snap["available"] and snap["confirmed_direction"]=="DOWN",snap
+    closes=[100+i*.12 for i in range(65)]
+    bars=[{"close":p,"high":p+.05,"low":p-.05} for p in closes]
+    five=[{"close":100+i} for i in range(6)]
+    assert brain._regime(bars,five)=="TRENDING"
+    from zoneinfo import ZoneInfo
+    from datetime import datetime
+    saturday=datetime(2026,11,21,12,0,tzinfo=ZoneInfo("America/New_York")).timestamp()
+    assert brain._et_windows(saturday)==(False,False)
+    tape=brain.MarketTape()
+    invalid={"available":True,"ticker":contract()["ticker"],
+             "received_at":NOW,
+             "best":{"YES":{"bid":None,"ask":None}}}
+    tape.observe(contract(),invalid,100.,NOW)
+    assert not tape.mid_history

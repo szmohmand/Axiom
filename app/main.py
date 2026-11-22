@@ -415,49 +415,32 @@ def update_once(now=None):
     errors={}; market=None; spot=None; candles=[]
     try:
         market=provider.market(now)
-        if market is not None and not DEMO:
-            brti_tracker.observe_market(market)
         if market is None:
             errors['kalshi']='No active Kalshi BTC15M market available'
     except Exception as e:
         errors['kalshi']=_error_message(e)
-    # Production forecasting is BRTI-FIRST, never Coinbase spot or candles.
-    # Demo explicitly retains its own synthetic feed for offline acceptance.
-    brti_now = (brti_tracker.snapshot(now_ms=int(now*1000))
-                if not DEMO else None)
-    if not DEMO:
-        if not isinstance(brti_now,dict) or brti_now.get('status')!='STREAMING':
-            errors['brti_stream']='Authenticated CF Benchmarks BRTI stream unavailable'
+    # Live execution returned above; this path is synthetic demo only.
+    brti_now = None
+    try:
+        spot=provider.price()
+        if spot is None or not isinstance(spot,(float,int)) or not math.isfinite(spot) or spot<=0:
+            errors['coinbase_ticker']='Missing or invalid synthetic BTC spot'; spot=None
+    except Exception as e:
+        errors['coinbase_ticker']=_error_message(e)
+    try:
+        candles=provider.candles()
+        if not isinstance(candles,list) or len(candles)<31:
+            errors['coinbase_candles']='Fewer than 31 synthetic candles available'; candles=[]
         else:
-            spot = float(brti_now['latest_value_usd'])
-            candles = brti_now.get('btc_1m_candles') or []
-            if not math.isfinite(spot) or spot <= 0:
-                spot = None
-                errors['brti_stream']='Invalid authenticated CF Benchmarks BRTI index value'
-            # Real BRTI candle history warms up after server restart. The service
-            # remains operational, but the forecast remains WAIT until enough
-            # genuine completed minutes exist. Never backfill fake candles.
-    else:
-        try:
-            spot=provider.price()
-            if spot is None or not isinstance(spot,(float,int)) or not math.isfinite(spot) or spot<=0:
-                errors['coinbase_ticker']='Missing or invalid synthetic BTC spot'; spot=None
-        except Exception as e:
-            errors['coinbase_ticker']=_error_message(e)
-        try:
-            candles=provider.candles()
-            if not isinstance(candles,list) or len(candles)<31:
-                errors['coinbase_candles']='Fewer than 31 synthetic candles available'; candles=[]
-            else:
-                recent=candles[-61:]
-                timestamps=[c['t'] for c in recent]
-                if (any(not isinstance(t,(int,float)) or not math.isfinite(t) for t in timestamps)
-                        or any(b-a != 60 for a,b in zip(timestamps,timestamps[1:]))):
-                    errors['coinbase_candles']='Candles are missing, duplicated or not one-minute intervals'; candles=[]
-                elif timestamps[-1] > now+60:
-                    errors['coinbase_candles']='Candles timestamped in the future'; candles=[]
-        except Exception as e:
-            errors['coinbase_candles']=_error_message(e); candles=[]
+            recent=candles[-61:]
+            timestamps=[c['t'] for c in recent]
+            if (any(not isinstance(t,(int,float)) or not math.isfinite(t) for t in timestamps)
+                    or any(b-a != 60 for a,b in zip(timestamps,timestamps[1:]))):
+                errors['coinbase_candles']='Candles are missing, duplicated or not one-minute intervals'; candles=[]
+            elif timestamps[-1] > now+60:
+                errors['coinbase_candles']='Candles timestamped in the future'; candles=[]
+    except Exception as e:
+        errors['coinbase_candles']=_error_message(e); candles=[]
     model={'available':False,'side':'WAIT','prob_above':None,'reason':'No active market or input data'}
     signals=unavailable_signals('Market/price/candles unavailable or invalid')
     trade_decision=execution_decision(None,None,None,None,None,now)
@@ -485,15 +468,12 @@ def update_once(now=None):
     # book-derived price delay as predictive inputs.
     higher=timeframes([],now)
     if market is not None:
-        if not DEMO:
-            higher=timeframes((brti_now or {}).get('btc_5m_candles') or [],now)
-        else:
-            reader=getattr(provider,'timeframe_candles',None)
-            if callable(reader):
-                try:
-                    higher=timeframes(reader(),time.time())
-                except Exception:
-                    higher=timeframes([],now)
+        reader=getattr(provider,'timeframe_candles',None)
+        if callable(reader):
+            try:
+                higher=timeframes(reader(),time.time())
+            except Exception:
+                higher=timeframes([],now)
     try:
         flow=market_flow_tracker.observe(binance=binance_before_book,
                                          now=time.time())
@@ -501,8 +481,6 @@ def update_once(now=None):
         flow={'available':False,'reason':'Flow feature calculation unavailable',
               'directional_components':{}}
     advanced_context={'timeframes':higher,'microstructure':flow}
-    if not DEMO:
-        advanced_context['brti']=brti_now
     depth_op=unavailable_opportunity('Independent forecast or depth not available')
     depth_exec=unavailable_execution('No verified live order-book opportunity')
     op={'side':'WAIT','edge':None,'entry_price':None,'reason':'No healthy market forecast'}
