@@ -38,7 +38,14 @@ def completed_one_minute(seconds, now_seconds):
                      "low": min(values), "close": values[-1],
                      "volume": None, "observed_seconds": len(values),
                      "source": SOURCE})
-    return bars[-155:]
+    # Downstream models must never interpret separated minutes as consecutive
+    # returns. A genuine missing minute resets the usable live-history suffix.
+    contiguous = []
+    for bar in bars:
+        if contiguous and bar["t"] - contiguous[-1]["t"] != 60:
+            contiguous = []
+        contiguous.append(bar)
+    return contiguous[-155:]
 
 
 def completed_five_minute(bars):
