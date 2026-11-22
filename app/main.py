@@ -232,7 +232,9 @@ def update_once(now=None):
     research_shadow = unavailable_research_shadow('Market or source candles unavailable')
     if market is not None and not errors:
         try:
-            research_shadow = shadow_forecast_from_candles(candles, market, now)
+            research_shadow = shadow_forecast_from_candles(candles,
+                {k:market[k] for k in ('ticker','target','seconds_left','close_ts')
+                 if k in market}, now)
         except Exception:
             # An optional research probe cannot interrupt the production poll.
             research_shadow = unavailable_research_shadow('Research model calculation failed')
