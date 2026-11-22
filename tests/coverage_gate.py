@@ -13,6 +13,11 @@ import sys
 # Missing statements are proved unreachable by current source invariants.
 REVIEWED_MISSING_STATEMENTS = {
     "app/orderbook.py": {100, 158},
+    # 37 five-second buckets either fail early on missing genuine BRTI data
+    # or produce exactly 36 adjacent returns. Keep the defensive check.
+    # Exercised with complete and incomplete input in
+    # test_five_second_rolling_sigma_reconnect_and_source_gaps.
+    "app/brti_live.py": {123},
     "app/settlement_research.py": {88},
     # 31+ strictly valid continuous bars always produce 30+ log returns;
     # this defensive check is logically unreachable without altering inputs
@@ -27,12 +32,24 @@ REVIEWED_MISSING_STATEMENTS = {
 # Not a generic waiver: all other new arcs STILL fail this gate.
 REVIEWED_MISSING_ARCS = {
     "app/engine.py": {(129, -104)},
+    # _book guards both sides nonempty and strictly uncrossed before
+    # _near_depth, so it cannot return a missing midpoint at line 173.
+    # ingest rejects every venue except Coinbase/Kraken/Bitstamp before
+    # the if/elif dispatch, making the final Bitstamp-false arc impossible.
+    # Both malformed-book reset and all three venue dispatches are tested.
+    "app/axiom_brain.py": {(173, -143), (257, -198)},
+    # The source-second loop always contains 37 five-second windows; all
+    # accepted iterations append once, yielding 36 returns exactly.
+    "app/brti_live.py": {(122, 123)},
     "app/decision_signals.py": {(72, 73)},
     "app/orderbook.py": {(99, 100), (157, 158)},
     "app/settlement_research.py": {(87, 88)},
     # Return from 'with self.lock' has a compiler-inserted context-manager
     # exit. Real populated and empty watch returns are both exercised.
-    "app/storage.py": {(114, -111)},
+    "app/storage.py": {(114, -111), (127, -124)},
+    # watch_info's populated-return branch exits a 'with self.lock' block;
+    # CPython reports the impossible direct return-to-function arc.
+    # Both populated and empty results are exercised in the ledger tests.
     # All sampled i have >=2 available neighbors within Gaussian radius.
     # Every candidate tower segment length >=15 has valid j,k partitions.
     "app/nison_structures.py": {(38, 35), (238, 223)},

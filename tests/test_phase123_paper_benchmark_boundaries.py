@@ -281,3 +281,16 @@ def test_sqlite_exactly_once_update_handles_zero_rows(tmp_path):
         led.conn=original
     assert led.open_paper(TICKER) is not None
     led.conn.close()
+
+
+def test_unknown_legacy_paper_status_is_not_falsely_settled(tmp_path):
+    # A manually corrupted legacy status is not an OPEN or EXITED position.
+    led=Ledger(str(tmp_path/"orphan.sqlite3"))
+    led.trade(market(),"YES",NOW-5)
+    led.conn.execute("UPDATE paper_trades SET status='UNKNOWN' WHERE ticker=?",(TICKER,))
+    led.conn.commit()
+    led.grade(TICKER,"yes",NOW+400)
+    row=led.data()["trades"][0]
+    assert row["status"]=="UNKNOWN" and row["result"] is None
+    assert row["exited_at"] is None
+    led.conn.close()
