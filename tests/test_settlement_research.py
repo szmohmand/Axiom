@@ -152,5 +152,5 @@ def test_dashboard_exposes_nonvoting_shadow_without_changing_trade_controls():
         assert 'id="' + identifier + '"' in markup
         assert "set('" + identifier + "'" in markup
     assert 'SHADOW · NON-VOTING' in markup
-    assert 'BTC proxy study · not the BRTI index' in markup
+    assert 'BRTI settlement-index research model' in markup
 
