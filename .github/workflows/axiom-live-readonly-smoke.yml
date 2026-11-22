@@ -55,7 +55,11 @@ jobs:
               if snapshot['status']=='LIVE':
                   assert snapshot['model']['available']
                   assert health.status_code==200
-                  assert len(snapshot['engines'])==5
+                  assert {e['name'] for e in snapshot['engines']}=={
+                      'axiom_volatility','aaryann_fair','kalshibot_headstart',
+                      'axiom_target_dynamics','axiom_gradient_boosted_btc',
+                      'axiom_full_nison','axiom_multi_signal_context'}
+                  assert not snapshot['contract_repricing']['order_placed']
                   assert snapshot['btc_signals']['available'] is True
                   assert snapshot['trade_decision']['order_placed'] is False
                   assert len(snapshot['candles'])>=31
