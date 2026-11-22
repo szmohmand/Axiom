@@ -24,6 +24,24 @@ systemctl cat "$SERVICE" >/dev/null || fail 'Existing AXIOM service missing.'
 systemctl is-active --quiet "$SERVICE" || fail 'Existing service not active; diagnose it first.'
 [[ $(systemctl show --value -p User "$SERVICE") == axiom ]] ||
     fail 'Service must run as existing unprivileged axiom user.'
+# Support the *next* upgrade as well as the first: choose the Python ABI
+# of the currently running release, not blindly the original bootstrap.
+CURRENT_DIR=$(systemctl show --value -p WorkingDirectory "$SERVICE")
+case "$CURRENT_DIR" in
+    "$ROOT/current")
+        ACTIVE_PYTHON="$ROOT/venv/bin/python"
+        ;;
+    "$ROOT/releases/"*)
+        ACTIVE_SHA=${CURRENT_DIR##*/}
+        [[ "$ACTIVE_SHA" =~ ^[0-9a-f]{40}$ ]] ||
+            fail 'Current release directory does not have a verified SHA name.'
+        ACTIVE_PYTHON="$ROOT/venvs/$ACTIVE_SHA/bin/python"
+        ;;
+    *)
+        fail 'Unexpected current working directory; inspect service before upgrading.'
+        ;;
+esac
+[[ -x "$ACTIVE_PYTHON" ]] || fail 'Currently running Python environment is missing.'
 command -v git >/dev/null && command -v python3 >/dev/null ||
     fail 'Git and system Python must already be installed.'
 
@@ -95,9 +113,10 @@ git clone --quiet --depth 1 --branch main "$REPO" "$RELEASE"
 [[ $(git -C "$RELEASE" rev-parse HEAD) == "$COMMIT" ]] ||
     fail 'main advanced past the green-tested SHA: abort.'
 
-# Match the installed Python ABI (the repo lock was tested under Python 3.13,
-# while Ubuntu 24.04 commonly uses 3.12). Wheel-only installs fail safely.
-"$ROOT/venv/bin/python" -m venv "$VENV"
+# Match the ACTUAL running service's Python ABI, supporting future upgrades
+# from prior releases. The lock was tested under Python 3.13; Ubuntu 24.04
+# often has Python 3.12. Wheel-only installs must fail rather than guess.
+"$ACTIVE_PYTHON" -m venv "$VENV"
 "$VENV/bin/python" -m pip install --disable-pip-version-check --no-cache-dir \
     --only-binary=:all: -r "$RELEASE/requirements.lock.txt"
 "$VENV/bin/python" -m pip check
