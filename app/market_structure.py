@@ -167,18 +167,30 @@ class DepthFlowTracker:
             if binance.get("funding_status")=="LIVE" and basis is not None:
                 result["directional_components"]["btc_perpetual_basis_pressure"]=_sig(basis/10)
         if (snapshot and prev and snapshot["mid"] is not None and prev["mid"] is not None and
-            prev["ticker"]==snapshot["ticker"] and
-            abs(snapshot["mid"]-prev["mid"])<.005):
-            cvd=_num((binance or {}).get("cvd_2m",{}).get("taker_imbalance"))
-            if cvd is not None and abs(cvd)>.25:
+            prev["ticker"]==snapshot["ticker"]):
+            cvd=_num(((binance or {}).get("cvd_2m") or {}).get("taker_imbalance"))
+            if cvd is not None:
+                quote_move=snapshot["mid"]-prev["mid"]
+                spot_move=None
+                if (snapshot["spot"] is not None and prev["spot"] is not None
+                    and prev["spot"]>0):
+                    spot_move=10000*math.log(snapshot["spot"]/prev["spot"])
+                # Continuous candidate score: BTC aggressor flow dominates
+                # when Kalshi has not repriced; shrinks smoothly as quote
+                # movement increases, never silently zeroed at an arbitrary
+                # 0.5-cent cutoff.
+                stickiness=1/(1+abs(quote_move)/.01)
+                lag_proxy=_sig(2*cvd)*stickiness
+                result["directional_components"]["btc_vs_kalshi_quote_absorption_proxy"]=lag_proxy
+                if spot_move is not None:
+                    result["directional_components"]["btc_price_first_repricing_proxy"]=(
+                        _sig(spot_move/10)*stickiness)
                 result["observations"]["absorption_proxy"]={
-                    "status":"POSSIBLE_KALSHI_QUOTE_STICKINESS_WITH_BTC_TAKER_FLOW",
+                    "status":"CONTINUOUS_BTC_TAKER_FLOW_VS_KALSHI_REPRICING_PROXY",
                     "not_verified_btc_l2_absorption":True,
-                    "direction":"BUY" if cvd>0 else "SELL",
-                    "quote_change":round(snapshot["mid"]-prev["mid"],5)}
-                # Detecting lack of Kalshi quote adjustment after signed BTC
-                # flow is useful as a repricing signal, not proof of a wall fill.
-                result["directional_components"]["btc_vs_kalshi_quote_absorption_proxy"]=_sig(cvd*2)
+                    "quote_change":round(quote_move,6),
+                    "kalshi_quote_stickiness":round(stickiness,6),
+                    "btc_move_bps":round(spot_move,5) if spot_move is not None else None}
         result.update(available=bool(result["directional_components"]),
                       reason="Observed Coinbase/Binance/Kalshi context with explicit provenance",
                       observations={**result["observations"],
