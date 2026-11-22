@@ -136,10 +136,12 @@ class BinanceTelemetry:
         status="STREAMING" if fresh else "STALE" if latest else "UNAVAILABLE"
         direction=("LONGS_PAY_SHORTS" if funding["rate"]>0 else
                    "SHORTS_PAY_LONGS" if funding["rate"]<0 else "NEUTRAL") if f_fresh else "UNKNOWN"
-        recent_2m=[p for p in recent if 0<=now-p["timestamp_ms"]/1000<=120 and
-                   p.get("signed_quantity") is not None]
-        recent_5m=[p for p in recent if 0<=now-p["timestamp_ms"]/1000<=300 and
-                   p.get("signed_quantity") is not None]
+        # A disconnected/stale BTC trade stream cannot continue to vote with
+        # its old CVD merely because old trades remain inside a 2m window.
+        recent_2m=([p for p in recent if 0<=now-p["timestamp_ms"]/1000<=120 and
+                    p.get("signed_quantity") is not None] if fresh else [])
+        recent_5m=([p for p in recent if 0<=now-p["timestamp_ms"]/1000<=300 and
+                    p.get("signed_quantity") is not None] if fresh else [])
         def signed_flow(rows):
             total=sum(p["quantity"] for p in rows)
             value=sum(p["signed_quantity"] for p in rows)
