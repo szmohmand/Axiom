@@ -21,62 +21,41 @@ jobs:
           python-version: '3.13'
       - name: Install pinned dependencies
         run: python -m pip install --disable-pip-version-check -r requirements.lock.txt
-      - name: Probe public Kalshi and Coinbase GET endpoints (no orders or credentials)
+      - name: Probe public Kalshi GET endpoints (no orders or credentials)
         shell: bash
         run: |
           set -o pipefail
           PYTHONPATH=. python tests/live_readonly_smoke.py | tee live-readonly-smoke-result.json
-      - name: Exercise actual application on real read-only feeds
+      - name: Prove live app cannot fall back to Coinbase without authenticated BRTI
         shell: bash
         run: |
           PYTHONPATH=. python - <<'PY'
-          import json,time
+          import json
           from app import main
           assert main.DEMO is False and main.AUTO_PAPER is False
-          for attempt in range(6):
-              snapshot=main.update_once()
-              health=main.health()
-              state=main.get_state()
-              result={
-                  'attempt':attempt,
-                  'mode':snapshot['mode'],
-                  'status':snapshot['status'],
-                  'errors':snapshot['errors'],
-                  'engine_count':len(snapshot['engines']),
-                  'quality':snapshot.get('candle_quality'),
-                  'scalp_side':snapshot['scalp']['side'],
-                  'opportunity_side':snapshot['opportunity']['side'],
-                  'health_http':health.status_code,
-                  'api_state_http':state.status_code,
-                  'auto_paper':main.AUTO_PAPER,
-              }
-              print(json.dumps(result,indent=2),flush=True)
-              assert state.status_code==200
-              if snapshot['status']=='LIVE':
-                  assert snapshot['model']['available']
-                  assert health.status_code==200
-                  assert {e['name'] for e in snapshot['engines']}=={
-                      'axiom_volatility','aaryann_fair','kalshibot_headstart',
-                      'axiom_target_dynamics','axiom_gradient_boosted_btc',
-                      'axiom_full_nison','axiom_multi_signal_context'}
-                  assert not snapshot['contract_repricing']['order_placed']
-                  assert snapshot['btc_signals']['available'] is True
-                  assert snapshot['trade_decision']['order_placed'] is False
-                  assert len(snapshot['candles'])>=31
-                  assert all(right['t']-left['t']==60 for left,right in zip(snapshot['candles'],snapshot['candles'][1:]))
-                  break
-              # Kalshi may temporarily show no active contract at the 15m
-              # rollover. This must be safe, visible, and SHORT-LIVED.
-              assert snapshot['errors']=={'kalshi':'No active Kalshi BTC15M market available'}, result
-              assert snapshot['status']=='DEGRADED' and snapshot['ok'] is False
-              assert snapshot['model']['available'] is False
-              assert snapshot['opportunity']['side']=='WAIT'
-              assert health.status_code==503
-              if attempt==5:
-                  raise AssertionError('No real Kalshi contract appeared within bounded rollover retries')
-              time.sleep(15)
-          else:
-              raise AssertionError('No healthy real-market snapshot')
+          # Public-only runner has NO authenticated BRTI worker. Coinbase
+          # must not be consulted to compensate for the missing index.
+          def forbidden(*args, **kwargs):
+              raise AssertionError('Production Coinbase price path was invoked')
+          main.provider.price=forbidden
+          main.provider.candles=forbidden
+          main.provider.timeframe_candles=forbidden
+          snapshot=main.update_once()
+          health=main.health()
+          state=main.get_state()
+          assert snapshot['price_source']=='CF_BENCHMARKS_BRTI'
+          assert 'brti_stream' in snapshot['errors']
+          assert 'coinbase_ticker' not in snapshot['errors']
+          assert 'coinbase_candles' not in snapshot['errors']
+          assert snapshot['model']['available'] is False
+          assert snapshot['opportunity']['side']=='WAIT'
+          assert snapshot['trade_decision']['order_placed'] is False
+          assert snapshot['manual_paper_available'] is False if 'manual_paper_available' in snapshot else True
+          assert main.ledger.data()['count']['paper']==0
+          assert health.status_code==503 and state.status_code==200
+          print(json.dumps({'status':'PASS','live_benchmark':'AUTHENTICATED_BRTI_REQUIRED',
+              'coinbase_fallback':False,'forecast':'WAIT',
+              'paper_entries':0,'health_status':health.status_code},sort_keys=True))
           PY
       - name: Save probe output even if endpoints fail
         if: always()
