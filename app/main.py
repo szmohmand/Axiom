@@ -17,6 +17,7 @@ from .feeds import LiveProvider, DemoProvider
 from .engine import scalp_signal
 from .ensemble import engine_pack, execution_screen
 from .market_structure import BTCFlowTracker, timeframes
+from .contract_repricing import ContractRepricingModel, unavailable as unavailable_contract_repricing
 from .storage import Ledger
 from .settlement_research import shadow_forecast_from_candles, unavailable as unavailable_research_shadow
 from .candlestick_context import read_candlestick_context, unavailable as unavailable_candle_context
@@ -50,6 +51,7 @@ state_lock = threading.RLock()
 movement_tracker = IntracontractTracker()
 binance_lag_tracker = BinanceKalshiLagTracker()
 market_flow_tracker = BTCFlowTracker()
+contract_repricing_tracker = ContractRepricingModel()
 state = {'mode':'DEMO' if DEMO else 'LIVE','last_attempt':None,'last_success':None,
          'market':None,'spot':None,'model':None,'engines':[],'scalp':None,'opportunity':None,'candles':[],
          'research_shadow':unavailable_research_shadow('No completed research observation yet'),
@@ -66,6 +68,7 @@ state = {'mode':'DEMO' if DEMO else 'LIVE','last_attempt':None,'last_success':No
           'binance_kalshi_delay':wait_binance_lag('Awaiting real Binance and Kalshi quotes'),
           'higher_timeframes':timeframes([],time.time()),
           'market_microstructure':{'available':False,'reason':'Awaiting genuine BTC exchange trade flow'},
+          'contract_repricing':unavailable_contract_repricing('Waiting for observed quotes'),
          'errors':{},'paper_auto_enabled':AUTO_PAPER,'watch':None,'candle_quality':None,'status':'STARTING',
          'settlement':{'status':'NOT_CHECKED','last_attempt':None,'last_success':None,
                        'checked':0,'failed':0}}
@@ -131,8 +134,10 @@ def _view_locked(now):
         data['candlestick_challenger'] = unavailable_candle_challenger('Operational health degraded')
         data['intracontract'] = unavailable_timeline('Operational health degraded')
         data['resale_setup'] = wait_resale('Operational health degraded')
+        data['contract_repricing'] = unavailable_contract_repricing('Operational health degraded')
         data['binance_kalshi_delay'] = wait_binance_lag('Operational health degraded',data['binance_intelligence'])
     if 'worker_stale' in data['errors']:
+        data['contract_repricing'] = unavailable_contract_repricing('Market worker stale')
         data['orderbook'] = unavailable_book(data['market'].get('ticker') if data['market'] else None,
                                                'Market worker stale; cached book invalid')
         data['research_shadow'] = unavailable_research_shadow('Market update worker is stale')
@@ -323,6 +328,19 @@ def update_once(now=None):
     else:
         binance_lag_tracker.reset()
         binance_lag=wait_binance_lag('Missing healthy synchronized market inputs',binance_before_book)
+    # Quote repricing belongs ONLY to the execution/valuation lane, after
+    # independent BTC forecast and ledger writes. Never feed its result back
+    # into engine_pack, BTC probability, or settlement model weights.
+    contract_repricing=unavailable_contract_repricing('Awaiting healthy contract and quote')
+    if market and not errors and not persistent_faults and model.get('available'):
+        try:
+            contract_repricing=contract_repricing_tracker.observe(
+                market,book,model,signals,
+                max(now,float(book.get('received_at') or now)),btc_flow=flow)
+        except (KeyError,TypeError,ValueError,ArithmeticError,IndexError):
+            contract_repricing=unavailable_contract_repricing('Quote repricing learner failed')
+    else:
+        contract_repricing_tracker.pending=None
     # Read-only intracontract intelligence, after transactional ledger writes.
     if market and not errors and not persistent_faults and model.get('available'):
         try:
@@ -356,6 +374,7 @@ def update_once(now=None):
              'execution_intelligence':depth_exec,
              'btc_signals':signals,'trade_decision':trade_decision,
              'intracontract':intracontract,'resale_setup':resale_setup,
+              'contract_repricing':contract_repricing,
              'binance_intelligence':binance_before_book,'binance_kalshi_delay':binance_lag,
              'higher_timeframes':higher,'market_microstructure':flow,
             'candle_quality':({'status':'UNAVAILABLE','reason':errors['coinbase_candles']}
