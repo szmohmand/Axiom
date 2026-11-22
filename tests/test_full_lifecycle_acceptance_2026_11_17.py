@@ -33,7 +33,12 @@ def test_full_depth_joins_real_engine_paper_http_settlement_export_restart(env):
 
     first = main.update_once()
     assert first["ok"] and first["status"] == "DEMO"
-    assert first["model"]["available"] and len(first["engines"]) == 5
+    expected_engine_names={'axiom_volatility','aaryann_fair','kalshibot_headstart',
+                           'axiom_target_dynamics','axiom_gradient_boosted_btc',
+                           'axiom_full_nison','axiom_multi_signal_context'}
+    assert first["model"]["available"]
+    assert {e["name"] for e in first["engines"]} == expected_engine_names
+    per_checkpoint=1+sum(bool(e["available"]) for e in first["engines"])
     assert first["scalp"]["side"] in ("LONG", "SHORT", "WAIT")
     assert first["btc_signals"]["available"] and first["trade_decision"]["order_placed"] is False
     assert first["orderbook"]["available"]
@@ -75,7 +80,7 @@ def test_full_depth_joins_real_engine_paper_http_settlement_export_restart(env):
         assert polled["orderbook"]["ticker"] == provider.ticker
         assert polled["execution_intelligence"]["order_placed"] is False
     before = client.get("/api/state").json()
-    assert before["engine_scores"]["samples"] == 24
+    assert before["engine_scores"]["samples"] == per_checkpoint*4
     assert before["stats"]["settled_paper_trades"] == 0
     assert before["count"]["paper"] == 1
 
@@ -85,8 +90,8 @@ def test_full_depth_joins_real_engine_paper_http_settlement_export_restart(env):
     graded = client.get("/api/state").json()
     assert graded["stats"]["settled_paper_trades"] == 1
     assert graded["trades"][0]["result"] == "yes"
-    assert graded["engine_scores"]["samples"] == 24
-    assert len(graded["engine_scores"]["scores"]) == 24
+    assert graded["engine_scores"]["samples"] == per_checkpoint*4
+    assert len(graded["engine_scores"]["scores"]) == per_checkpoint*4
     assert main.ledger.unresolved() == []
     main.grade_once()
     assert client.get("/api/state").json()["stats"] == graded["stats"]
@@ -100,7 +105,7 @@ def test_full_depth_joins_real_engine_paper_http_settlement_export_restart(env):
     reopened = Ledger(str(tmp / "runtime.sqlite3"))
     assert reopened.data()["count"]["paper"] == 1
     assert reopened.data()["stats"]["settled_paper_trades"] == 1
-    assert reopened.engine_scores()["samples"] == 24
+    assert reopened.engine_scores()["samples"] == per_checkpoint*4
     reopened.conn.close()
 
 
@@ -133,8 +138,18 @@ def test_depth_fail_closed_forecast_scoring_and_ledger_continue(env, fault):
     provider.orderbook = troubled
     degraded_depth = main.update_once()
     assert degraded_depth["model"]["available"]
-    assert degraded_depth["model"]["prob_above"] == pytest.approx(p)
-    assert degraded_depth["model"]["side"] == initial_scores["side"]
+    # Expiry time advances, so an independent forecast may change naturally.
+    # Recompute at the SAME timestamp from BTC-only inputs: book outages
+    # cannot influence any direction or probability.
+    from app.ensemble import engine_pack
+    independent=engine_pack(
+        degraded_depth["spot"],degraded_depth["market"],degraded_depth["candles"],
+        signals=degraded_depth["btc_signals"],
+        context={"timeframes":degraded_depth["higher_timeframes"],
+                 "microstructure":degraded_depth["market_microstructure"]},
+        now=clock.now)
+    assert degraded_depth["model"]==independent
+    assert degraded_depth["model"]["side"] in ("ABOVE","BELOW","WAIT")
     assert degraded_depth["depth_opportunity"]["status"] == "WAIT"
     assert degraded_depth["execution_intelligence"]["action"] == "WAIT"
     assert degraded_depth["execution_intelligence"]["order_placed"] is False
@@ -152,7 +167,13 @@ def test_depth_fail_closed_forecast_scoring_and_ledger_continue(env, fault):
     clock.now += 10
     recovered = main.update_once()
     assert recovered["orderbook"]["available"]
-    assert recovered["model"]["prob_above"] == pytest.approx(p)
+    independent_recovered=engine_pack(
+        recovered["spot"],recovered["market"],recovered["candles"],
+        signals=recovered["btc_signals"],
+        context={"timeframes":recovered["higher_timeframes"],
+                 "microstructure":recovered["market_microstructure"]},
+        now=clock.now)
+    assert recovered["model"]==independent_recovered
     assert recovered["execution_intelligence"]["action"] in ("ENTER", "WAIT")
 
 
