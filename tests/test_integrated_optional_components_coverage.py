@@ -85,3 +85,22 @@ def test_bad_manual_auto_paper_entry_is_isolated_but_observation_commits(env,mon
     assert state["model"]["available"]
     assert main.ledger.conn.execute("SELECT count(*) FROM observations").fetchone()[0]==1
     assert main.ledger.conn.execute("SELECT count(*) FROM paper_trades").fetchone()[0]==0
+
+
+def test_explicit_opt_in_shadow_grading_keeps_btc_vote_unchanged(env,monkeypatch):
+    main,clock,p,client,_=env
+    clock.now=p.close-600
+    main.AUTO_PAPER=False
+    monkeypatch.setattr(main,"CANDLESTICK_SHADOW_GRADING_ENABLED",True)
+    result=main.update_once()
+    assert result["ok"] and result["model"]["available"]
+    assert not result["candlestick_challenger"]["votes_in_ensemble"]
+    assert not result["candlestick_challenger"]["can_trigger_paper_or_orders"]
+    graded={r[0] for r in main.ledger.conn.execute(
+        "SELECT DISTINCT engine FROM engine_snapshots WHERE ticker=?",
+        (p.ticker,)).fetchall()}
+    assert "ensemble" in graded
+    assert graded.issuperset({e["name"] for e in result["engines"] if e["available"]})
+    # Opt-in adds rows to prospective scoring; never adds a voting BTC engine.
+    assert "nison_candlestick_challenger" not in {
+        e["name"] for e in result["engines"]}
