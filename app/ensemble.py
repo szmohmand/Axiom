@@ -146,8 +146,8 @@ def engine_pack(spot: float | None, market: dict | None, candles: list[dict], si
             pressure={'available':False,'prob_above':None,'reason':'Market feature inputs unavailable'}
         engines.append(engine_result('axiom_multi_signal_context',
             pressure.get('prob_above') if pressure.get('available') else None,
-            'multiscale-orderflow-funding-cvd-walls',
-            '30m/60m/120m + book imbalance, liquidity walls, absorption, CVD, funding and large-trade flow',
+            'multiscale-orderflow-cvd-walls',
+            '30m/60m/120m + book imbalance, liquidity walls, absorption, CVD and large-trade flow',
             independent=False,calibrated=False,
             active_factors=pressure.get('components',{}),
             experimental_z_shift=pressure.get('combined_z_shift')))

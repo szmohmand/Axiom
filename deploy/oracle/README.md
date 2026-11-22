@@ -78,7 +78,7 @@ changes, imbalance and rejection proxies. The separate movement-based watch
 can flag YES or NO regardless of eventual contract result, but does not
 predict a future exit quote or execute orders. A matching paper position gets
 an instantaneous depth/illustrative-fee resale review; these are not actual
-fills or profit. Funding data is explicitly NOT_CONNECTED until verified.
+fills or profit. No perpetual funding endpoint is used.
 The Oracle service environment requests a five-second poll interval; real
 network latency may prevent exact five-second observations.
 
@@ -87,23 +87,22 @@ resale, depth-level change, actual quote-timing history, paper exit review,
 and a five-second requested polling interval. The installer must not deploy
 an older candidate or modify live trading permissions.
 
-## Binance lead/funding integrated (read-only)
-The genuine production lifespan starts TWO additional public-only independent
-background workers: Binance spot BTCUSDT trade WS (event and receipt time)
-and Binance USD-M perpetual mark/funding REST every 60 seconds. Neither
-worker needs an account/API key or can place orders. Geographic/regulatory
-network blocking or stale timestamps results in UNAVAILABLE, not a fake
-lead signal. Only source-ordered Binance moves followed by an actual Kalshi
-book receipt can create a quote-delay WATCH; size-adjusted YES/NO asks,
-funding context, current full depth and independent after-fee outcomes decide
-whether an illustrative BUY_CANDIDATE is displayed. This is NOT a validated
-execution edge; Binance BTCUSDT is not the BRTI settlement benchmark.
+## Binance spot lead and signed BTC trade flow (read-only)
+The production lifespan starts ONE public-only Binance background worker:
+BTCUSDT spot aggregate-trade WebSocket (exchange event and local receipt time).
+It exposes genuine signed taker flow, CVD and unusually large trade prints.
+No futures funding worker or mark/index funding endpoint is started.
+The public spot worker needs no trading account or API key and cannot place
+orders. Geographic blocking or stale timestamps results in UNAVAILABLE,
+not a fabricated trade or lead signal. Only source-ordered Binance moves
+followed by an actual Kalshi book receipt can create a quote-delay WATCH;
+current full depth and after-fee hypothetical pricing inform an illustrative
+BUY_CANDIDATE. This is NOT a validated execution edge; Binance BTCUSDT
+is not the BRTI settlement benchmark.
 
-## Binance read-only workers
-For live operation, keep BINANCE_INTELLIGENCE_ENABLED=1. The Binance spot
-BTCUSDT public WebSocket and perpetual funding REST require access from the
-Oracle VM and are individually stale-guarded. A Binance move and Kalshi quote
-must have verified event/receipt ordering before the lag lane can alert; a
-candidate is not an exchange-proven stale price, a fill or verified profit.
-If the Oracle region cannot reach Binance, the feature will show UNAVAILABLE
-and will NOT silently substitute Coinbase/BRTI/other funding venues.
+## Binance read-only worker
+For live operation, keep BINANCE_INTELLIGENCE_ENABLED=1. The Binance BTCUSDT
+public spot WebSocket must be reachable from Oracle. A Binance move and Kalshi
+quote need valid event/receipt ordering before the lag lane can alert.
+No futures funding data is collected. If the Oracle region cannot reach
+Binance, the spot-flow feature is UNAVAILABLE.

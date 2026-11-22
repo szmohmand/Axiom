@@ -1,16 +1,15 @@
-"""Binance public stream, published funding and Binance-first Kalshi lag.
+"""Binance public BTC spot trade stream and Binance-first Kalshi lag.
 
-Futures funding is SECONDARY nonvoting context. REST quote timestamps are
-receipt times, not exchange first-publication clocks or executable fills.
+REST quote timestamps are receipt times, not exchange first-publication
+clocks or executable fills. No futures funding data is collected.
 """
 import json
 import threading
 
 import pytest
-import requests
 
 from app.binance_telemetry import (BinanceTelemetry, finite, invalid,
-                                    spot_worker, funding_worker)
+                                    spot_worker)
 from app.lag_intelligence import BinanceKalshiLagTracker, wait
 from app.orderbook import normalize_orderbook
 from test_e2e_synthetic import env
@@ -24,13 +23,6 @@ def trade(seconds=T,price=60000,tid=1):
             "T":ms,"E":ms+5,"p":str(price)}
 
 
-def funding(seconds=T,rate=".00015"):
-    return {"symbol":"BTCUSDT","lastFundingRate":rate,
-            "time":int(seconds*1000),
-            "nextFundingTime":int((seconds+1200)*1000),
-            "markPrice":"60020","indexPrice":"60000"}
-
-
 def bk(seconds=T,ticker="KXBTC15M-TEST",yes=".38",no=".60",
        yes_size="35",no_size="35"):
     return normalize_orderbook({"orderbook_fp":{"yes_dollars":[[yes,yes_size]],
@@ -42,31 +34,20 @@ def market(ticker="KXBTC15M-TEST"):
             "target":60010,"market_mid":.39}
 
 
-def spot(price,seconds,now=None,funding_rate=None):
+def spot(price,seconds,now=None):
     return {"status":"STREAMING","spot_price":price,"spot_trade_at":seconds-.15,
-            "spot_received_at":seconds-.05,
-            "funding_bias":"LONGS_PAY_SHORTS" if funding_rate else "UNKNOWN",
-            "funding_percent":funding_rate,
-            "funding_status":"LIVE" if funding_rate else "UNAVAILABLE"}
+            "spot_received_at":seconds-.05}
 
 
-def test_binance_spot_and_funding_are_real_distinct_timestamped_sources():
+def test_binance_spot_has_real_timestamps_and_no_funding_fields():
     b=BinanceTelemetry(enabled=True)
     assert b.snapshot(T)["status"]=="UNAVAILABLE"
     assert b.observe_trade(trade(T-.1),T)
-    assert b.observe_funding(funding(T-1),T)
     s=b.snapshot(T+.25)
-    assert s["status"]=="STREAMING"
-    assert s["spot_price"]==60000
-    assert s["funding_status"]=="LIVE"
-    assert s["funding_percent"]==pytest.approx(.015)
-    assert s["funding_bias"]=="LONGS_PAY_SHORTS"
-    assert s["funding_mark_index_basis_bps"]>0
-    assert s["settlement_reference"] is False
-    assert s["funding_direction_is_prediction"] is False
-    assert s["orders_placed"] is False
+    assert s["status"]=="STREAMING" and s["spot_price"]==60000
+    assert not any("funding" in field or "perpetual" in field for field in s)
+    assert s["settlement_reference"] is False and s["orders_placed"] is False
     assert b.snapshot(T+8)["status"]=="STALE"
-    assert b.snapshot(T+190)["funding_status"]=="STALE"
     b.note_connection(connected=True)
     assert b.snapshot(T+.3)["connected"]
 
@@ -85,32 +66,16 @@ def test_binance_rejects_invalid_trade_and_spoofed_times(event,received):
     assert b.snapshot(T)["status"]=="UNAVAILABLE"
 
 
-def test_binance_trade_order_duplicate_and_funding_sign_and_errors():
+def test_binance_trade_order_duplicates_and_no_futures_api():
     b=BinanceTelemetry(enabled=True)
     assert b.observe_trade(trade(T,tid=11),T+.1)
     assert not b.observe_trade(trade(T,tid=11),T+.2)
     assert not b.observe_trade(trade(T-1,tid=12),T+.2)
     assert b.observe_trade(trade(T+.1,tid=12),T+.2)
-    assert b.observe_funding(funding(T-1,rate="-.0003"),T)
-    assert b.snapshot(T+.2)["funding_bias"]=="SHORTS_PAY_LONGS"
-    assert b.observe_funding(funding(T-1,rate="0"),T)
-    assert b.snapshot(T+.2)["funding_bias"]=="NEUTRAL"
-    b.note_funding_error("HTTPError")
-    assert b.snapshot(T+200)["funding_reason"]=="HTTPError"
+    assert not hasattr(b,"observe_funding")
+    assert not hasattr(b,"note_funding_error")
+    assert "funding" not in repr(b.snapshot(T+.2)).lower()
     assert not BinanceTelemetry().snapshot(T)["orders_placed"]
-
-
-@pytest.mark.parametrize("field,value",[
-    ("symbol","WRONG"),("lastFundingRate","nan"),
-    ("lastFundingRate",".7"),("time",1000),
-    ("time",int((T-90)*1000)),("nextFundingTime",0),
-    ("markPrice","0"),("indexPrice","nan")])
-def test_binance_funding_validation_rejects_unavailable_or_stale(field,value):
-    b=BinanceTelemetry(enabled=True)
-    d=funding(T)
-    d[field]=value
-    assert not b.observe_funding(d,T)
-    assert b.snapshot(T)["funding_status"]=="UNAVAILABLE"
 
 
 def test_helper_invalid_numbers_and_safe_default():
@@ -153,39 +118,6 @@ def test_spot_worker_network_failure_never_creates_fake_trade(monkeypatch):
     assert b.last_error=="OSError" and not b.snapshot(T)["orders_placed"]
 
 
-def test_funding_worker_success_and_bad_http_are_bounded(monkeypatch):
-    from app import binance_telemetry as mod
-    class Stop:
-        def is_set(self):return False
-        def wait(self,s):return True
-    class Response:
-        def raise_for_status(self):return None
-        def json(self):return funding(T-1)
-    class Session:
-        def __init__(self):self.closed=False
-        def get(self,*a,**k):return Response()
-        def close(self):self.closed=True
-    instance=Session()
-    monkeypatch.setattr(mod.requests,"Session",lambda:instance)
-    monkeypatch.setattr(mod.time,"time",lambda:T)
-    b=BinanceTelemetry(enabled=True)
-    funding_worker(b,Stop())
-    assert instance.closed and b.snapshot(T)["funding_status"]=="LIVE"
-    class BrokenSession(Session):
-        def get(self,*args,**kwargs):
-            raise requests.RequestException("geoblocked")
-    monkeypatch.setattr(mod.requests,"Session",BrokenSession)
-    funding_worker(b,Stop())
-    assert b.last_funding_error=="RequestException"
-    class Invalid(Response):
-        def json(self):return {"symbol":"BTCUSDT"}
-    class InvalidSession(Session):
-        def get(self,*a,**k):return Invalid()
-    monkeypatch.setattr(mod.requests,"Session",InvalidSession)
-    funding_worker(b,Stop())
-    assert b.last_funding_error=="InvalidOrStaleFundingPayload"
-
-
 def test_binance_first_followed_by_small_quote_change_can_be_buy_candidate():
     tracker=BinanceKalshiLagTracker()
     p=market()
@@ -200,7 +132,6 @@ def test_binance_first_followed_by_small_quote_change_can_be_buy_candidate():
     assert second["kalshi_yes_mid_change"]==pytest.approx(0)
     assert second["independent_outcome_edge_after_entry_fee"]>.03
     assert second["entry_ask_size_adjusted"]==pytest.approx(.4)
-    assert not second["funding_used_for_direction"]
     assert second["orders_placed"] is False
 
 
@@ -332,38 +263,6 @@ def test_spot_worker_timeout_frame_none_connect_loop_and_stop_paths(monkeypatch)
     assert not b.connected
 
 
-def test_funding_worker_no_request_if_stopped_and_two_intervals(monkeypatch):
-    from app import binance_telemetry as mod
-    class Response:
-        def raise_for_status(self):return None
-        def json(self):return funding(T-1)
-    class Session:
-        def __init__(self):self.calls=0;self.closed=False
-        def get(self,*args,**kwargs):
-            self.calls+=1
-            return Response()
-        def close(self):self.closed=True
-    session=Session()
-    monkeypatch.setattr(mod.requests,"Session",lambda:session)
-    monkeypatch.setattr(mod.time,"time",lambda:T)
-    stop=threading.Event()
-    stop.set()
-    funding_worker(BinanceTelemetry(enabled=True),stop)
-    assert session.calls==0 and session.closed
-    other=Session()
-    monkeypatch.setattr(mod.requests,"Session",lambda:other)
-    class TwoCycles:
-        def __init__(self):self.calls=0
-        def is_set(self):return False
-        def wait(self,seconds):
-            self.calls+=1
-            return self.calls>=2
-    b=BinanceTelemetry(enabled=True)
-    funding_worker(b,TwoCycles())
-    assert other.calls==2 and other.closed
-    assert b.snapshot(T)["funding_status"]=="LIVE"
-
-
 def test_lag_rejects_binance_trade_observed_before_prior_book():
     tracker=BinanceKalshiLagTracker()
     p=market()
@@ -409,11 +308,12 @@ def test_binance_worker_threads_start_and_stop_with_actual_api_lifespan(env,monk
         started.add(threading.current_thread().name)
         stop_event.wait(3)
     monkeypatch.setattr(main,"binance_spot_worker",fake_worker)
-    monkeypatch.setattr(main,"binance_funding_worker",fake_worker)
     with TestClient(main.app) as live:
         assert live.get("/").status_code==200
-        assert {"read-only-binance-spot-worker","read-only-binance-funding-worker"}<=(
+        assert "read-only-binance-spot-worker" in (
             {thread.name for thread in threading.enumerate()})
-    assert {"read-only-binance-spot-worker","read-only-binance-funding-worker"}<=started
+        assert "read-only-binance-funding-worker" not in (
+            {thread.name for thread in threading.enumerate()})
+    assert "read-only-binance-spot-worker" in started
     assert not any(thread.name.startswith("read-only-binance-") and thread.is_alive()
                    for thread in threading.enumerate())

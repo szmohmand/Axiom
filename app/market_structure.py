@@ -156,16 +156,6 @@ class DepthFlowTracker:
                     "count":large.get("large_print_count"),
                     "proxy_not_wallet_identity":True,
                     "net_taker_usdt":net}
-            funding=_num(binance.get("funding_rate"))
-            basis=_num(binance.get("funding_mark_index_basis_bps"))
-            if binance.get("funding_status")=="LIVE" and funding is not None:
-                # Directional hypothesis (long pressure), NOT a proven
-                # economic law. Negative funding can mean squeeze risk.
-                result["directional_components"]["btc_perpetual_funding_pressure"]=_sig(
-                    math.copysign(math.log1p(abs(funding)*1e4),funding))
-                result["observations"]["funding_hypothesis"]="same-direction positioning; contrarian possibility still open"
-            if binance.get("funding_status")=="LIVE" and basis is not None:
-                result["directional_components"]["btc_perpetual_basis_pressure"]=_sig(basis/10)
         if (snapshot and prev and snapshot["mid"] is not None and prev["mid"] is not None and
             prev["ticker"]==snapshot["ticker"]):
             cvd=_num(((binance or {}).get("cvd_2m") or {}).get("taker_imbalance"))
@@ -209,7 +199,7 @@ def pressure_forecast(spot,market,base_probability,context):
     Underlying strengths are hypotheses, not a fitted ML classifier.
     """
     unavailable={"name":"axiom_multi_signal_context",
-       "method":"multi-timeframe-orderflow-cvd-funding-walls-largeprints",
+       "method":"multi-timeframe-orderflow-cvd-walls-largeprints",
        "available":False,"prob_above":None,"prob_below":None,
        "side":"WAIT","reason":"No observed features",
        "independent":False,"trained":False,"calibrated":False}

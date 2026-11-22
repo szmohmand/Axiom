@@ -27,7 +27,7 @@ from .brti_live import BRTITracker, run_worker as brti_reference_worker
 from .decision_signals import derive_signals, unavailable as unavailable_signals, execution_decision
 from .intracontract import (IntracontractTracker, unavailable as unavailable_timeline,
                             wait as wait_resale, resale_screen, resale_position_review)
-from .binance_telemetry import BinanceTelemetry, spot_worker as binance_spot_worker, funding_worker as binance_funding_worker
+from .binance_telemetry import BinanceTelemetry, spot_worker as binance_spot_worker
 from .lag_intelligence import BinanceKalshiLagTracker, wait as wait_binance_lag
 from .depth_intelligence import (analyze_opportunities, execution_guidance,
                                   unavailable_opportunity, unavailable_execution)
@@ -301,8 +301,8 @@ def update_once(now=None):
                     except ValueError:
                         pass
                 watch=ledger.watch_info(market['ticker'])
-    # Independent, read-only Binance-first detector. Funding never votes in
-    # settlement forecasting or triggers an order; provider outages fail WAIT.
+    # Independent, read-only Binance-first detector using actual spot trades.
+    # Public provider outages fail WAIT.
     if market and not errors and not persistent_faults and model.get('available'):
         try:
             binance_lag=binance_lag_tracker.observe(market,book,binance_before_book,
@@ -471,8 +471,7 @@ async def lifespan(_app):
         brti_thread.start()
     binance_threads=[]
     if BINANCE_INTELLIGENCE_ENABLED:
-        for target,name in ((binance_spot_worker,'read-only-binance-spot-worker'),
-                            (binance_funding_worker,'read-only-binance-funding-worker')):
+        for target,name in ((binance_spot_worker,'read-only-binance-spot-worker'),):
             thread=threading.Thread(target=target,args=(binance_telemetry,shutdown),name=name,daemon=True)
             thread.start()
             binance_threads.append(thread)

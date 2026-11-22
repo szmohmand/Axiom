@@ -19,7 +19,7 @@ MAX_GAP = 60.0
 def unavailable(reason):
     return {"available": False, "reason": reason, "observations": 0,
             "last_move": None, "max_observed_yes_mid_move": None,
-            "rejection_proxy": "NONE", "funding": "NOT_CONNECTED",
+            "rejection_proxy": "NONE",
             "net_book_change_is_order_events": False,
             "unverified_resale_profit": True}
 
@@ -104,7 +104,7 @@ class IntracontractTracker:
                 "ticker":ticker,"observations":len(self.rows),
                 "current_yes_midpoint":round(row["mid"],5),
                 "last_move":move,"max_observed_yes_mid_move":round(max(changes),5) if changes else None,
-                "rejection_proxy":reject, "funding":"NOT_CONNECTED",
+                "rejection_proxy":reject,
                 "net_book_change_is_order_events":False,
                 "unverified_resale_profit":True}
 
