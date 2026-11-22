@@ -16,7 +16,7 @@ from pydantic import BaseModel
 from .feeds import LiveProvider, DemoProvider
 from .engine import scalp_signal
 from .ensemble import engine_pack, execution_screen
-from .market_structure import DepthFlowTracker, timeframes
+from .market_structure import BTCFlowTracker, timeframes
 from .storage import Ledger
 from .settlement_research import shadow_forecast_from_candles, unavailable as unavailable_research_shadow
 from .candlestick_context import read_candlestick_context, unavailable as unavailable_candle_context
@@ -49,7 +49,7 @@ ledger = Ledger(DATA_PATH)
 state_lock = threading.RLock()
 movement_tracker = IntracontractTracker()
 binance_lag_tracker = BinanceKalshiLagTracker()
-market_flow_tracker = DepthFlowTracker()
+market_flow_tracker = BTCFlowTracker()
 state = {'mode':'DEMO' if DEMO else 'LIVE','last_attempt':None,'last_success':None,
          'market':None,'spot':None,'model':None,'engines':[],'scalp':None,'opportunity':None,'candles':[],
          'research_shadow':unavailable_research_shadow('No completed research observation yet'),
@@ -65,7 +65,7 @@ state = {'mode':'DEMO' if DEMO else 'LIVE','last_attempt':None,'last_success':No
           'binance_intelligence':binance_telemetry.snapshot(),
           'binance_kalshi_delay':wait_binance_lag('Awaiting real Binance and Kalshi quotes'),
           'higher_timeframes':timeframes([],time.time()),
-          'market_microstructure':{'available':False,'reason':'Awaiting BTC flow and Kalshi depth'},
+          'market_microstructure':{'available':False,'reason':'Awaiting genuine BTC exchange trade flow'},
          'errors':{},'paper_auto_enabled':AUTO_PAPER,'watch':None,'candle_quality':None,'status':'STARTING',
          'settlement':{'status':'NOT_CHECKED','last_attempt':None,'last_success':None,
                        'checked':0,'failed':0}}
@@ -232,7 +232,9 @@ def update_once(now=None):
     research_shadow = unavailable_research_shadow('Market or source candles unavailable')
     if market is not None and not errors:
         try:
-            research_shadow = shadow_forecast_from_candles(candles, market, now)
+            research_shadow = shadow_forecast_from_candles(candles,
+                {k:market[k] for k in ('ticker','target','seconds_left','close_ts')
+                 if k in market}, now)
         except Exception:
             # An optional research probe cannot interrupt the production poll.
             research_shadow = unavailable_research_shadow('Research model calculation failed')
