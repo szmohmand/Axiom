@@ -343,11 +343,11 @@ def scan_nison(candles:list[dict],now:float)->dict:
     # Completed next-candle confirmation of the preceding completed candle.
     if len(b)>=3:
         prior_trend=_trend(b[:-2])
-        if prior_trend=="DOWN" and _shape(prev)["low_frac"]>=.55 and
-           current["close"]>prev["high"] and cur["up"]:
+        if (prior_trend=="DOWN" and _shape(prev)["low_frac"]>=.55 and
+            current["close"]>prev["high"] and cur["up"]):
             _append(patterns,"BULLISH_CONFIRMATION",9,after="previous_rejection")
-        if prior_trend=="UP" and _shape(prev)["up_frac"]>=.55 and
-           current["close"]<prev["low"] and cur["down"]:
+        if (prior_trend=="UP" and _shape(prev)["up_frac"]>=.55 and
+            current["close"]<prev["low"] and cur["down"]):
             _append(patterns,"BEARISH_CONFIRMATION",9,after="previous_rejection")
     # Ch 6 longer geometric structures, after confirmed pivots and strict windows.
     patterns.extend(scan_structural_formations(b,atr))
@@ -369,11 +369,11 @@ def scan_nison(candles:list[dict],now:float)->dict:
         old=b[-42:-21]
         old_hi=max(x["high"] for x in old)
         old_lo=min(x["low"] for x in old)
-        if max(x["close"] for x in b[-20:-1])>old_hi+tol and
-           abs(current["low"]-old_hi)<=atr*.4 and current["close"]>old_hi:
+        if (max(x["close"] for x in b[-20:-1])>old_hi+tol and
+            abs(current["low"]-old_hi)<=atr*.4 and current["close"]>old_hi):
             _append(patterns,"POLARITY_SUPPORT_RETEST",11)
-        if min(x["close"] for x in b[-20:-1])<old_lo-tol and
-           abs(current["high"]-old_lo)<=atr*.4 and current["close"]<old_lo:
+        if (min(x["close"] for x in b[-20:-1])<old_lo-tol and
+            abs(current["high"]-old_lo)<=atr*.4 and current["close"]<old_lo):
             _append(patterns,"POLARITY_RESISTANCE_RETEST",11)
     # Ch 16 box breakout with close, not just a wick.
     if (trend1=="RANGE" and high_volume and cur["fraction"]>=.55
