@@ -23,9 +23,9 @@ def fixtures(seconds=600,mid=.52):
 def test_all_three_engines_same_snapshot_and_market_not_voting():
     m,c,s=fixtures()
     e=engine_pack(s,m,c)
-    assert e['available'] and len(e['engines'])==4
+    assert e['available'] and len(e['engines'])==3
     assert set(x['name'] for x in e['engines'])=={
-        'kalshi_market','axiom_volatility','aaryann_fair','kalshibot_headstart'}
+        'axiom_volatility','aaryann_fair','kalshibot_headstart'}
     assert e['validated'] is False
     real=[x['prob_above'] for x in e['engines'] if x.get('independent') and x['available']]
     assert abs(e['prob_above']-sorted(real)[1]) < 1e-5
@@ -74,21 +74,21 @@ def test_checkpoint_immutable_and_official_grade_all_models():
     with TemporaryDirectory() as d:
         db=Ledger(str(Path(d)/'ledger.sqlite3'))
         n=db.engine_snapshots(m,e,1000)
-        assert n==5  # 3 experimental engines + market baseline + ensemble
-        assert db.engine_snapshots(m,e,1009)==5
-        assert db.engine_scores()['samples']==5
+        assert n==4  # three BTC-only experimental engines + ensemble; quote is execution-only
+        assert db.engine_snapshots(m,e,1009)==4
+        assert db.engine_scores()['samples']==4
         assert len(db.unresolved())==1
         # changing prediction in same window does not overwrite a first forecast
         very_different=engine_pack(s+300,m,c)
         db.engine_snapshots(m,very_different,1020)
         db.grade(m['ticker'],'no',1090)
         stats=db.engine_scores()
-        assert len(stats['scores'])==5
+        assert len(stats['scores'])==4
         assert all(x['n']==1 for x in stats['scores'])
         assert all(x['validated_alpha'] is False for x in stats['scores'])
         assert len(db.unresolved())==0
         h,rows=db.export('engine_snapshots')
-        assert 'checkpoint' in h and len(rows)==5
+        assert 'checkpoint' in h and len(rows)==4
         p0=[row[h.index('prob_above')] for row in rows if row[h.index('engine')]=='ensemble'][0]
         assert p0==e['prob_above']
 
