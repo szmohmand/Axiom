@@ -258,10 +258,12 @@ def test_mock_public_ws_sessions_reconnect_and_nonblocking_threads(monkeypatch):
     class St:
         def __init__(self):
             self.waits=[]
+            self.stopped=False
         def is_set(self):
-            return False
+            return self.stopped
         def wait(self,s):
             self.waits.append(s)
+            self.stopped=True
             return True
     stop=St()
     flow=brain.ConstituentFlow()
@@ -274,6 +276,7 @@ def test_mock_public_ws_sessions_reconnect_and_nonblocking_threads(monkeypatch):
     def fail(*_):
         raise OSError("disconnected")
     monkeypatch.setattr(brain.asyncio,"run",fail)
+    stop.stopped=False
     brain._venue_worker(flow,"kraken",stop)
     assert stop.waits[-1]==4
     made=[]
