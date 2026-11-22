@@ -42,7 +42,7 @@ def contiguous_real_candle_suffix(candles, min_bars=MIN_REAL_ONE_MINUTE_BARS):
             return candles, quality
         gaps.append((i, seconds))
     if not gaps:
-        if len(recent) < PREFERRED_ONE_MINUTE_BARS:
+        if len(recent) < 61:
             quality.update(status='SHORT_BUT_CONTIGUOUS')
         return candles, quality
     last_gap_start = gaps[-1][0]
