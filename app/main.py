@@ -39,7 +39,7 @@ AUTO_PAPER = os.environ.get('AUTO_PAPER', '1') == '1'
 POLL_SECONDS = max(5, int(os.environ.get('POLL_SECONDS', '15')))
 DATA_PATH = os.environ.get('DATA_PATH', str(ROOT.parent/'data'/'bot.sqlite3'))
 ADMIN_TOKEN = os.environ.get('BOT_ADMIN_TOKEN','')
-BRTI_LIVE_ENABLED = (not DEMO and os.environ.get('BRTI_LIVE_ENABLED','0') == '1')
+BRTI_LIVE_ENABLED = (not DEMO and os.environ.get('BRTI_LIVE_ENABLED','1') == '1')
 BINANCE_INTELLIGENCE_ENABLED = (not DEMO and os.environ.get('BINANCE_INTELLIGENCE_ENABLED','1') == '1')
 # Opt-in shadow grading ONLY: no voting, execution, or historical rewriting.
 CANDLESTICK_SHADOW_GRADING_ENABLED = os.environ.get('CANDLESTICK_SHADOW_GRADING_ENABLED','0') == '1'
@@ -164,30 +164,42 @@ def update_once(now=None):
             errors['kalshi']='No active Kalshi BTC15M market available'
     except Exception as e:
         errors['kalshi']=_error_message(e)
-    try:
-        spot=provider.price()
-        if spot is None or not isinstance(spot,(float,int)) or not math.isfinite(spot) or spot<=0:
-            errors['coinbase_ticker']='Missing or invalid BTC spot price'; spot=None
-    except Exception as e:
-        errors['coinbase_ticker']=_error_message(e)
-    try:
-        candles=provider.candles()
-        if not isinstance(candles,list) or len(candles)<31:
-            errors['coinbase_candles']='Fewer than 31 candles available'; candles=[]
+    # Production forecasting is BRTI-FIRST, never Coinbase spot or candles.
+    # Demo explicitly retains its own synthetic feed for offline acceptance.
+    brti_now = (brti_tracker.snapshot(now_ms=int(now*1000))
+                if not DEMO else None)
+    if not DEMO:
+        if not isinstance(brti_now,dict) or brti_now.get('status')!='STREAMING':
+            errors['brti_stream']='Authenticated CF Benchmarks BRTI stream unavailable'
         else:
-            # Returns and ATR treat every candle as one minute. Detect missing
-            # intervals, duplicates and impossible future data before forecasting.
-            recent=candles[-61:]
-            timestamps=[c['t'] for c in recent]
-            if (any(not isinstance(t,(int,float)) or not math.isfinite(t) for t in timestamps)
-                    or any(b-a != 60 for a,b in zip(timestamps,timestamps[1:]))):
-                errors['coinbase_candles']='Candles are missing, duplicated or not one-minute intervals'; candles=[]
-            elif timestamps[-1] > now+60:
-                errors['coinbase_candles']='Candles timestamped in the future'; candles=[]
-            elif not DEMO and now-timestamps[-1]>200:
-                errors['coinbase_candles']='Candles stale'; candles=[]
-    except Exception as e:
-        errors['coinbase_candles']=_error_message(e); candles=[]
+            spot = float(brti_now['latest_value_usd'])
+            candles = brti_now.get('btc_1m_candles') or []
+            if not math.isfinite(spot) or spot <= 0:
+                spot = None
+                errors['brti_stream']='Invalid authenticated CF Benchmarks BRTI index value'
+            if len(candles)<31:
+                errors['brti_candles']='Warming up real CF Benchmarks BRTI 1m history (need 31 completed minutes)'
+    else:
+        try:
+            spot=provider.price()
+            if spot is None or not isinstance(spot,(float,int)) or not math.isfinite(spot) or spot<=0:
+                errors['demo_ticker']='Missing or invalid synthetic BTC spot'; spot=None
+        except Exception as e:
+            errors['demo_ticker']=_error_message(e)
+        try:
+            candles=provider.candles()
+            if not isinstance(candles,list) or len(candles)<31:
+                errors['demo_candles']='Fewer than 31 synthetic candles available'; candles=[]
+            else:
+                recent=candles[-61:]
+                timestamps=[c['t'] for c in recent]
+                if (any(not isinstance(t,(int,float)) or not math.isfinite(t) for t in timestamps)
+                        or any(b-a != 60 for a,b in zip(timestamps,timestamps[1:]))):
+                    errors['demo_candles']='Candles are missing, duplicated or not one-minute intervals'; candles=[]
+                elif timestamps[-1] > now+60:
+                    errors['demo_candles']='Candles timestamped in the future'; candles=[]
+        except Exception as e:
+            errors['demo_candles']=_error_message(e); candles=[]
     model={'available':False,'side':'WAIT','prob_above':None,'reason':'No active market or input data'}
     signals=unavailable_signals('Market/price/candles unavailable or invalid')
     trade_decision=execution_decision(None,None,None,None,None,now)
@@ -215,12 +227,15 @@ def update_once(now=None):
     # book-derived price delay as predictive inputs.
     higher=timeframes([],now)
     if market is not None:
-        reader=getattr(provider,'timeframe_candles',None)
-        if callable(reader):
-            try:
-                higher=timeframes(reader(),time.time())
-            except Exception:
-                higher=timeframes([],now)
+        if not DEMO:
+            higher=timeframes((brti_now or {}).get('btc_5m_candles') or [],now)
+        else:
+            reader=getattr(provider,'timeframe_candles',None)
+            if callable(reader):
+                try:
+                    higher=timeframes(reader(),time.time())
+                except Exception:
+                    higher=timeframes([],now)
     try:
         flow=market_flow_tracker.observe(binance=binance_before_book,
                                          now=time.time())
@@ -228,6 +243,8 @@ def update_once(now=None):
         flow={'available':False,'reason':'Flow feature calculation unavailable',
               'directional_components':{}}
     advanced_context={'timeframes':higher,'microstructure':flow}
+    if not DEMO:
+        advanced_context['brti']=brti_now
     depth_op=unavailable_opportunity('Independent forecast or depth not available')
     depth_exec=unavailable_execution('No verified live order-book opportunity')
     op={'side':'WAIT','edge':None,'entry_price':None,'reason':'No healthy market forecast'}
@@ -265,9 +282,9 @@ def update_once(now=None):
                            if k in market}
         try:
             signals=derive_signals(forecast_contract,spot,candles,now,
-                brti=brti_tracker.snapshot(now_ms=int(now*1000)) if BRTI_LIVE_ENABLED else None,
-                spot_received_at=getattr(provider,'price_received_at',None),
-                spot_source_at=getattr(provider,'price_source_at',None))
+                brti=brti_now,
+                spot_received_at=None if not DEMO else getattr(provider,'price_received_at',None),
+                spot_source_at=None if not DEMO else getattr(provider,'price_source_at',None))
         except (ArithmeticError,TypeError,ValueError,KeyError):
             signals=unavailable_signals('BTC feature calculation rejected invalid inputs')
             errors['btc_signals']='BTC feature calculation rejected invalid inputs'
@@ -366,6 +383,7 @@ def update_once(now=None):
                 errors[component] = state['errors'][component]
         state.update({'last_attempt':now,
             'market':market,'spot':spot,'candles':candles[-75:], 'model':model,'scalp':scalp,
+            'price_source':'SYNTHETIC_DEMO' if DEMO else 'CF_BENCHMARKS_BRTI',
             'opportunity':op,'engines':model.get('engines',[]),'errors':errors,'watch':watch,
              'research_shadow':research_shadow,
              'candlestick_context':candle_context,
@@ -377,8 +395,8 @@ def update_once(now=None):
               'contract_repricing':contract_repricing,
              'binance_intelligence':binance_before_book,'binance_kalshi_delay':binance_lag,
              'higher_timeframes':higher,'market_microstructure':flow,
-            'candle_quality':({'status':'UNAVAILABLE','reason':errors['coinbase_candles']}
-                              if 'coinbase_candles' in errors else getattr(provider,'candle_quality',None))})
+            'candle_quality':((brti_now or {}).get('candle_quality') if not DEMO
+                              else getattr(provider,'candle_quality',None))})
         _refresh_status_locked()
         if state['status'] in ('LIVE','DEMO'):
             state['last_success'] = now
@@ -593,7 +611,7 @@ def get_state():
     # A token alone is not permission to record a position against stale or
     # broken market data. The UI and paper endpoint share the same readiness rule.
     d['manual_paper_available']=bool(ADMIN_TOKEN) and d['ok'] and bool(d.get('market'))
-    d['disclaimer']='Experimental models and gross simulated trading only. Coinbase is NOT the BRTI settlement index. Full Kalshi aggregated depth is a one-time participant-order snapshot; depth guidance never places an order.'
+    d['disclaimer']='Experimental models and gross simulated trading only. Live forecast inputs are authentic CF Benchmarks BRTI; exchange-only signed trade flow is separately identified. BRTI has no traded volume. Kalshi aggregated depth is a participant-order snapshot; no real orders are placed.'
     return JSONResponse(d,headers={'Cache-Control':'no-store'})
 
 class PaperRequest(BaseModel):
