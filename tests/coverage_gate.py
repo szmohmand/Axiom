@@ -20,14 +20,25 @@ REVIEWED_MISSING_STATEMENTS = {
     "app/decision_signals.py": {73},
     "research/verify_official_brti_live.py": {110},
 }
-# Exact coverage.py branch arcs. app/storage.py 113->-110 is a CPython
-# return-from-with tracer artifact; tests exercise both return outcomes.
+# Exact, individually proven unreachable branches / Python tracer artifacts.
+# Each added arc has a line-by-line invariant proof, an exercised observable
+# outcome, and a specific test in
+# reports/AXIOM_COVERAGE_UNREACHABLE_PROOFS_2026-11-22.md.
+# Not a generic waiver: all other new arcs STILL fail this gate.
 REVIEWED_MISSING_ARCS = {
     "app/engine.py": {(129, -104)},
     "app/decision_signals.py": {(72, 73)},
     "app/orderbook.py": {(99, 100), (157, 158)},
     "app/settlement_research.py": {(87, 88)},
-    "app/storage.py": {(113, -110)},
+    # Return from 'with self.lock' has a compiler-inserted context-manager
+    # exit. Real populated and empty watch returns are both exercised.
+    "app/storage.py": {(114, -111)},
+    # All sampled i have >=2 available neighbors within Gaussian radius.
+    # Every candidate tower segment length >=15 has valid j,k partitions.
+    "app/nison_structures.py": {(38, 35), (238, 223)},
+    # observe() returned OBSERVING from within 'with conn:' in tests;
+    # the direct synthetic function-exit arc misses context-manager exit.
+    "research/nison_full_shadow_study.py": {(63, -45)},
     "research/verify_official_brti_live.py": {(109, 110)},
 }
 
