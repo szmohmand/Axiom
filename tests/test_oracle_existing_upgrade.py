@@ -60,7 +60,10 @@ def test_persistent_sqlite_backup_original_env_and_rollback_are_preserved():
     assert "2_000_000_000" in s  # swap headroom for 1GB VM
     assert "1_500_000_000" in s  # isolated venv/disk headroom
     assert 'AUTO_PAPER' in s and 'DEMO_MODE' in s
-    assert '"$ROOT/venv/bin/python" -m venv "$VENV"' in s
+    assert '"$ACTIVE_PYTHON" -m venv "$VENV"' in s
+    assert 'CURRENT_DIR=$(systemctl show --value -p WorkingDirectory "$SERVICE")' in s
+    assert 'ACTIVE_PYTHON="$ROOT/venvs/$ACTIVE_SHA/bin/python"' in s
+    assert 'ACTIVE_PYTHON="$ROOT/venv/bin/python"' in s
     assert "PRECHECK" in s and "BRTI_LIVE_ENABLED=0" in s
     assert "SWITCHED=1" in s and 'systemctl start "$SERVICE"' in s
     assert "read-only" in s.lower()
