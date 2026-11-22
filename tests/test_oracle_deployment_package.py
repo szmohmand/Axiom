@@ -19,7 +19,7 @@ def test_read_only_one_worker_and_persistent_database():
     env = (ROOT / "axiom.env.example").read_text()
     assert "--host 127.0.0.1 --port 8000 --workers 1" in svc
     assert "User=axiom" in svc and "ReadWritePaths=/var/lib/axiom" in svc
-    for v in ("DEMO_MODE=0", "AUTO_PAPER=0", "BRTI_LIVE_ENABLED=0",
+    for v in ("DEMO_MODE=0", "AUTO_PAPER=0", "BRTI_LIVE_ENABLED=1",
               "DATA_PATH=/var/lib/axiom/bot.sqlite3", "BOT_ADMIN_TOKEN=\n"):
         assert v in env
 
