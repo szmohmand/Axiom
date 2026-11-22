@@ -234,7 +234,8 @@ def test_readonly_signal_respects_side_price_and_flow():
 
 def test_mock_public_ws_sessions_reconnect_and_nonblocking_threads(monkeypatch,caplog):
     class FakeSocket:
-        def __init__(self):
+        def __init__(self, url):
+            self.url=url
             self.sent=[]
             self.got=0
         async def __aenter__(self):
@@ -246,13 +247,19 @@ def test_mock_public_ws_sessions_reconnect_and_nonblocking_threads(monkeypatch,c
         async def recv(self):
             self.got+=1
             if self.got>1:
+                await asyncio.sleep(.01)
                 raise asyncio.TimeoutError
+            if "advanced-trade" in self.url:
+                return json.dumps({"channel":"l2_data","events":[
+                    {"type":"snapshot","product_id":"BTC-USD","updates":[
+                     {"side":"bid","price_level":"100","new_quantity":"2"},
+                     {"side":"offer","price_level":"101","new_quantity":"3"}]}]})
             return json.dumps({"type":"match","product_id":"BTC-USD",
                                "trade_id":123,"side":"sell","size":"1"})
     sockets=[]
     connection_options=[]
-    def connect(*_args,**kwargs):
-        socket=FakeSocket()
+    def connect(url,**kwargs):
+        socket=FakeSocket(url)
         sockets.append(socket)
         connection_options.append(kwargs)
         return socket
@@ -269,12 +276,25 @@ def test_mock_public_ws_sessions_reconnect_and_nonblocking_threads(monkeypatch,c
             return True
     stop=St()
     flow=brain.ConstituentFlow()
-    for venue, sends in [("coinbase",1),("kraken",2),("bitstamp",2)]:
+    for venue, sends in [("coinbase",2),("kraken",2),("bitstamp",2)]:
+        previous=len(sockets)
         with pytest.raises(TimeoutError, match=venue):
             asyncio.run(brain._session(flow,venue,stop))
-        assert len(sockets[-1].sent)==sends
-        assert connection_options[-1]["max_size"] == 16 * 1024 * 1024
+        assert sum(len(socket.sent) for socket in sockets[previous:])==sends
+        assert all(option["max_size"] == 16 * 1024 * 1024
+                   for option in connection_options[previous:])
         assert flow.worker_status[venue] == "SUBSCRIPTION_SENT"
+        if venue == "coinbase":
+            assert len(sockets)-previous == 2
+            advanced=next(x for x in sockets[previous:] if "advanced-trade" in x.url)
+            exchange=next(x for x in sockets[previous:] if "ws-feed.exchange" in x.url)
+            assert advanced.sent[0] == {"type":"subscribe","product_ids":["BTC-USD"],
+                                        "channel":"level2"}
+            assert exchange.sent[0] == {"type":"subscribe","product_ids":["BTC-USD"],
+                                        "channels":["matches"]}
+            assert flow.books["coinbase"]["bids"] == {100.:2.}
+            assert flow.books["coinbase"]["asks"] == {101.:3.}
+            assert flow.trades["coinbase"][0][1] > 0
     def finished(coro):
         coro.close()
     monkeypatch.setattr(brain.asyncio,"run",finished)
@@ -403,3 +423,66 @@ def test_venue_diagnostics_track_reconnect_staleness_and_recovery():
     status = flow.diagnostics(NOW+80)["coinbase"]
     assert status["health_error"] == "No recent valid order book"
     assert status["last_valid_book_age_seconds"] == 77
+
+
+def test_coinbase_advanced_l2_data_snapshot_update_validation_and_trade_separation():
+    flow = brain.ConstituentFlow()
+    row = lambda side, price, qty: {
+        "side": side, "price_level": price, "new_quantity": qty}
+    flow.ingest("coinbase", {"channel": "l2_data", "events": [
+        None, {"type": "snapshot", "product_id": "ETH-USD", "updates": []},
+        {"type": "heartbeat", "product_id": "BTC-USD", "updates": []},
+        {"type": "snapshot", "product_id": "BTC-USD", "updates": [
+            "not-an-update", row("bid", "100", "3"), row("bid", "99", "4"),
+            row("offer", "101", "5"), row("offer", "102", "6"),
+            row("offer", "103", "0"), row("bid", "bad", "1"),
+            row("bid", "98", "bad"), row("offer", "104", "-1"),
+            row("bid", "96", "nan"), row("other", "95", "1"),
+            {"side": "bid", "price_level": 92, "new_quantity": None},
+        ]}]}, NOW)
+    assert flow.books["coinbase"]["bids"] == {100.: 3., 99.: 4.}
+    assert flow.books["coinbase"]["asks"] == {101.: 5., 102.: 6.}
+    assert flow.diagnostics(NOW)["coinbase"]["book_ready"]
+    assert not flow.diagnostics(NOW)["coinbase"]["trade_ready"]
+
+    flow.ingest("coinbase", {"channel": "l2_data", "events": [{
+        "type": "update", "product_id": "BTC-USD", "updates": [
+            row("bid", "99", "0"), row("bid", "100", "7"),
+            row("offer", "101", "0"), row("offer", "102", "8"),
+            row("offer", "103", "1")]}]}, NOW+1)
+    assert flow.books["coinbase"]["bids"] == {100.: 7.}
+    assert flow.books["coinbase"]["asks"] == {102.: 8., 103.: 1.}
+    assert flow.ofi["coinbase"]
+    flow.ingest("coinbase", {"channel": "l2_data", "events": [{
+        "type": "update", "product_id": "BTC-USD", "updates": [
+            row("bad", "100", "8")]}]}, NOW+2)
+    flow.ingest("coinbase", {"type": "match", "product_id": "BTC-USD",
+                "trade_id": 123, "side": "sell", "size": ".4"}, NOW+2)
+    diagnostic = flow.diagnostics(NOW+2)["coinbase"]
+    assert diagnostic["book_ready"] and diagnostic["trade_ready"]
+    assert "coinbase" in flow.snapshot(NOW+2)["venues"]
+    assert flow.trades["coinbase"][-1][1] > 0
+
+
+@pytest.mark.parametrize("message", [
+    {"type": "error", "message": "Failed to subscribe",
+     "reason": "level2 requires authentication"},
+    {"channel": "error", "message": "Invalid Advanced Trade subscription"},
+])
+def test_coinbase_public_websocket_subscription_error_is_not_silent(monkeypatch, message):
+    class Socket:
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *args):
+            return None
+        async def send(self, msg):
+            assert json.loads(msg)["channel"] == "level2"
+        async def recv(self):
+            return json.dumps(message)
+    monkeypatch.setitem(sys.modules, "websockets",
+                        SimpleNamespace(connect=lambda *_a, **_k: Socket()))
+    flow = brain.ConstituentFlow()
+    stop = SimpleNamespace(is_set=lambda: False)
+    with pytest.raises(RuntimeError, match="Coinbase subscription rejected"):
+        asyncio.run(brain._coinbase_feed(flow, stop, order_book=True))
+    assert flow.books["coinbase"] is None
