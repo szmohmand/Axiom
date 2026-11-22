@@ -288,17 +288,17 @@ def scan_nison(candles:list[dict],now:float)->dict:
         _append(patterns,"BEARISH_SEPARATING_LINES",7)
     if len(b)>=3:
         x,y,z=b[-3:]
-        if _bar_gap(x,y)=="UP" and z["down"] and
-           z["close"]<y["low"] and z["close"]>x["high"]:
+        if (_bar_gap(x,y)=="UP" and z["close"]<z["open"] and
+            z["close"]<y["low"] and z["close"]>x["high"]):
             _append(patterns,"UPSIDE_TASUKI_GAP",7,strict_gap=True)
-        if _bar_gap(x,y)=="DOWN" and z["up"] and
-           z["close"]>y["high"] and z["close"]<x["low"]:
+        if (_bar_gap(x,y)=="DOWN" and z["close"]>z["open"] and
+            z["close"]>y["high"] and z["close"]<x["low"]):
             _append(patterns,"DOWNSIDE_TASUKI_GAP",7,strict_gap=True)
-        if _bar_gap(x,y)=="UP" and _bar_gap(x,z)=="UP" and
-           a[-2]["up"] and cur["up"] and abs(y["open"]-z["open"])<=tol:
+        if (_bar_gap(x,y)=="UP" and _bar_gap(x,z)=="UP" and
+            a[-2]["up"] and cur["up"] and abs(y["open"]-z["open"])<=tol):
             _append(patterns,"BULLISH_GAPPING_SIDE_BY_SIDE",7)
-        if _bar_gap(x,y)=="DOWN" and _bar_gap(x,z)=="DOWN" and
-           a[-2]["up"] and cur["up"] and abs(y["open"]-z["open"])<=tol:
+        if (_bar_gap(x,y)=="DOWN" and _bar_gap(x,z)=="DOWN" and
+            a[-2]["up"] and cur["up"] and abs(y["open"]-z["open"])<=tol):
             _append(patterns,"BEARISH_GAPPING_SIDE_BY_SIDE",7)
     if len(b)>=5:
         for inner in (2,3,4):
