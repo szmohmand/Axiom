@@ -29,8 +29,8 @@ def sample_tracker(minutes=65):
 
 
 def test_real_received_index_samples_build_price_only_candles_and_live_frames():
-    t = sample_tracker(65)
-    end = BASE + (65 * 60 + 9) * 1000 + 40
+    t = sample_tracker(130)
+    end = BASE + (130 * 60 + 9) * 1000 + 40
     snap = t.snapshot(end)
     assert snap["status"] == "STREAMING"
     assert snap["price_candle_source"] == "cfbenchmarks_brti_authenticated_live"
