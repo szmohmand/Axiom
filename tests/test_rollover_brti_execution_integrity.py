@@ -105,18 +105,20 @@ def test_rollover_retry_stays_fail_closed_when_market_still_not_published(monkey
     now = _sec(CLOSE) + 8
     monkeypatch.setattr(feeds, "time", SimpleNamespace(time=lambda: now, sleep=lambda x: None))
     p = provider({KALSHI+"/markets": [FakeResponse({"markets": []}),
-                                      FakeResponse({"markets": []})]})
+                                      FakeResponse({"markets": []})],
+                  KALSHI+"/events": FakeResponse({"events": []})})
     assert p.market(now) is None
-    assert len(p.session.calls) == 2
+    assert len(p.session.calls) == 3
 
 
-def test_no_rollover_retry_outside_boundary_or_for_replayed_history(monkeypatch):
+def test_no_duplicate_market_retry_outside_boundary_and_empty_event_fallback(monkeypatch):
     import app.feeds as feeds
     now = _sec(CLOSE) + 140
     monkeypatch.setattr(feeds, "time", SimpleNamespace(time=lambda: now, sleep=lambda x: None))
-    p = provider({KALSHI+"/markets": FakeResponse({"markets": []})})
+    p = provider({KALSHI+"/markets": FakeResponse({"markets": []}),
+                  KALSHI+"/events": FakeResponse({"events": []})})
     assert p.market(now) is None
-    assert len(p.session.calls) == 1
+    assert [c[0] for c in p.session.calls] == [KALSHI+"/markets", KALSHI+"/events"]
 
 
 def test_closed_but_not_finalized_primary_uses_historical_finalized_source():
@@ -302,3 +304,58 @@ def test_actual_index_conflict_is_not_skipped_to_later_passing_contract(monkeypa
     result=verifier.audit()
     assert result["status"]=="CONFLICT"
     assert called==[latest["ticker"]]
+
+
+def test_live_kalshi_nested_event_recovers_real_contract_missed_by_market_index(monkeypatch):
+    import app.feeds as feeds
+    now = _sec(CLOSE) + 140
+    monkeypatch.setattr(feeds, "time", SimpleNamespace(time=lambda: now, sleep=lambda _: None))
+    valid = market("KXBTC15M-PUBLISHED-CURRENT", now+760)
+    valid["open_time"] = datetime.fromtimestamp(now-120, timezone.utc).isoformat()
+    future = market("KXBTC15M-FUTURE", now+300)
+    future["open_time"] = datetime.fromtimestamp(now+100, timezone.utc).isoformat()
+    closed = market("KXBTC15M-CLOSED", now+300)
+    closed["status"] = "closed"
+    expired = market("KXBTC15M-EXPIRED", now-5)
+    too_far = market("KXBTC15M-TOO-FAR", now+1600)
+    p = provider({KALSHI+"/markets": FakeResponse({"markets": []}),
+                  KALSHI+"/events": FakeResponse({"events": [
+                      {"series_ticker": "OTHER", "markets": [market("KXBTC15M-OTHER", now+90)]},
+                      {"series_ticker": "KXBTC15M", "markets": [
+                          None, future, expired, closed, too_far, valid]}]})})
+    found = p.market(now)
+    assert found and found["ticker"] == valid["ticker"]
+    assert found["seconds_left"] == 760
+    assert len(p.session.calls) == 2
+    assert p.session.calls[0][1]["limit"] == 200
+    assert p.session.calls[0][1]["min_close_ts"] == int(now)
+    assert p.session.calls[0][1]["mve_filter"] == "exclude"
+    assert p.session.calls[1][1]["with_nested_markets"] == "true"
+
+
+def test_current_market_listing_skips_future_open_time_and_selects_active(monkeypatch):
+    import app.feeds as feeds
+    now = _sec(CLOSE) + 140
+    monkeypatch.setattr(feeds, "time", SimpleNamespace(time=lambda: now, sleep=lambda _: None))
+    future = market("KXBTC15M-FUTURE", now+200)
+    future["open_time"] = datetime.fromtimestamp(now+10,timezone.utc).isoformat()
+    active = market("KXBTC15M-ACTIVE", now+400)
+    active["open_time"] = datetime.fromtimestamp(now-200,timezone.utc).isoformat()
+    p = provider({KALSHI+"/markets": FakeResponse({"markets": [future, active]})})
+    assert p.market(now)["ticker"] == active["ticker"]
+    assert len(p.session.calls) == 1
+
+
+def test_live_event_fallback_http_error_and_historical_poll_fail_closed(monkeypatch):
+    import app.feeds as feeds
+    now = _sec(CLOSE) + 140
+    monkeypatch.setattr(feeds, "time", SimpleNamespace(time=lambda: now, sleep=lambda _: None))
+    p = provider({KALSHI+"/markets": FakeResponse({"markets": []}),
+                  KALSHI+"/events": FakeResponse(status=503)})
+    assert p.market(now) is None
+    assert len(p.session.calls) == 2
+    # A replayed timestamp must not read today's event listing.
+    historical = now-1000
+    p = provider({KALSHI+"/markets": FakeResponse({"markets": []})})
+    assert p.market(historical) is None
+    assert len(p.session.calls) == 1
