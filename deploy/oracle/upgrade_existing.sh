@@ -56,12 +56,20 @@ for line in open(p,encoding='utf8'):
     line=line.strip()
     if not line or line.startswith('#') or '=' not in line:continue
     k,v=line.split('=',1)
-    if k.strip() in ('DATA_PATH','AUTO_PAPER','DEMO_MODE'):
+    if k.strip() in ('DATA_PATH','AUTO_PAPER','DEMO_MODE',
+                     'BRTI_LIVE_ENABLED','KALSHI_API_KEY_ID',
+                     'KALSHI_PRIVATE_KEY_PEM'):
         values[k.strip()]=v.strip().strip("'\"")
 if values.get('AUTO_PAPER','1')!='0':
     raise SystemExit('AUTO_PAPER must be explicitly disabled in the EXISTING environment.')
 if values.get('DEMO_MODE','1')!='0':
     raise SystemExit('DEMO_MODE must be explicitly configured as live, not synthetic.')
+# The BRTI-first release MUST NOT be switched in without a working configured
+# index feed. Check presence only, never print, log or copy credentials.
+if values.get('BRTI_LIVE_ENABLED','0')!='1':
+    raise SystemExit('Enable authenticated BRTI_LIVE_ENABLED=1 in the existing root-only AXIOM env before upgrading.')
+if not values.get('KALSHI_API_KEY_ID') or not values.get('KALSHI_PRIVATE_KEY_PEM'):
+    raise SystemExit('Missing server-side BRTI WebSocket credentials; fix existing env before upgrading.')
 print(values.get('DATA_PATH','/var/lib/axiom/bot.sqlite3'))
 PY
 ) || fail 'Existing env config is incompatible/unsafe; no changes made.'
