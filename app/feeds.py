@@ -14,7 +14,7 @@ COINBASE = 'https://api.exchange.coinbase.com'
 # This recovery trims only to the most recent TRUE contiguous interval, and
 # only when enough consecutive real observations remain for all engines.
 MIN_REAL_ONE_MINUTE_BARS = 31
-PREFERRED_ONE_MINUTE_BARS = 61
+PREFERRED_ONE_MINUTE_BARS = 75
 
 
 def contiguous_real_candle_suffix(candles, min_bars=MIN_REAL_ONE_MINUTE_BARS):
@@ -142,7 +142,7 @@ class LiveProvider:
         return p
     def candles(self):
         now = datetime.now(timezone.utc)
-        start = now - timedelta(minutes=65)
+        start = now - timedelta(minutes=85)
         data = self.get(f'{COINBASE}/products/BTC-USD/candles', {
             'start': start.isoformat(), 'end': now.isoformat(), 'granularity':60,
         })
