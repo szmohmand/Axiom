@@ -20,7 +20,7 @@ MAX_CLOSED_BAR_AGE_SECONDS = 125
 def unavailable(reason: str) -> dict[str, Any]:
     return {
         "available": False, "status": "UNAVAILABLE",
-        "source": "COINBASE_EXCHANGE_1M_CANDLES", "timeframe": "1m",
+        "source": "CF_BENCHMARKS_BRTI_1M_CANDLES", "timeframe": "1m",
         "research_only": True, "votes_in_ensemble": False,
         "can_trigger_paper_or_orders": False, "changes_forecast_probability": False,
         "market_read": "UNKNOWN", "prior_trend": "UNKNOWN",
@@ -252,7 +252,9 @@ def read_candlestick_context(candles: list[dict], now: float) -> dict[str, Any]:
 
     return {
         "available": True, "status": "DESCRIPTIVE_UNCALIBRATED",
-        "source": "COINBASE_EXCHANGE_1M_CANDLES", "timeframe": "1m",
+        "source": ("CF_BENCHMARKS_BRTI_1M_CANDLES" if candles and
+                   candles[-1].get("source")=="cfbenchmarks_brti_authenticated_live"
+                   else "COINBASE_EXCHANGE_1M_CANDLES"), "timeframe": "1m",
         "research_only": True, "votes_in_ensemble": False,
         "can_trigger_paper_or_orders": False, "changes_forecast_probability": False,
         "market_read": market_read, "prior_trend": before_last,
