@@ -1,4 +1,4 @@
-"""Read-only Binance BTCUSDT spot trade stream and perpetual funding rate.
+"""Read-only Binance BTCUSDT spot trade stream, including signed taker volume.
 
 Binance spot USDT price is NOT CF Benchmarks BRTI (Kalshi settlement).
 Spot trade event time, local receipt time, and Kalshi REST receipt time are
@@ -8,20 +8,16 @@ Unreachable/geo-blocked Binance source is explicitly UNAVAILABLE.
 from __future__ import annotations
 
 from collections import deque
-import statistics
 import json
 import math
 import os
 import threading
 import time
 
-import requests
 from websockets.sync.client import connect
 
 SPOT_WS = "wss://data-stream.binance.vision/ws/btcusdt@aggTrade"
-FUNDING_API = "https://fapi.binance.com/fapi/v1/premiumIndex"
 MAX_EVENT_AGE_SECONDS = 4.0
-MAX_FUNDING_AGE_SECONDS = 180.0
 
 
 def finite(value):
@@ -37,10 +33,6 @@ def finite(value):
 def invalid(reason, status="UNAVAILABLE"):
     return {"status":status,"reason":reason,"spot_price":None,
             "spot_trade_at":None,"spot_received_at":None,
-            "funding_status":"UNAVAILABLE","funding_rate":None,
-            "funding_percent":None,"funding_bias":"UNKNOWN",
-            "funding_next_at":None,"funding_source_at":None,
-            "funding_mark_index_basis_bps":None,
             "settlement_reference":False,"orders_placed":False}
 
 
@@ -49,10 +41,8 @@ class BinanceTelemetry:
         self.enabled=bool(enabled)
         self.lock=threading.RLock()
         self.trades=deque(maxlen=16000)
-        self.funding=None
         self.connected=False
         self.last_error=None
-        self.last_funding_error=None
 
     def note_connection(self,connected=False,error=None):
         with self.lock:
@@ -90,34 +80,6 @@ class BinanceTelemetry:
                                 "signed_quantity":signed})
         return True
 
-    def observe_funding(self,payload,received_at):
-        """Read published perpetual funding; no inference from funding sign."""
-        if not isinstance(payload,dict) or payload.get("symbol")!="BTCUSDT":
-            return False
-        rate=finite(payload.get("lastFundingRate"))
-        source=finite(payload.get("time"))
-        next_ms=finite(payload.get("nextFundingTime"))
-        mark=finite(payload.get("markPrice"))
-        index=finite(payload.get("indexPrice"))
-        received=finite(received_at)
-        if (None in (rate,source,next_ms,received,mark,index)
-                or abs(rate)>0.05 or not 100<mark<10_000_000
-                or not 100<index<10_000_000
-                or not 1_500_000_000_000<source<4_000_000_000_000
-                or not -2 <= received-source/1000 <= 30
-                or not source-86400000 <= next_ms <= source+86400000):
-            return False
-        with self.lock:
-            self.funding={"rate":rate,"source_at":source/1000,
-                          "received_at":received,"next_at":next_ms/1000,
-                          "basis_bps":10_000*(mark/index-1)}
-            self.last_funding_error=None
-        return True
-
-    def note_funding_error(self,error_kind):
-        with self.lock:
-            self.last_funding_error=error_kind
-
     def snapshot(self,now=None):
         now=time.time() if now is None else now
         if not self.enabled:
@@ -125,17 +87,11 @@ class BinanceTelemetry:
         with self.lock:
             latest=self.trades[-1].copy() if self.trades else None
             recent=[p.copy() for p in self.trades]
-            funding=self.funding.copy() if self.funding else None
             err=self.last_error
-            f_err=self.last_funding_error
             connected=self.connected
         fresh=(latest is not None and -2<=now-latest["timestamp_ms"]/1000<=MAX_EVENT_AGE_SECONDS
                and -2<=now-latest["received_at"]<=MAX_EVENT_AGE_SECONDS)
-        f_fresh=(funding is not None and -2<=now-funding["source_at"]<=MAX_FUNDING_AGE_SECONDS
-                 and -2<=now-funding["received_at"]<=MAX_FUNDING_AGE_SECONDS)
         status="STREAMING" if fresh else "STALE" if latest else "UNAVAILABLE"
-        direction=("LONGS_PAY_SHORTS" if funding["rate"]>0 else
-                   "SHORTS_PAY_LONGS" if funding["rate"]<0 else "NEUTRAL") if f_fresh else "UNKNOWN"
         # A disconnected/stale BTC trade stream cannot continue to vote with
         # its old CVD merely because old trades remain inside a 2m window.
         recent_2m=([p for p in recent if 0<=now-p["timestamp_ms"]/1000<=120 and
@@ -178,15 +134,6 @@ class BinanceTelemetry:
             "spot_source_age_seconds":round(now-latest["timestamp_ms"]/1000,3) if fresh else None,
             "spot_source_receipt_ms":round((latest["received_at"]-
                                      latest["timestamp_ms"]/1000)*1000,1) if fresh else None,
-            "funding_status":"LIVE" if f_fresh else "STALE" if funding else "UNAVAILABLE",
-            "funding_rate":funding["rate"] if f_fresh else None,
-            "funding_percent":round(funding["rate"]*100,6) if f_fresh else None,
-            "funding_bias":direction,
-            "funding_next_at":funding["next_at"] if f_fresh else None,
-            "funding_source_at":funding["source_at"] if f_fresh else None,
-            "funding_mark_index_basis_bps":round(funding["basis_bps"],3) if f_fresh else None,
-            "funding_reason":f_err if not f_fresh else "Binance BTCUSDT USD-M perpetual published funding",
-            "funding_direction_is_prediction":False,
             "settlement_reference":False,"orders_placed":False,
         }
 
@@ -220,19 +167,3 @@ def spot_worker(telemetry, stop_event):
         delay=min(delay*2,60.)
 
 
-def funding_worker(telemetry,stop_event,interval=60):
-    """Separate funding sampler so futures rate-limit/geofence cannot stall WS."""
-    session=requests.Session()
-    try:
-        while not stop_event.is_set():
-            try:
-                response=session.get(FUNDING_API,params={"symbol":"BTCUSDT"},timeout=6)
-                response.raise_for_status()
-                if not telemetry.observe_funding(response.json(),time.time()):
-                    telemetry.note_funding_error("InvalidOrStaleFundingPayload")
-            except (requests.RequestException,ValueError,TypeError) as exc:
-                telemetry.note_funding_error(type(exc).__name__)
-            if stop_event.wait(interval):
-                break
-    finally:
-        session.close()
