@@ -14,6 +14,7 @@ from __future__ import annotations
 import math
 import statistics
 from typing import Any
+from .nison_structures import scan_structural_formations
 
 _MIN = 31
 _MAX_AGE = 125
@@ -55,7 +56,7 @@ _COVERAGE = {
     "3": "Implemented OHLC construction, bodies, shadows, doji and spinning tops",
     "4": "Implemented umbrellas, engulfing, dark-cloud cover, piercing",
     "5": "Implemented morning/evening (doji) stars and star-related candles; abandoned baby needs true price gaps",
-    "6": "Implemented harami/cross, tweezers, belt-hold, counterattack, crows, soldiers, upside-gap two crows; larger three-mountain/river/dumpling/tower formations tagged discretionary",
+    "6": "Implemented harami/cross, tweezers, belt-hold, counterattack, crows, soldiers, gap crows; conservative three-mountain/river/Buddha/dumpling/frypan/tower geometric proxies disclosed as judgmental",
     "7": "Implemented real windows, tasuki gap, side-by-side gap, three methods, separating lines, high/low-price gapping plays",
     "8": "Implemented doji, long-legged/rickshaw, dragonfly, gravestone and tri-star",
     "9": "Implemented preexisting trend, market context and conflicting-warning classification",
@@ -348,6 +349,8 @@ def scan_nison(candles:list[dict],now:float)->dict:
         if prior_trend=="UP" and _shape(prev)["up_frac"]>=.55 and
            current["close"]<prev["low"] and cur["down"]:
             _append(patterns,"BEARISH_CONFIRMATION",9,after="previous_rejection")
+    # Ch 6 longer geometric structures, after confirmed pivots and strict windows.
+    patterns.extend(scan_structural_formations(b,atr))
     # Ch 10 repeated rejection levels, based on strictly PRIOR candles only.
     history=b[-51:-1]
     bottom_touches=sum(abs(x["low"]-support)<=tol for x in prior20)
