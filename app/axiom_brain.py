@@ -26,6 +26,8 @@ BRTI_SOURCE = "cfbenchmarks_brti_authenticated_live"
 COLD_START_IV_MAX_1M = 0.0012
 LOG = logging.getLogger(__name__)
 CONSTITUENT_MAX_FRAME_BYTES = 16 * 1024 * 1024
+BOOK_FRESH_SECONDS = 30
+TRADE_FRESH_SECONDS = 45
 COINBASE_MATCHES_URL = "wss://ws-feed.exchange.coinbase.com"
 
 
@@ -158,8 +160,8 @@ class ConstituentFlow:
             for venue in VENUES:
                 status = self.worker_status[venue]
                 book_at, trade_at = self.book_at[venue], self.trade_at[venue]
-                book_ready = book_at is not None and 0 <= now-book_at <= 12
-                trade_ready = trade_at is not None and 0 <= now-trade_at <= 20
+                book_ready = book_at is not None and self.books[venue] is not None and 0 <= now-book_at <= BOOK_FRESH_SECONDS
+                trade_ready = trade_at is not None and 0 <= now-trade_at <= TRADE_FRESH_SECONDS
                 connected_at = self.connected_at[venue]
                 def age(at):
                     return None if at is None else round(max(0., now-at), 2)
@@ -216,7 +218,14 @@ class ConstituentFlow:
             new[side] = dict(sorted(new[side].items(),
                                     reverse=(side == "bids"))[:200])
         if max(new["bids"]) >= min(new["asks"]):
-            self.reset(venue)
+            # A crossed incremental packet is not a validated book. Ignore it
+            # without erasing the last valid book or unrelated live trades.
+            # Do not refresh book_at: an unrepaired book still expires normally.
+            if snapshot:
+                self.books[venue] = None
+                self.book_at[venue] = None
+                self.ofi[venue].clear()
+                self.depth_samples[venue].clear()
             return
         if old is not None:
             pressure, gross = _pressure(old, new)
@@ -357,8 +366,8 @@ class ConstituentFlow:
         with self.lock:
             ready = [v for v in VENUES
                      if self.books[v] is not None
-                     and self.book_at[v] is not None and 0 <= now-self.book_at[v] <= 12
-                     and self.trade_at[v] is not None and 0 <= now-self.trade_at[v] <= 20]
+                     and self.book_at[v] is not None and 0 <= now-self.book_at[v] <= BOOK_FRESH_SECONDS
+                     and self.trade_at[v] is not None and 0 <= now-self.trade_at[v] <= TRADE_FRESH_SECONDS]
             def totals(venue, window, flow):
                 entries = self.ofi[venue] if flow else self.trades[venue]
                 recent = [e for e in entries if 0 <= now-e[0] <= window]
@@ -397,7 +406,7 @@ class ConstituentFlow:
             # Current USD venue mids never enter BRTI price/settlement.
             book_ready = [v for v in VENUES if self.books[v] is not None
                           and self.book_at[v] is not None
-                          and 0 <= now-self.book_at[v] <= 12]
+                          and 0 <= now-self.book_at[v] <= BOOK_FRESH_SECONDS]
             venue_mids, depth, depletion, top_obi = {}, {}, {}, {}
             for v in book_ready:
                 mid, bid_sz, ask_sz = _near_depth(self.books[v])
