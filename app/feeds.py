@@ -74,14 +74,21 @@ class LiveProvider:
         return response.json()
     def market(self, now=None):
         now = time.time() if now is None else now
-        params={'series_ticker':'KXBTC15M','status':'open','limit':30}
+        params={'series_ticker':'KXBTC15M','status':'open','limit':200,
+                'min_close_ts':int(now),'mve_filter':'exclude'}
         def eligible(payload):
             markets=[]
             for obj in payload.get('markets', []):
                 try:
+                    # An upcoming listing isn't the currently trading window.
+                    if obj.get('status') not in ('open', 'active', None):
+                        continue
+                    opened=utc_timestamp(obj.get('open_time'))
+                    if opened is not None and opened > now:
+                        continue
                     m=market_snapshot(obj, now)
-                    if m['seconds_left'] > 0: markets.append(m)
-                except (TypeError, ValueError):
+                    if 0 < m['seconds_left'] <= 900: markets.append(m)
+                except (AttributeError, TypeError, ValueError):
                     pass
             # Never reuse an expired contract or invent a future strike.
             return min(markets,key=lambda m:m['seconds_left']) if markets else None
@@ -103,10 +110,25 @@ class LiveProvider:
         if rollover:
             time.sleep(.4)
             try:
-                return eligible(self.get(f'{KALSHI}/markets',params))
+                active=eligible(self.get(f'{KALSHI}/markets',params))
             except requests.RequestException:
-                # A second source failure is NOT a valid market. The poll
-                # publishes unavailable/WAIT; the next normal poll may recover.
+                # No inferred fallback if the published primary source fails.
+                return None
+            if active:
+                return active
+        # The /markets index can lag an active 15-minute event. Query Kalshi's
+        # independent event listing ONLY for a genuinely current live poll,
+        # and accept only its published open BTC15M nested market records.
+        if abs(time.time()-now) < 30:
+            try:
+                payload=self.get(f'{KALSHI}/events',
+                                 {'series_ticker':'KXBTC15M','status':'open',
+                                  'with_nested_markets':'true','limit':100})
+                nested=[market for event in payload.get('events',[])
+                        if isinstance(event,dict) and event.get('series_ticker')=='KXBTC15M'
+                        for market in event.get('markets',[])]
+                return eligible({'markets':nested})
+            except requests.RequestException:
                 return None
         return None
     def orderbook(self, market, now=None):
