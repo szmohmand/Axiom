@@ -82,6 +82,11 @@ CASES=[
     ("UPTHRUST",0,[(0,10,-2,-1,25)]),
     ("BOX_BREAKOUT_UP",0,[cb(0,12,1,1,25)]),
     ("BOX_BREAKOUT_DOWN",0,[cb(0,-12,1,1,25)]),
+    ("TRISTAR_BOTTOM",-1,[(0,2,-2,0,8),(-7,-5,-9,-7,8),(0,2,-2,0,8)]),
+    ("TRISTAR_TOP",1,[(0,2,-2,0,8),(10,12,8,10,8),(0,2,-2,0,8)]),
+    ("UPSIDE_GAP_TWO_CROWS",1,[cb(0,8),(17,18,13,14,8),(20,21,11,12,8)]),
+    ("BULLISH_BELT_HOLD",-1,[(0,11,0,10,8)]),
+    ("BEARISH_BELT_HOLD",1,[(10,10,-1,0,8)]),
 ]
 
 @pytest.mark.parametrize("expected,trend,tail",CASES,ids=[x[0] for x in CASES])
@@ -168,3 +173,23 @@ def test_nison_flag_and_pennant_impulses(monkeypatch):
         assert result["available"]
         names={p["name"] for p in result["pattern_evidence"]}
         assert ("BULL_FLAG_BREAKOUT" if direction>0 else "BEAR_FLAG_BREAKOUT") in names
+
+
+def test_polarity_support_and_resistance_retests_on_completed_levels(monkeypatch):
+    monkeypatch.setattr(nm,"scan_structural_formations",lambda *a:[])
+    for direction,expected in ((1,"POLARITY_SUPPORT_RETEST"),
+                               (-1,"POLARITY_RESISTANCE_RETEST")):
+        seq=bars(0,[])
+        # Older 21 bars establish genuine historical extrema at 1002/998.
+        for row in seq[-20:-1]:
+            p=1000+direction*8
+            row.update(open=p-1,close=p,
+                       high=p+2,low=p-2,volume=8.)
+        if direction>0:
+            seq[-1].update(open=1004.,close=1006.,high=1007.,low=1002.)
+        else:
+            seq[-1].update(open=996.,close=994.,high=998.,low=993.)
+        report=nm.scan_nison(seq,NOW)
+        assert report["available"]
+        actual={p["name"] for p in report["pattern_evidence"]}
+        assert expected in actual,(expected,actual)
