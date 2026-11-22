@@ -67,9 +67,6 @@ PY
 ) || fail 'Existing env config is incompatible/unsafe; no changes made.'
 [[ "$DATA_PATH" == /var/lib/axiom/* && -f "$DATA_PATH" && ! -L "$DATA_PATH" ]] ||
     fail 'Persistent SQLite ledger must be a regular file inside /var/lib/axiom.'
-[[ -z $(find /var/lib/axiom -maxdepth 1 -name 'not-used-placeholder-axiom' -print) ]] ||
-    fail 'Unexpected filesystem state.'
-
 # VM is only 1 GB RAM; require the previously configured swap and disk headroom.
 # This is a preflight blocker, not a cloud scaling or billable provisioning step.
 python3 - "$ROOT" "$DATA_PATH" <<'PY'
