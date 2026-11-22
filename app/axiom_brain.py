@@ -28,6 +28,8 @@ LOG = logging.getLogger(__name__)
 CONSTITUENT_MAX_FRAME_BYTES = 16 * 1024 * 1024
 BOOK_FRESH_SECONDS = 30
 TRADE_FRESH_SECONDS = 45
+# API snapshot time can predate a concurrent accepted WS packet by milliseconds.
+MAX_READ_RACE_SECONDS = 2
 COINBASE_MATCHES_URL = "wss://ws-feed.exchange.coinbase.com"
 
 
@@ -160,8 +162,8 @@ class ConstituentFlow:
             for venue in VENUES:
                 status = self.worker_status[venue]
                 book_at, trade_at = self.book_at[venue], self.trade_at[venue]
-                book_ready = book_at is not None and self.books[venue] is not None and 0 <= now-book_at <= BOOK_FRESH_SECONDS
-                trade_ready = trade_at is not None and 0 <= now-trade_at <= TRADE_FRESH_SECONDS
+                book_ready = book_at is not None and self.books[venue] is not None and -MAX_READ_RACE_SECONDS <= now-book_at <= BOOK_FRESH_SECONDS
+                trade_ready = trade_at is not None and -MAX_READ_RACE_SECONDS <= now-trade_at <= TRADE_FRESH_SECONDS
                 connected_at = self.connected_at[venue]
                 def age(at):
                     return None if at is None else round(max(0., now-at), 2)
@@ -366,8 +368,8 @@ class ConstituentFlow:
         with self.lock:
             ready = [v for v in VENUES
                      if self.books[v] is not None
-                     and self.book_at[v] is not None and 0 <= now-self.book_at[v] <= BOOK_FRESH_SECONDS
-                     and self.trade_at[v] is not None and 0 <= now-self.trade_at[v] <= TRADE_FRESH_SECONDS]
+                     and self.book_at[v] is not None and -MAX_READ_RACE_SECONDS <= now-self.book_at[v] <= BOOK_FRESH_SECONDS
+                     and self.trade_at[v] is not None and -MAX_READ_RACE_SECONDS <= now-self.trade_at[v] <= TRADE_FRESH_SECONDS]
             def totals(venue, window, flow):
                 entries = self.ofi[venue] if flow else self.trades[venue]
                 recent = [e for e in entries if 0 <= now-e[0] <= window]
@@ -406,7 +408,7 @@ class ConstituentFlow:
             # Current USD venue mids never enter BRTI price/settlement.
             book_ready = [v for v in VENUES if self.books[v] is not None
                           and self.book_at[v] is not None
-                          and 0 <= now-self.book_at[v] <= BOOK_FRESH_SECONDS]
+                          and -MAX_READ_RACE_SECONDS <= now-self.book_at[v] <= BOOK_FRESH_SECONDS]
             venue_mids, depth, depletion, top_obi = {}, {}, {}, {}
             for v in book_ready:
                 mid, bid_sz, ask_sz = _near_depth(self.books[v])
