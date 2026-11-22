@@ -18,7 +18,7 @@ from .orderbook import current_book, sweep
 DEFAULT_SIZE = 10.
 MAX_BOOK_AGE_SECONDS = 45
 MAX_SPREAD = .04
-MIN_AFTER_FEE_EDGE = .08
+MIN_SECONDS_TO_CLOSE = 20
 
 
 def unavailable_opportunity(reason: str) -> dict[str, Any]:
@@ -67,8 +67,8 @@ def analyze_opportunities(forecast: dict | None, market: dict | None,
         return unavailable_opportunity("Independent forecast has no directional decision")
     if not current_book(book, market["ticker"], now, MAX_BOOK_AGE_SECONDS):
         return unavailable_opportunity("Full aggregated order-book data unavailable, wrong market or stale")
-    if (market.get("seconds_left") or 0) < 120:
-        return unavailable_opportunity("Less than 2 minutes remain; no new entry recommended")
+    if (market.get("seconds_left") or 0) < MIN_SECONDS_TO_CLOSE:
+        return unavailable_opportunity("Less than 20 seconds remain")
     try:
         p = float(forecast["prob_above"])
         requested = float(size_contracts)
@@ -90,21 +90,14 @@ def analyze_opportunities(forecast: dict | None, market: dict | None,
         avg_ask = buys["average_price"]
         gross = probability-avg_ask if complete and avg_ask is not None else None
         net = gross-fee/requested if gross is not None else None
-        valid_spread = spread is not None and 0 <= spread <= MAX_SPREAD
-        can_enter = (complete and valid_spread and .05 <= avg_ask <= .90
-                     and net is not None and net >= MIN_AFTER_FEE_EDGE
+        valid_spread = spread is not None and 0 <= spread < 1
+        can_enter = (complete and valid_spread and avg_ask is not None
+                     and 0 < avg_ask < 1 and net is not None and net > 0
                      and side == ("YES" if forecast["side"]=="ABOVE" else "NO"))
+        # No price-band dead zone, early-rebound guess, or flat 8-cent wall.
+        # A positive after-fee advantage and an actual complete orderbook
+        # sweep are the only valuation checks in Phase 1.
         signal_gate = 'OK'
-        if signals is not None:
-            if not signals.get('available'):
-                signal_gate = 'Stale or missing BTC dynamics'
-            elif (market.get('market_mid') is not None and
-                  .47 <= market['market_mid'] <= .53 and .35 <= p <= .65):
-                signal_gate = 'Near-even quote with weak independent direction'
-            elif (signals.get('first_two_minute_reversal_flag') ==
-                  'EARLY_DOWN_REBOUND_TENDENCY' and side == 'NO' and p > .20):
-                signal_gate = 'Early-down rebound risk'
-        can_enter = can_enter and signal_gate == 'OK'
         # Research on broad Kalshi markets identifies favorite-longshot bias
         # and worse average taker than maker outcomes. This information
         # belongs to contract valuation ONLY, and NEVER alters predicted
@@ -153,7 +146,7 @@ def analyze_opportunities(forecast: dict | None, market: dict | None,
         "status": "CANDIDATE" if winner else "WAIT",
         "side": winner["side"] if winner else "WAIT",
         "reason": ("Model versus participant orders, with full-depth hypothetical sweep" if winner else
-                   "No size-adjusted entry meets the experimental edge, spread, time and liquidity gates"),
+                   "No positive after-fee, depth-backed BRTI candidate for this contract"),
         "selected": winner, "candidates": candidates,
         "size_contracts": requested, "source": "full_depth_order_book",
         "uses_orderbook_quotes_as_forecast": False,
