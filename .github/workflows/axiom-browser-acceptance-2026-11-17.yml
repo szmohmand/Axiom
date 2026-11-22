@@ -5,6 +5,7 @@ on:
       - integrate/axiom-binance-funding-lag-2026-11-20
       - integrate/axiom-intracontract-resale-2026-11-20
       - main
+      - feature/axiom-contract-repricing-full-test-gate-2026-11-22
       - deploy/axiom-oracle-preparation-2026-11-19
       - tests/axiom-full-lifecycle-audit-2026-11-17
       - fix/rollover-brti-execution-evidence-2026-11-17

@@ -35,7 +35,7 @@ def test_two_snapshots_track_actual_spacing_midpoint_depth_and_btc():
     assert delta["no_bid_level_change"]["net_change_contracts"]==-5
     assert second["max_observed_yes_mid_move"]==pytest.approx(.02)
     assert not second["net_book_change_is_order_events"]
-    assert second["funding"]=="NOT_CONNECTED"
+    assert "funding" not in second  # User removed funding telemetry and all references
     op=resale_screen(m,b,s,second,T+5)
     assert op["action"]=="BUY_CANDIDATE" and op["side"]=="YES"
     assert op["entry_ask"]==pytest.approx(.42)

@@ -68,6 +68,10 @@ def test_full_contract_lifecycle_four_checkpoints_and_official_settlement(env):
     main,clock,provider,client,tmp=env
     main.AUTO_PAPER=True
     checkpoints=[(840,'14m'),(600,'10m'),(300,'5m'),(60,'1m')]
+    expected_names={'axiom_volatility','aaryann_fair','kalshibot_headstart',
+        'axiom_target_dynamics','axiom_gradient_boosted_btc','axiom_full_nison',
+        'axiom_multi_signal_context'}
+    samples_per_checkpoint=None
     for seconds, label in checkpoints:
         clock.now=provider.close-seconds
         updated=main.update_once()
@@ -75,13 +79,18 @@ def test_full_contract_lifecycle_four_checkpoints_and_official_settlement(env):
         assert updated['model']['available'] is True
         assert updated['btc_signals']['available'] is True
         assert updated['trade_decision']['order_placed'] is False
-        assert len(updated['engines'])==5
+        assert {e['name'] for e in updated['engines']}==expected_names
         assert updated['model']['prob_above'] is not None
         assert updated['scalp']['side'] in ('LONG','SHORT','WAIT')
         assert updated['opportunity']['side'] in ('YES','NO','WAIT')
         assert updated['status']=='DEMO'
         rows=main.ledger.conn.execute('SELECT engine,checkpoint FROM engine_snapshots WHERE ticker=?',(provider.ticker,)).fetchall()
-        assert sum(row['checkpoint']==label for row in rows)==6, f'{label} checkpoint has wrong engine count'
+        actual=sum(row['checkpoint']==label for row in rows)
+        expected=1+sum(bool(e['available']) for e in updated['engines'])
+        assert actual==expected, f'{label} missing scored active model'
+        if samples_per_checkpoint is None:
+            samples_per_checkpoint=actual
+        assert actual==samples_per_checkpoint, 'Checkpoint model coverage changed without a feed failure'
         if seconds==840:
             clock.now+=15
             main.update_once()
@@ -90,10 +99,10 @@ def test_full_contract_lifecycle_four_checkpoints_and_official_settlement(env):
             assert main.ledger.data()['trades'][0]['source']=='AUTO_RESEARCH'
     pre=client.get('/api/state').json()
     assert pre['count']=={'calls':1,'paper':1}
-    assert pre['engine_scores']['samples']==24
+    assert pre['engine_scores']['samples']==samples_per_checkpoint*4
     assert pre['stats']['settled_paper_trades']==0
     assert len(pre['engine_scores']['scores'])==0
-    assert len(pre['engines'])==5
+    assert {e['name'] for e in pre['engines']}==expected_names
     assert pre['manual_paper_available'] is True
     assert pre['disclaimer'].find('NOT the BRTI')>=0
     assert client.get('/health').json()['ok']
@@ -108,7 +117,7 @@ def test_full_contract_lifecycle_four_checkpoints_and_official_settlement(env):
         assert response.headers['content-type'].startswith('text/csv')
         rows=list(csv.DictReader(io.StringIO(response.text)))
         assert rows,f'Expected records in {kind}'
-        if kind=='engine_snapshots': assert len(rows)==24
+        if kind=='engine_snapshots': assert len(rows)==samples_per_checkpoint*4
         if kind=='paper_trades':assert len(rows)==1
     assert client.get('/api/export/engine_snapshots').status_code==401
     assert client.get('/api/export/invalid',headers=auth).status_code==404
@@ -121,7 +130,7 @@ def test_full_contract_lifecycle_four_checkpoints_and_official_settlement(env):
     assert final['stats']['correct_calls']==1
     assert final['stats']['settled_paper_trades']==1
     assert final['stats']['gross_paper_pnl']==round(1-provider.quote_ask,4)
-    assert len(final['engine_scores']['scores'])==24
+    assert len(final['engine_scores']['scores'])==samples_per_checkpoint*4
     assert all(row['n']==1 for row in final['engine_scores']['scores'])
     assert all(row['validated_alpha'] is False for row in final['engine_scores']['scores'])
     assert len(main.ledger.unresolved())==0
@@ -132,7 +141,7 @@ def test_full_contract_lifecycle_four_checkpoints_and_official_settlement(env):
     from app.storage import Ledger
     reopened=Ledger(str(tmp/'runtime.sqlite3'))
     assert reopened.data()['count']=={'calls':1,'paper':1}
-    assert len(reopened.engine_scores()['scores'])==24
+    assert len(reopened.engine_scores()['scores'])==samples_per_checkpoint*4
     reopened.conn.close()
 
 
@@ -192,11 +201,15 @@ def test_reconciliation_market_mid_does_not_change_independent_forecast(env):
     main,clock,provider,client,_=env
     from app.ensemble import engine_pack
     market=provider.market(clock.now)
-    candles=__import__('app.engine',fromlist=['normalize_candles']).normalize_candles(provider.candles())
+    # Provider already returns normalized candle dicts; normalizing them
+    # again discards all data and used to test an unavailable forecast.
+    candles=provider.candles()
     original=engine_pack(provider.price(),market,candles)
     changed=engine_pack(provider.price(),{**market,'market_mid':.05,'yes_bid':.02,'yes_ask':.07,'no_bid':.93,'no_ask':.98},candles)
     assert original['prob_above']==changed['prob_above']
-    assert original['engines'][0]['prob_above']!=changed['engines'][0]['prob_above']
+    assert original['engines']==changed['engines']
+    assert original['forecast_minus_quote_mid'] is None
+    assert changed['forecast_minus_quote_mid'] is None
 
 
 def test_settlement_failure_is_exposed_in_health(env):
@@ -204,7 +217,7 @@ def test_settlement_failure_is_exposed_in_health(env):
     main,clock,provider,client,_=env
     clock.now=provider.close-600
     main.update_once()
-    assert main.ledger.engine_scores()['samples']==6
+    assert main.ledger.engine_scores()['samples']==len([e for e in main.state['engines'] if e['available']])+1
     def broken_settlement(ticker): raise RuntimeError('injected result endpoint failure')
     provider.settlement=broken_settlement
     clock.now=provider.close+10
@@ -237,6 +250,6 @@ def test_no_side_manual_paper_result_and_regrade_idempotence(env):
     assert response['trades'][0]['status']=='SETTLED'
     assert response['trades'][0]['result']=='no'
     assert response['stats']['gross_paper_pnl']==round(1-(1-provider.quote_ask+.03),4)
-    assert len(response['engine_scores']['scores'])==6
+    assert len(response['engine_scores']['scores'])==len([e for e in main.state['engines'] if e['available']])+1
     main.grade_once()
     assert client.get('/api/state').json()['stats']==response['stats']

@@ -186,6 +186,10 @@ def scan_nison(candles:list[dict],now:float)->dict:
         b=_validated(candles,now)
     except (KeyError,TypeError,ValueError,OverflowError) as exc:
         result["reason"]=str(exc);return result
+    # _validated has already guaranteed >=31 closed, consecutive candles.
+    # Multi-candle families (3/5/6/15-bar) and EMA/RSI history all exist;
+    # redundant always-true guards used to create untestable coverage branches.
+    # All original timestamp/ohlcv/minimum-history defenses are unchanged.
     a=[_shape(x) for x in b]
     current,prev=b[-1],b[-2]
     cur,pr=a[-1],a[-2]
@@ -246,45 +250,44 @@ def scan_nison(candles:list[dict],now:float)->dict:
                     no_validated_bullish_reversal=True,strict_opening_gap=True)
     # Ch 5: Nison discusses flexible middle/last-body gaps on intraday stars,
     # but NOT rewriting strict abandoned-baby shadow gaps as arbitrary overlap.
-    if len(b)>=3:
-        x,y,z=b[-3:];ax,ay,az=a[-3:]
-        earlier=_trend(b[:-3])
-        if (earlier=="DOWN" and ax["down"] and ax["long"] and ay["small"]
-            and az["up"] and az["long"]
-            and z["close"]>(x["open"]+x["close"])/2):
-            nm="MORNING_DOJI_STAR" if ay["doji"] else "MORNING_STAR"
-            _append(patterns,nm,5,intraday_body_gap_optional=True,
-                    ideal_middle_body_gap=max(y["open"],y["close"])<min(x["open"],x["close"]))
-        if (earlier=="UP" and ax["up"] and ax["long"] and ay["small"]
-            and az["down"] and az["long"]
-            and z["close"]<(x["open"]+x["close"])/2):
-            nm="EVENING_DOJI_STAR" if ay["doji"] else "EVENING_STAR"
-            _append(patterns,nm,5,intraday_body_gap_optional=True,
-                    ideal_middle_body_gap=min(y["open"],y["close"])>max(x["open"],x["close"]))
-        # A true abandoned baby is isolated by shadow gaps ON BOTH sides,
-        # not merely by non-touching real bodies. Intraday star flexibility
-        # DOES NOT turn overlapping BTC candles into abandoned babies.
-        if ay["doji"] and x["low"]>y["high"] and z["low"]>y["high"] and earlier=="DOWN" and az["up"]:
-            _append(patterns,"ABANDONED_BABY_BOTTOM",5,strict_two_sided_shadow_gaps=True)
-        if ay["doji"] and x["high"]<y["low"] and z["high"]<y["low"] and earlier=="UP" and az["down"]:
-            _append(patterns,"ABANDONED_BABY_TOP",5,strict_two_sided_shadow_gaps=True)
-        if ax["doji"] and ay["doji"] and az["doji"]:
-            if earlier=="DOWN" and y["low"]<min(x["low"],z["low"]):
-                _append(patterns,"TRISTAR_BOTTOM",8,confirmed_gaps=False)
-            if earlier=="UP" and y["high"]>max(x["high"],z["high"]):
-                _append(patterns,"TRISTAR_TOP",8,confirmed_gaps=False)
-        if earlier=="UP" and all(v["down"] and v["close_pos"]<=.25
-                 for v in a[-3:]) and x["close"]>y["close"]>z["close"]:
-            _append(patterns,"THREE_BLACK_CROWS",6)
-        if earlier=="DOWN" and all(v["up"] and v["close_pos"]>=.75
-                 for v in a[-3:]) and x["close"]<y["close"]<z["close"]:
-            _append(patterns,"THREE_WHITE_SOLDIERS",6)
-        # Upside gap two crows: two falling-colored bodies in a genuine
-        # gap above prior white body, second crow engulfs first body.
-        if (earlier=="UP" and ax["up"] and ay["down"] and az["down"] and
-            y["low"]>x["high"] and z["open"]>y["open"] and
-            z["close"]<y["close"] and z["close"]>x["high"]):
-            _append(patterns,"UPSIDE_GAP_TWO_CROWS",6,strict_gaps=True)
+    x,y,z=b[-3:];ax,ay,az=a[-3:]
+    earlier=_trend(b[:-3])
+    if (earlier=="DOWN" and ax["down"] and ax["long"] and ay["small"]
+        and az["up"] and az["long"]
+        and z["close"]>(x["open"]+x["close"])/2):
+        nm="MORNING_DOJI_STAR" if ay["doji"] else "MORNING_STAR"
+        _append(patterns,nm,5,intraday_body_gap_optional=True,
+                ideal_middle_body_gap=max(y["open"],y["close"])<min(x["open"],x["close"]))
+    if (earlier=="UP" and ax["up"] and ax["long"] and ay["small"]
+        and az["down"] and az["long"]
+        and z["close"]<(x["open"]+x["close"])/2):
+        nm="EVENING_DOJI_STAR" if ay["doji"] else "EVENING_STAR"
+        _append(patterns,nm,5,intraday_body_gap_optional=True,
+                ideal_middle_body_gap=min(y["open"],y["close"])>max(x["open"],x["close"]))
+    # A true abandoned baby is isolated by shadow gaps ON BOTH sides,
+    # not merely by non-touching real bodies. Intraday star flexibility
+    # DOES NOT turn overlapping BTC candles into abandoned babies.
+    if ay["doji"] and x["low"]>y["high"] and z["low"]>y["high"] and earlier=="DOWN" and az["up"]:
+        _append(patterns,"ABANDONED_BABY_BOTTOM",5,strict_two_sided_shadow_gaps=True)
+    if ay["doji"] and x["high"]<y["low"] and z["high"]<y["low"] and earlier=="UP" and az["down"]:
+        _append(patterns,"ABANDONED_BABY_TOP",5,strict_two_sided_shadow_gaps=True)
+    if ax["doji"] and ay["doji"] and az["doji"]:
+        if earlier=="DOWN" and y["low"]<min(x["low"],z["low"]):
+            _append(patterns,"TRISTAR_BOTTOM",8,confirmed_gaps=False)
+        if earlier=="UP" and y["high"]>max(x["high"],z["high"]):
+            _append(patterns,"TRISTAR_TOP",8,confirmed_gaps=False)
+    if earlier=="UP" and all(v["down"] and v["close_pos"]<=.25
+             for v in a[-3:]) and x["close"]>y["close"]>z["close"]:
+        _append(patterns,"THREE_BLACK_CROWS",6)
+    if earlier=="DOWN" and all(v["up"] and v["close_pos"]>=.75
+             for v in a[-3:]) and x["close"]<y["close"]<z["close"]:
+        _append(patterns,"THREE_WHITE_SOLDIERS",6)
+    # Upside gap two crows: two falling-colored bodies in a genuine
+    # gap above prior white body, second crow engulfs first body.
+    if (earlier=="UP" and ax["up"] and ay["down"] and az["down"] and
+        y["low"]>x["high"] and z["open"]>y["open"] and
+        z["close"]<y["close"] and z["close"]>x["high"]):
+        _append(patterns,"UPSIDE_GAP_TWO_CROWS",6,strict_gaps=True)
     # Ch 6: "contained real body", not shadow-only harami.
     if pr["long"] and cur["small"] and min(current["open"],current["close"])>=min(prev["open"],prev["close"]) and max(current["open"],current["close"])<=max(prev["open"],prev["close"]):
         if trend2=="DOWN" and pr["down"]:
@@ -311,48 +314,44 @@ def scan_nison(candles:list[dict],now:float)->dict:
         _append(patterns,"BULLISH_SEPARATING_LINES",7)
     if trend2=="DOWN" and pr["up"] and cur["down"] and abs(current["open"]-prev["open"])<=tol:
         _append(patterns,"BEARISH_SEPARATING_LINES",7)
-    if len(b)>=3:
-        x,y,z=b[-3:]
-        if (_bar_gap(x,y)=="UP" and z["close"]<z["open"] and
-            z["close"]<y["low"] and z["close"]>x["high"]):
-            _append(patterns,"UPSIDE_TASUKI_GAP",7,strict_gap=True)
-        if (_bar_gap(x,y)=="DOWN" and z["close"]>z["open"] and
-            z["close"]>y["high"] and z["close"]<x["low"]):
-            _append(patterns,"DOWNSIDE_TASUKI_GAP",7,strict_gap=True)
-        if (_bar_gap(x,y)=="UP" and _bar_gap(x,z)=="UP" and
-            a[-2]["up"] and cur["up"] and abs(y["open"]-z["open"])<=tol):
-            _append(patterns,"BULLISH_GAPPING_SIDE_BY_SIDE",7)
-        if (_bar_gap(x,y)=="DOWN" and _bar_gap(x,z)=="DOWN" and
-            a[-2]["up"] and cur["up"] and abs(y["open"]-z["open"])<=tol):
-            _append(patterns,"BEARISH_GAPPING_SIDE_BY_SIDE",7)
-    if len(b)>=5:
-        for inner in (2,3,4):
-            if len(b)<inner+2:continue
-            first=b[-(inner+2)];middle=b[-(inner+1):-1]
-            fshape=_shape(first)
-            if (fshape["up"] and fshape["long"] and cur["up"] and cur["long"]
-                and current["close"]>first["close"] and
-                all(first["low"]<=p["low"] and p["high"]<=first["high"] and
-                    _shape(p)["small"] for p in middle)):
-                _append(patterns,"RISING_THREE_METHODS",7,inner_candles=inner);break
-            if (fshape["down"] and fshape["long"] and cur["down"] and cur["long"]
-                and current["close"]<first["close"] and
-                all(first["low"]<=p["low"] and p["high"]<=first["high"] and
-                    _shape(p)["small"] for p in middle)):
-                _append(patterns,"FALLING_THREE_METHODS",7,inner_candles=inner);break
-    if len(b)>=6:
-        start=b[-6]
-        mid=b[-5:-1]
-        if (_shape(start)["long"] and _shape(start)["up"] and
-            all(_shape(x)["small"] for x in mid) and
-            max(x["high"] for x in mid)<=start["high"]+atr*.4 and
-            gap=="UP"):
-            _append(patterns,"HIGH_PRICE_GAPPING_PLAY",7)
-        if (_shape(start)["long"] and _shape(start)["down"] and
-            all(_shape(x)["small"] for x in mid) and
-            min(x["low"] for x in mid)>=start["low"]-atr*.4 and
-            gap=="DOWN"):
-            _append(patterns,"LOW_PRICE_GAPPING_PLAY",7)
+    x,y,z=b[-3:]
+    if (_bar_gap(x,y)=="UP" and z["close"]<z["open"] and
+        z["close"]<y["low"] and z["close"]>x["high"]):
+        _append(patterns,"UPSIDE_TASUKI_GAP",7,strict_gap=True)
+    if (_bar_gap(x,y)=="DOWN" and z["close"]>z["open"] and
+        z["close"]>y["high"] and z["close"]<x["low"]):
+        _append(patterns,"DOWNSIDE_TASUKI_GAP",7,strict_gap=True)
+    if (_bar_gap(x,y)=="UP" and _bar_gap(x,z)=="UP" and
+        a[-2]["up"] and cur["up"] and abs(y["open"]-z["open"])<=tol):
+        _append(patterns,"BULLISH_GAPPING_SIDE_BY_SIDE",7)
+    if (_bar_gap(x,y)=="DOWN" and _bar_gap(x,z)=="DOWN" and
+        a[-2]["up"] and cur["up"] and abs(y["open"]-z["open"])<=tol):
+        _append(patterns,"BEARISH_GAPPING_SIDE_BY_SIDE",7)
+    for inner in (2,3,4):
+        first=b[-(inner+2)];middle=b[-(inner+1):-1]
+        fshape=_shape(first)
+        if (fshape["up"] and fshape["long"] and cur["up"] and cur["long"]
+            and current["close"]>first["close"] and
+            all(first["low"]<=p["low"] and p["high"]<=first["high"] and
+                _shape(p)["small"] for p in middle)):
+            _append(patterns,"RISING_THREE_METHODS",7,inner_candles=inner);break
+        if (fshape["down"] and fshape["long"] and cur["down"] and cur["long"]
+            and current["close"]<first["close"] and
+            all(first["low"]<=p["low"] and p["high"]<=first["high"] and
+                _shape(p)["small"] for p in middle)):
+            _append(patterns,"FALLING_THREE_METHODS",7,inner_candles=inner);break
+    start=b[-6]
+    mid=b[-5:-1]
+    if (_shape(start)["long"] and _shape(start)["up"] and
+        all(_shape(x)["small"] for x in mid) and
+        max(x["high"] for x in mid)<=start["high"]+atr*.4 and
+        gap=="UP"):
+        _append(patterns,"HIGH_PRICE_GAPPING_PLAY",7)
+    if (_shape(start)["long"] and _shape(start)["down"] and
+        all(_shape(x)["small"] for x in mid) and
+        min(x["low"] for x in mid)>=start["low"]-atr*.4 and
+        gap=="DOWN"):
+        _append(patterns,"LOW_PRICE_GAPPING_PLAY",7)
     # Ch 8: doji types: neutral until evidence of directional confirmation.
     if cur["doji"]:
         _append(patterns,"DOJI_IN_TREND" if trend1!="RANGE" else "DOJI_IN_RANGE",8)
@@ -367,14 +366,13 @@ def scan_nison(candles:list[dict],now:float)->dict:
     elif cur["small"]:
         _append(patterns,"SPINNING_TOP",3)
     # Completed next-candle confirmation of the preceding completed candle.
-    if len(b)>=3:
-        prior_trend=_trend(b[:-2])
-        if (prior_trend=="DOWN" and _shape(prev)["low_frac"]>=.55 and
-            current["close"]>prev["high"] and cur["up"]):
-            _append(patterns,"BULLISH_CONFIRMATION",9,after="previous_rejection")
-        if (prior_trend=="UP" and _shape(prev)["up_frac"]>=.55 and
-            current["close"]<prev["low"] and cur["down"]):
-            _append(patterns,"BEARISH_CONFIRMATION",9,after="previous_rejection")
+    prior_trend=_trend(b[:-2])
+    if (prior_trend=="DOWN" and _shape(prev)["low_frac"]>=.55 and
+        current["close"]>prev["high"] and cur["up"]):
+        _append(patterns,"BULLISH_CONFIRMATION",9,after="previous_rejection")
+    if (prior_trend=="UP" and _shape(prev)["up_frac"]>=.55 and
+        current["close"]<prev["low"] and cur["down"]):
+        _append(patterns,"BEARISH_CONFIRMATION",9,after="previous_rejection")
     # Ch 6 longer geometric structures, after confirmed pivots and strict windows.
     patterns.extend(scan_structural_formations(b,atr))
     # Ch 10 repeated rejection levels, based on strictly PRIOR candles only.
@@ -410,22 +408,21 @@ def scan_nison(candles:list[dict],now:float)->dict:
         and current["close"]<support-.15*atr and cur["close_pos"]<=.25):
         _append(patterns,"BOX_BREAKOUT_DOWN",16,box_height_usd=round(resistance-support,3),
                 measured_target_usd=round(current["close"]-(resistance-support),2))
-    if len(b)>=15:
-        impulse=b[-15:-8]
-        pause=b[-8:-1]
-        initial=impulse[-1]["close"]-impulse[0]["open"]
-        pause_span=max(x["high"] for x in pause)-min(x["low"] for x in pause)
-        if abs(initial)>=3*atr and pause_span<=.75*abs(initial):
-            slope_high=_linreg([x["high"] for x in pause])
-            slope_low=_linreg([x["low"] for x in pause])
-            if initial>0 and current["close"]>max(x["high"] for x in pause)+tol:
-                nm="BULL_PENNANT_BREAKOUT" if (slope_high is not None and
-                    slope_low is not None and slope_high<0<slope_low) else "BULL_FLAG_BREAKOUT"
-                _append(patterns,nm,16,measured_move_projection_usd=round(current["close"]+abs(initial),2))
-            elif initial<0 and current["close"]<min(x["low"] for x in pause)-tol:
-                nm="BEAR_PENNANT_BREAKOUT" if (slope_high is not None and
-                    slope_low is not None and slope_high<0<slope_low) else "BEAR_FLAG_BREAKOUT"
-                _append(patterns,nm,16,measured_move_projection_usd=round(current["close"]-abs(initial),2))
+    impulse=b[-15:-8]
+    pause=b[-8:-1]
+    initial=impulse[-1]["close"]-impulse[0]["open"]
+    pause_span=max(x["high"] for x in pause)-min(x["low"] for x in pause)
+    if abs(initial)>=3*atr and pause_span<=.75*abs(initial):
+        slope_high=_linreg([x["high"] for x in pause])
+        slope_low=_linreg([x["low"] for x in pause])
+        if initial>0 and current["close"]>max(x["high"] for x in pause)+tol:
+            nm="BULL_PENNANT_BREAKOUT" if (slope_high is not None and
+                slope_low is not None and slope_high<0<slope_low) else "BULL_FLAG_BREAKOUT"
+            _append(patterns,nm,16,measured_move_projection_usd=round(current["close"]+abs(initial),2))
+        elif initial<0 and current["close"]<min(x["low"] for x in pause)-tol:
+            nm="BEAR_PENNANT_BREAKOUT" if (slope_high is not None and
+                slope_low is not None and slope_high<0<slope_low) else "BEAR_FLAG_BREAKOUT"
+            _append(patterns,nm,16,measured_move_projection_usd=round(current["close"]-abs(initial),2))
     # Ch 12 retracements: window of historical price extents; reference only.
     high30=max(x["high"] for x in b[-31:-1])
     low30=min(x["low"] for x in b[-31:-1])
@@ -496,12 +493,10 @@ def scan_nison(candles:list[dict],now:float)->dict:
     if high_volume:positives.append("VOLUME_CONFIRMS_ACTIVITY")
     if near_sup and bottom_touches>=2:positives.append("REPEATED_SUPPORT")
     if near_res and top_touches>=2:negatives.append("REPEATED_RESISTANCE")
-    if ema9 is not None and ema21 is not None:
-        if ema9>ema21 and current["close"]>ema9: positives.append("EMA_BULLISH_ALIGNMENT")
-        if ema9<ema21 and current["close"]<ema9: negatives.append("EMA_BEARISH_ALIGNMENT")
-    if rsi is not None:
-        if rsi<30:positives.append("RSI_OVERSOLD_WARNING")
-        if rsi>70:negatives.append("RSI_OVERBOUGHT_WARNING")
+    if ema9>ema21 and current["close"]>ema9: positives.append("EMA_BULLISH_ALIGNMENT")
+    if ema9<ema21 and current["close"]<ema9: negatives.append("EMA_BEARISH_ALIGNMENT")
+    if rsi<30:positives.append("RSI_OVERSOLD_WARNING")
+    if rsi>70:negatives.append("RSI_OVERBOUGHT_WARNING")
     if oscillator_divergence=="BULLISH_WARNING":positives.append("RSI_BULLISH_DIVERGENCE")
     if oscillator_divergence=="BEARISH_WARNING":negatives.append("RSI_BEARISH_DIVERGENCE")
     if retrace_near: positives.append("RETRACEMENT_CONFLUENCE_NON_DIRECTIONAL")

@@ -135,6 +135,12 @@ button,input{font:inherit}button{cursor:pointer}button:disabled{opacity:.4;curso
     <div class="explain" id="resaleExitReason">No matching paper position</div>
     <div class="micro">Quote midpoint spikes are not guaranteed fills. Net price-level changes cannot identify individual orders, cancels or sweeps. No trained profit model or authenticated execution is claimed.</div>
   </section>
+  <section class="section card" id="contractQuoteForecastSection"><div class="card-head"><div class="card-title">Kalshi contract-price forecast · separate from BTC</div><span class="submark">Learning from observed future quotes · No orders</span></div>
+    <div class="pair"><div class="info-cell"><div class="label">Next 30s predicted YES midpoint movement</div><b id="quoteForecastMove">—</b></div><div class="info-cell"><div class="label">Predicted next YES midpoint</div><b id="quoteForecastMid">—</b></div></div>
+    <div class="pair"><div class="info-cell"><div class="label">Quote direction</div><b id="quoteForecastSide">WAIT</b></div><div class="info-cell"><div class="label">Observed transitions used</div><b id="quoteForecastSamples">0</b></div></div>
+    <div class="explain" id="quoteForecastReason">Awaiting consecutive Kalshi contract quotes</div>
+    <div class="micro">This predicts *Kalshi quote repricing*, not BTC direction. Learns only after the next real quote arrives. A future midpoint is NOT a guaranteed fill or future executable exit bid. BTC outcome probability never uses Kalshi quotes.</div>
+  </section>
   <section class="section card" id="liveBRTISection"><div class="card-head"><div class="card-title">Live CF Benchmarks BRTI · official reference</div><span class="submark">Authenticated read-only WebSocket · fresh reference when available</span></div>
     <div class="pair"><div class="info-cell"><div class="label">Live BRTI index</div><b id="brtiValue">—</b></div><div class="info-cell"><div class="label">Stream status</div><b id="brtiState">NOT CONNECTED</b></div></div>
     <div class="pair"><div class="info-cell"><div class="label">Index source → AXIOM receipt</div><b id="brtiLag">—</b></div><div class="info-cell"><div class="label">Last 15m settlement-window average</div><b id="brtiFinal">—</b></div></div>
@@ -219,6 +225,13 @@ function view(s){latest=s;const m=s.market, f=s.model||{},o=s.opportunity||{},sc
   set('resaleExitBid',cents(exit.current_sell_bid));
   set('resaleNet',Number.isFinite(exit.estimated_net_per_paper_contract)?money(exit.estimated_net_per_paper_contract):'—');
   set('resaleExitReason',exit.reason||'No current depth-backed paper exit');
+  const quoteModel=s.contract_repricing||{};
+  set('quoteForecastMove',Number.isFinite(quoteModel.predicted_yes_mid_change_30s)?
+      (quoteModel.predicted_yes_mid_change_30s>=0?'+':'')+cents(quoteModel.predicted_yes_mid_change_30s):'—');
+  set('quoteForecastMid',cents(quoteModel.predicted_yes_mid_30s));
+  set('quoteForecastSide',quoteModel.direction||'WAIT');
+  set('quoteForecastSamples',quoteModel.training_transitions??0);
+  set('quoteForecastReason',quoteModel.reason||'Awaiting observed real quote transitions');
   const book=s.orderbook||{},dp=s.depth_opportunity||{},ex=s.execution_intelligence||{},sel=dp.selected||{};
  set('bookStatus',book.available?`Current aggregated price levels · ${(book.received_at?new Date(book.received_at*1000).toLocaleTimeString():'time unavailable')}`:`WAIT · ${book.reason||'No valid order-book depth'}`);
  set('bookYesLevels',book.available?(book.levels?.YES??0):'—');set('bookNoLevels',book.available?(book.levels?.NO??0):'—');

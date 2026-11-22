@@ -216,7 +216,12 @@ def test_staged_pipeline_and_failure_keep_existing_forecast_and_ledger(env):
     assert degraded["orderbook"]["status"]=="UNAVAILABLE"
     assert degraded["depth_opportunity"]["side"]=="WAIT"
     assert degraded["execution_intelligence"]["action"]=="WAIT"
-    assert degraded["model"]["prob_above"]==engine_pack(degraded["spot"],degraded["market"],degraded["candles"])["prob_above"]
+    independent=engine_pack(degraded["spot"],degraded["market"],degraded["candles"],
+        signals=degraded["btc_signals"],
+        context={"timeframes":degraded["higher_timeframes"],
+                 "microstructure":degraded["market_microstructure"]},
+        now=clock.now)
+    assert degraded["model"]==independent
     assert degraded["model"]["available"]
     assert degraded["status"]=="DEMO"
     assert main.ledger.data()["count"]["paper"]==baseline["paper"]+1

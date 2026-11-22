@@ -5,6 +5,7 @@ on:
       - integrate/axiom-binance-funding-lag-2026-11-20
       - integrate/axiom-intracontract-resale-2026-11-20
       - main
+      - feature/axiom-contract-repricing-full-test-gate-2026-11-22
       - deploy/axiom-oracle-preparation-2026-11-19
       - tests/axiom-full-lifecycle-audit-2026-11-17
       - fix/rollover-brti-execution-evidence-2026-11-17
@@ -74,7 +75,12 @@ jobs:
                   if h['ok']:
                       assert health.status_code==200 and state.status_code==200
                       assert s['status']=='LIVE' and s['model']['available']
-                      assert len(s['engines'])==5
+                      assert {e['name'] for e in s['engines']}=={
+                          'axiom_volatility','aaryann_fair','kalshibot_headstart',
+                          'axiom_target_dynamics','axiom_gradient_boosted_btc',
+                          'axiom_full_nison','axiom_multi_signal_context'}
+                      assert not s['contract_repricing']['order_placed']
+                      assert not s['contract_repricing']['independent_btc_forecast_changed']
                       assert s['btc_signals']['available'] is True
                       assert s['trade_decision']['order_placed'] is False
                       assert len(s['candles'])>=31

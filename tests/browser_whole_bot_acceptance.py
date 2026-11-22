@@ -44,7 +44,11 @@ def run():
 
         state = requests.get(base + "/api/state", timeout=3).json()
         assert state["status"] == "DEMO" and state["ok"] is True
-        assert state["model"]["available"] and len(state["engines"]) == 5
+        assert state["model"]["available"]
+        assert {e["name"] for e in state["engines"]}=={
+            "axiom_volatility","aaryann_fair","kalshibot_headstart",
+            "axiom_target_dynamics","axiom_gradient_boosted_btc",
+            "axiom_full_nison","axiom_multi_signal_context"}
         assert state["btc_signals"]["available"] is True
         assert state["trade_decision"]["order_placed"] is False
         assert state["orderbook"]["available"] and state["orderbook"]["is_full_aggregated_depth"]
@@ -54,6 +58,8 @@ def run():
         assert state["binance_intelligence"]["status"]=="DISABLED"
         assert state["intracontract"]["available"] is True
         assert state["depth_opportunity"]["read_only"] is True
+        assert state["contract_repricing"]["order_placed"] is False
+        assert state["contract_repricing"]["independent_btc_forecast_changed"] is False
 
         results = []
         with sync_playwright() as play:
@@ -77,7 +83,7 @@ def run():
                         timeout=15000
                     )
                     assert "No real orders are placed" in page.locator("body").inner_text()
-                    for selector in ("#binanceLeadSection","#binanceSpot","#binanceFunding","#binanceFundingBias","#binanceLagAction","#binanceLagReason", "#resaleIntelligenceSection","#resaleMidMove","#resaleBtcMove","#resaleBookChange","#resaleAction","#resaleReason","#resaleBreakEven","#resaleExitAction", "#decisionSignalsSection","#dynZ","#dynAccel","#dynTouch","#dynMove","#dynRef","#decisionAction","#decisionReason", "#liveBRTISection", "#brtiValue", "#brtiState", "#bookStatus", "#bookBidRows tr", "#bookAskRows tr",
+                    for selector in ("#binanceLeadSection","#binanceSpot","#binanceLagAction","#binanceLagReason", "#resaleIntelligenceSection","#resaleMidMove","#resaleBtcMove","#resaleBookChange","#resaleAction","#resaleReason","#resaleBreakEven","#resaleExitAction", "#contractQuoteForecastSection","#quoteForecastMove","#quoteForecastMid","#quoteForecastSamples","#quoteForecastReason", "#decisionSignalsSection","#dynZ","#dynAccel","#dynTouch","#dynMove","#dynRef","#decisionAction","#decisionReason", "#liveBRTISection", "#brtiValue", "#brtiState", "#bookStatus", "#bookBidRows tr", "#bookAskRows tr",
                                      "#depthSide", "#execAction", "#scalpSide", "#forecastSide",
                                      "#engineRows tr", "#chart", "#paperYes", "#paperNo"):
                         assert page.locator(selector).count()>0, selector
