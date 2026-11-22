@@ -25,6 +25,7 @@ from .candlestick_challenger import derive_candlestick_challenger, unavailable a
 from .orderbook import unavailable as unavailable_book
 from .execution_evidence import examine_liquidity
 from .brti_live import BRTITracker, run_worker as brti_reference_worker
+from .settlement_probability import forecast as brti_settlement_forecast
 from .decision_signals import derive_signals, unavailable as unavailable_signals, execution_decision
 from .intracontract import (IntracontractTracker, unavailable as unavailable_timeline,
                             wait as wait_resale, resale_screen, resale_position_review)
@@ -35,12 +36,12 @@ from .depth_intelligence import (analyze_opportunities, execution_guidance,
 
 ROOT = Path(__file__).parent
 DEMO = os.environ.get('DEMO_MODE', '0') == '1'
-AUTO_PAPER = os.environ.get('AUTO_PAPER', '1') == '1'
+AUTO_PAPER = os.environ.get('AUTO_PAPER', '0') == '1'
 POLL_SECONDS = max(5, int(os.environ.get('POLL_SECONDS', '15')))
 DATA_PATH = os.environ.get('DATA_PATH', str(ROOT.parent/'data'/'bot.sqlite3'))
 ADMIN_TOKEN = os.environ.get('BOT_ADMIN_TOKEN','')
 BRTI_LIVE_ENABLED = (not DEMO and os.environ.get('BRTI_LIVE_ENABLED','1') == '1')
-BINANCE_INTELLIGENCE_ENABLED = (not DEMO and os.environ.get('BINANCE_INTELLIGENCE_ENABLED','1') == '1')
+BINANCE_INTELLIGENCE_ENABLED = False  # Phase 1: no Binance connection or active input
 # Opt-in shadow grading ONLY: no voting, execution, or historical rewriting.
 CANDLESTICK_SHADOW_GRADING_ENABLED = os.environ.get('CANDLESTICK_SHADOW_GRADING_ENABLED','0') == '1'
 brti_tracker = BRTITracker(enabled=BRTI_LIVE_ENABLED)
@@ -157,8 +158,176 @@ def _view_locked(now):
     return data
 
 
+
+def _brti_only_model(market, brti, candles, now):
+    """Phase 1 live forecast: one BRTI settlement estimate, zero other votes."""
+    terms={k:market[k] for k in ('ticker','target','close_ts','seconds_left')
+           if k in market}
+    result=brti_settlement_forecast(terms,brti,candles,now)
+    available=bool(result.get('available'))
+    p=result.get('prob_above') if available else None
+    side='ABOVE' if p is not None and p>.5 else (
+         'BELOW' if p is not None and p<.5 else 'WAIT')
+    voter={'name':'axiom_brti_settlement','available':available,
+           'prob_above':p,'prob_below':result.get('prob_below') if available else None,
+           'side':side,'method':result.get('method'),'reason':result.get('reason'),
+           'independent':True,'calibrated':False}
+    return {'available':available,'prob_above':p,
+            'prob_below':result.get('prob_below') if available else None,
+            'side':side,'reason':result.get('reason'),
+            'method':'single-authenticated-brti-settlement',
+            'engines':[voter],'agreement':1 if available else None,
+            'spread':0 if available else None,'validated':False,
+            'active_predictive_models':['axiom_brti_settlement'] if available else [],
+            'missing_predictive_models':[] if available else ['axiom_brti_settlement'],
+            'alpha_vs_market':None,'forecast_minus_quote_mid':None,
+            'all_signal_integration_active':False}
+
+
+def _brti_only_update_once(now):
+    """Production path. The unused legacy ensemble/shadow paths below are DEMO only.
+
+    No Coinbase ticker, Binance trades, Nison, booster, replay, quote
+    repricing, four advisory lanes, or BTC scalp can affect this decision.
+    """
+    errors={}
+    try:
+        market=provider.market(now)
+        if market is not None:
+            brti_tracker.observe_market(market,at_ms=int(now*1000))
+        else:
+            errors['kalshi']='No active Kalshi BTC15M contract'
+    except Exception as exc:
+        market=None
+        errors['kalshi']=_error_message(exc)
+    try:
+        reference=brti_tracker.snapshot(now_ms=int(now*1000))
+        if reference.get('status')!='STREAMING':
+            errors['brti_stream']='Authenticated CF Benchmarks BRTI stream unavailable'
+            spot=None; candles=[]
+        else:
+            value=reference.get('latest_value_usd')
+            spot=float(value) if value is not None else None
+            candles=reference.get('btc_1m_candles') or []
+            if spot is None or not math.isfinite(spot) or spot<=0:
+                spot=None
+                errors['brti_stream']='Invalid authenticated BRTI index'
+    except (KeyError,TypeError,ValueError,OverflowError) as exc:
+        reference={'status':'UNAVAILABLE','reason':_error_message(exc)}
+        spot=None; candles=[]
+        errors['brti_stream']='Invalid authenticated BRTI snapshot'
+    book=unavailable_book(market.get('ticker') if market else None,
+                          'No current Kalshi depth')
+    if market:
+        reader=getattr(provider,'orderbook',None)
+        if callable(reader):
+            try:
+                book=reader(market,now)
+            except Exception as exc:
+                book=unavailable_book(market['ticker'],_error_message(exc))
+    model={'available':False,'side':'WAIT','prob_above':None,'prob_below':None,
+           'reason':'Awaiting Kalshi contract and authenticated BRTI','engines':[]}
+    if market and spot is not None and not errors:
+        try:
+            model=_brti_only_model(market,reference,candles,now)
+        except (KeyError,TypeError,ValueError,OverflowError,ArithmeticError) as exc:
+            errors['forecast']=_error_message(exc)
+    warming=bool(market and spot is not None and
+                 reference.get('status')=='STREAMING' and not errors and
+                 len(candles)<31 and not model.get('available'))
+    if market and spot is not None and not model.get('available') and not errors and not warming:
+        errors['forecast']=model.get('reason','No authentic BRTI prediction')
+    with state_lock:
+        persistent_faults=any(k in state['errors'] for k in
+                              ('settlement','settlement_worker','ledger_read','ledger_connection'))
+    depth=unavailable_opportunity('No available single BRTI forecast or fresh depth')
+    chosen=None
+    if market and model.get('available') and not errors and not persistent_faults:
+        try:
+            depth=analyze_opportunities(model,market,book,
+                  max(now,float(book.get('received_at') or now)),
+                  size_contracts=1.,signals=None)
+            chosen=depth.get('selected') if depth.get('status')=='CANDIDATE' else None
+        except (KeyError,TypeError,ValueError,ArithmeticError) as exc:
+            depth=unavailable_opportunity('Invalid depth entry: '+_error_message(exc))
+    if chosen:
+        side=chosen['side']
+        price=chosen['ask_sweep']['average_price']
+        edge=chosen['net_estimated_model_minus_cost']
+        action='BUY_CANDIDATE'
+        decision_reason='BRTI settlement probability exceeds full-depth after-fee ask'
+    else:
+        side=None;price=None;edge=None;action='WAIT'
+        decision_reason=depth.get('reason','Insufficient BRTI probability or book')
+    op={'side':side or 'WAIT','edge':edge,'entry_price':price,'reason':decision_reason}
+    decision={'action':action,'side':side,'entry_price':price,
+              'estimated_value_per_contract':edge,
+              'reason':decision_reason,'read_only':True,
+              'order_placed':False,'verified_net_returns':False}
+    # Legacy display keys are inactive compatibility values, NOT live lanes.
+    inactive={'status':'DISABLED_PHASE_1','available':False,
+              'reason':'Removed from live AXIOM Phase 1','action':'WAIT',
+              'order_placed':False,'read_only':True}
+    higher=timeframes(reference.get('btc_5m_candles') or [],now)
+    signals={'available':model.get('available',False),
+             'side':model.get('side','WAIT'),
+             'prob_above':model.get('prob_above'),
+             'price_reference':'CF_BENCHMARKS_BRTI',
+             'reference_value':spot,'calibrated':False}
+    watch=None
+    if market and model.get('available') and not errors and not persistent_faults:
+        try:
+            with ledger.atomic_cycle():
+                ledger.observed(market,model,spot,now)
+                ledger.engine_snapshots(market,model,now)
+                ledger.first_call(market,model,spot,now,hold_seconds=10,
+                                  poll_gap=max(40,3*POLL_SECONDS))
+                if AUTO_PAPER and chosen is not None:
+                    try:
+                        ledger.trade(market,chosen['side'],now,
+                                     model['prob_above'] if chosen['side']=='YES'
+                                     else model['prob_below'],'AUTO_PAPER')
+                    except ValueError:
+                        pass
+                watch=ledger.watch_info(market['ticker'])
+        except Exception as exc:
+            errors['ledger_write']=_error_message(exc)
+            op={'side':'WAIT','edge':None,'entry_price':None,
+                'reason':'Ledger write failed'}
+            decision={'action':'WAIT','side':None,'reason':'Ledger write failed',
+                      'read_only':True,'order_placed':False}
+    if errors:
+        ledger.reset_watches()
+    with state_lock:
+        for component in ('settlement','settlement_worker','ledger_read','ledger_connection'):
+            if component in state['errors']:
+                errors[component]=state['errors'][component]
+        state.update({'last_attempt':now,'market':market,'spot':spot,
+            'candles':candles[-75:],'model':model,'engines':model.get('engines',[]),
+            'price_source':'CF_BENCHMARKS_BRTI','forecast_warming':warming,
+            'candle_quality':reference.get('candle_quality'),
+            'orderbook':book,'opportunity':op,'depth_opportunity':depth,
+            'trade_decision':decision,
+            'execution_intelligence':{'action':action if chosen else 'WAIT',
+                'side':side,'entry_price':price,'order_placed':False,
+                'read_only':True,'verified_profit':False,'reason':decision_reason},
+            'btc_signals':signals,'higher_timeframes':higher,
+            'market_microstructure':inactive,'scalp':inactive,
+            'research_shadow':inactive,'candlestick_context':inactive,
+            'candlestick_challenger':inactive,'intracontract':inactive,
+            'resale_setup':inactive,'contract_repricing':inactive,
+            'binance_intelligence':inactive,'binance_kalshi_delay':inactive,
+            'errors':errors,'watch':watch,'paper_auto_enabled':AUTO_PAPER})
+        _refresh_status_locked()
+        if state['status'] in ('LIVE','DEMO'):
+            state['last_success']=now
+        return _view_locked(now)
+
+
 def update_once(now=None):
     now = time.time() if now is None else now
+    if not DEMO:
+        return _brti_only_update_once(now)
     errors={}; market=None; spot=None; candles=[]
     try:
         market=provider.market(now)
@@ -535,20 +704,12 @@ async def lifespan(_app):
         brti_thread = threading.Thread(target=brti_reference_worker,
             args=(brti_tracker,shutdown),name='read-only-live-brti-worker',daemon=True)
         brti_thread.start()
-    binance_threads=[]
-    if BINANCE_INTELLIGENCE_ENABLED:
-        for target,name in ((binance_spot_worker,'read-only-binance-spot-worker'),):
-            thread=threading.Thread(target=target,args=(binance_telemetry,shutdown),name=name,daemon=True)
-            thread.start()
-            binance_threads.append(thread)
     yield
     shutdown.set()
     market_thread.join(timeout=3)
     grading_thread.join(timeout=3)
     if brti_thread is not None:
         brti_thread.join(timeout=3)
-    for thread in binance_threads:
-        thread.join(timeout=3)
 
 app=FastAPI(title='AXIOM Multi-Engine BTC Research Bot',version='2.0.0',lifespan=lifespan, docs_url=None,redoc_url=None)
 
@@ -610,7 +771,7 @@ def get_state():
     d['paper_position_execution']=unavailable_execution('No open matching simulated position')
     d['resale_position_review']=wait_resale('No matching simulated position')
     active=d.get('market')
-    if active and d.get('ok'):
+    if DEMO and active and d.get('ok'):
         for trade in d.get('trades',[]):
             if trade.get('ticker')==active['ticker'] and trade.get('status')=='OPEN':
                 try:
@@ -632,7 +793,7 @@ def get_state():
     d['manual_paper_available']=bool(ADMIN_TOKEN) and d['ok'] and bool(d.get('market')) and bool((d.get('model') or {}).get('available'))
     d['disclaimer']=('Experimental models and gross simulated trading only. SYNTHETIC DEMO BTC spot is NOT the BRTI settlement index. No real orders.'
                     if DEMO else
-                    'Experimental models and gross simulated trading only. Live forecast inputs are authentic CF Benchmarks BRTI; exchange-only signed trade flow is separately identified. BRTI has no traded volume. Kalshi aggregated depth is a participant-order snapshot; no real orders are placed.')
+                    'Phase 1 live forecasting uses only authenticated CF Benchmarks BRTI settlement math. Exchange-only flow, eight-model voting, shadows and contract repricing are disabled. Paper entries only; no real orders.')
     return JSONResponse(d,headers={'Cache-Control':'no-store'})
 
 class PaperRequest(BaseModel):
@@ -652,7 +813,7 @@ def paper(req:PaperRequest, authorization:str|None=Header(default=None)):
     bid=m.get('yes_bid' if req.side.upper()=='YES' else 'no_bid')
     if req.side.upper() in ('YES','NO') and (ask is None or bid is None or ask < bid):
         raise HTTPException(409,'Invalid or crossed contract quote')
-    if m['seconds_left'] < 45 or m['close_ts'] < time.time()+45:
+    if m['seconds_left'] < 20 or m['close_ts'] < time.time()+20:
         raise HTTPException(409,'Contract too close to close')
     try: entry=ledger.trade(m,req.side,time.time(),source='MANUAL_PAPER')
     except ValueError as e: raise HTTPException(409,str(e))
