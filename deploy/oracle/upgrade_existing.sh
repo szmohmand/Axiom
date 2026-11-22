@@ -115,9 +115,11 @@ PRECHECK="$BACKUP_DIR/preflight-copy.sqlite3"
 # than assuming a green GitHub Linux/Python 3.13 run guarantees Ubuntu 3.12.
 # Tests use a throwaway DB: they never connect to the production ledger.
 msg 'Running complete regression suite in an isolated staging environment.'
+# On a single-core VM, deprioritize CPU-heavy tests so the current systemd
+# worker keeps precedence; all tests are also isolated from the live ledger.
 (
     cd "$RELEASE"
-    DEMO_MODE=1 AUTO_PAPER=0 BRTI_LIVE_ENABLED=0 \
+    nice -n 15 env DEMO_MODE=1 AUTO_PAPER=0 BRTI_LIVE_ENABLED=0 \
       DATA_PATH="$BACKUP_DIR/stage-tests.sqlite3" \
       "$VENV/bin/python" -m pytest -q
 )
