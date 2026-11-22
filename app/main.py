@@ -184,23 +184,23 @@ def update_once(now=None):
         try:
             spot=provider.price()
             if spot is None or not isinstance(spot,(float,int)) or not math.isfinite(spot) or spot<=0:
-                errors['demo_ticker']='Missing or invalid synthetic BTC spot'; spot=None
+                errors['coinbase_ticker']='Missing or invalid synthetic BTC spot'; spot=None
         except Exception as e:
-            errors['demo_ticker']=_error_message(e)
+            errors['coinbase_ticker']=_error_message(e)
         try:
             candles=provider.candles()
             if not isinstance(candles,list) or len(candles)<31:
-                errors['demo_candles']='Fewer than 31 synthetic candles available'; candles=[]
+                errors['coinbase_candles']='Fewer than 31 synthetic candles available'; candles=[]
             else:
                 recent=candles[-61:]
                 timestamps=[c['t'] for c in recent]
                 if (any(not isinstance(t,(int,float)) or not math.isfinite(t) for t in timestamps)
                         or any(b-a != 60 for a,b in zip(timestamps,timestamps[1:]))):
-                    errors['demo_candles']='Candles are missing, duplicated or not one-minute intervals'; candles=[]
+                    errors['coinbase_candles']='Candles are missing, duplicated or not one-minute intervals'; candles=[]
                 elif timestamps[-1] > now+60:
-                    errors['demo_candles']='Candles timestamped in the future'; candles=[]
+                    errors['coinbase_candles']='Candles timestamped in the future'; candles=[]
         except Exception as e:
-            errors['demo_candles']=_error_message(e); candles=[]
+            errors['coinbase_candles']=_error_message(e); candles=[]
     model={'available':False,'side':'WAIT','prob_above':None,'reason':'No active market or input data'}
     signals=unavailable_signals('Market/price/candles unavailable or invalid')
     trade_decision=execution_decision(None,None,None,None,None,now)
@@ -397,7 +397,10 @@ def update_once(now=None):
              'binance_intelligence':binance_before_book,'binance_kalshi_delay':binance_lag,
              'higher_timeframes':higher,'market_microstructure':flow,
             'candle_quality':((brti_now or {}).get('candle_quality') if not DEMO
-                              else getattr(provider,'candle_quality',None))})
+                              else ({'status':'UNAVAILABLE',
+                                     'reason':errors['coinbase_candles']}
+                                    if 'coinbase_candles' in errors else
+                                    getattr(provider,'candle_quality',None)))})
         _refresh_status_locked()
         if state['status'] in ('LIVE','DEMO'):
             state['last_success'] = now
@@ -612,7 +615,9 @@ def get_state():
     # A token alone is not permission to record a position against stale or
     # broken market data. The UI and paper endpoint share the same readiness rule.
     d['manual_paper_available']=bool(ADMIN_TOKEN) and d['ok'] and bool(d.get('market'))
-    d['disclaimer']='Experimental models and gross simulated trading only. Live forecast inputs are authentic CF Benchmarks BRTI; exchange-only signed trade flow is separately identified. BRTI has no traded volume. Kalshi aggregated depth is a participant-order snapshot; no real orders are placed.'
+    d['disclaimer']=('Experimental models and gross simulated trading only. SYNTHETIC DEMO BTC spot is NOT the BRTI settlement index. No real orders.'
+                    if DEMO else
+                    'Experimental models and gross simulated trading only. Live forecast inputs are authentic CF Benchmarks BRTI; exchange-only signed trade flow is separately identified. BRTI has no traded volume. Kalshi aggregated depth is a participant-order snapshot; no real orders are placed.')
     return JSONResponse(d,headers={'Cache-Control':'no-store'})
 
 class PaperRequest(BaseModel):
