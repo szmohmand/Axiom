@@ -636,8 +636,11 @@ def decide(market, brti, candles, five, book, flow, now, *,
     if not 180 <= remaining <= 720:
         out["reason"] = "Outside 3-12 minute entry window"
         return out
-    # TWAP drift and single-venue sweeps need authenticated BRTI fair value,
-    # not a complete 60-minute regime history. Compression still does.
+    # Short-history setups still require fresh, contiguous authentic BRTI
+    # candles; they do not require the 60-minute compression/regime window.
+    if not _bars_usable(candles,now,31,60):
+        out["reason"] = "Awaiting fresh contiguous BRTI minute history"
+        return out
     structure_ready = (_bars_usable(candles,now,61,60) and
                        _bars_usable(five,now,12,300))
     out["regime"] = _regime(candles,five) if structure_ready else "WARMING"
