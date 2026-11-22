@@ -184,7 +184,8 @@ def engine_pack(spot: float | None, market: dict | None, candles: list[dict], si
             'alpha_vs_market':None,
             'forecast_minus_quote_mid':None,
             'quote_discrepancy_is_validated_alpha':False,
-            'validated':False,'method':'experimental-median-consensus',
+            'validated':False,'method':('experimental-equal-weight-mean-consensus' if enhanced
+                                      else 'experimental-median-consensus'),
             'all_signal_integration_active':enhanced,
             'active_predictive_models':[e['name'] for e in engines
                  if e['name'] in voting_models and e.get('available')],
