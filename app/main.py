@@ -18,6 +18,8 @@ from .engine import scalp_signal
 from .ensemble import engine_pack, execution_screen
 from .storage import Ledger
 from .settlement_research import shadow_forecast_from_candles, unavailable as unavailable_research_shadow
+from .candlestick_context import read_candlestick_context, unavailable as unavailable_candle_context
+from .candlestick_challenger import derive_candlestick_challenger, unavailable as unavailable_candle_challenger
 from .orderbook import unavailable as unavailable_book
 from .execution_evidence import examine_liquidity
 from .brti_live import BRTITracker, run_worker as brti_reference_worker
@@ -37,6 +39,8 @@ DATA_PATH = os.environ.get('DATA_PATH', str(ROOT.parent/'data'/'bot.sqlite3'))
 ADMIN_TOKEN = os.environ.get('BOT_ADMIN_TOKEN','')
 BRTI_LIVE_ENABLED = (not DEMO and os.environ.get('BRTI_LIVE_ENABLED','0') == '1')
 BINANCE_INTELLIGENCE_ENABLED = (not DEMO and os.environ.get('BINANCE_INTELLIGENCE_ENABLED','1') == '1')
+# Opt-in shadow grading ONLY: no voting, execution, or historical rewriting.
+CANDLESTICK_SHADOW_GRADING_ENABLED = os.environ.get('CANDLESTICK_SHADOW_GRADING_ENABLED','0') == '1'
 brti_tracker = BRTITracker(enabled=BRTI_LIVE_ENABLED)
 binance_telemetry = BinanceTelemetry(enabled=BINANCE_INTELLIGENCE_ENABLED)
 provider = DemoProvider() if DEMO else LiveProvider()
@@ -47,6 +51,8 @@ binance_lag_tracker = BinanceKalshiLagTracker()
 state = {'mode':'DEMO' if DEMO else 'LIVE','last_attempt':None,'last_success':None,
          'market':None,'spot':None,'model':None,'engines':[],'scalp':None,'opportunity':None,'candles':[],
          'research_shadow':unavailable_research_shadow('No completed research observation yet'),
+         'candlestick_context':unavailable_candle_context('Awaiting fresh completed BTC candles'),
+         'candlestick_challenger':unavailable_candle_challenger('Awaiting independent ensemble and candle context'),
          'orderbook':unavailable_book(None,'No aggregated market depth yet'),
          'depth_opportunity':unavailable_opportunity('No independently evaluated depth yet'),
          'execution_intelligence':unavailable_execution('No independently evaluated depth yet'),
@@ -117,6 +123,8 @@ def _view_locked(now):
         data['depth_opportunity'] = unavailable_opportunity('System unhealthy; no depth-based entry advice')
         data['execution_intelligence'] = unavailable_execution('System unhealthy; no execution guidance')
         data['trade_decision'] = execution_decision(None,None,None,None,None,now)
+        data['candlestick_context'] = unavailable_candle_context('Operational health degraded')
+        data['candlestick_challenger'] = unavailable_candle_challenger('Operational health degraded')
         data['intracontract'] = unavailable_timeline('Operational health degraded')
         data['resale_setup'] = wait_resale('Operational health degraded')
         data['binance_kalshi_delay'] = wait_binance_lag('Operational health degraded',data['binance_intelligence'])
@@ -205,6 +213,15 @@ def update_once(now=None):
         except Exception:
             # An optional research probe cannot interrupt the production poll.
             research_shadow = unavailable_research_shadow('Research model calculation failed')
+    # Nison-style market-pressure context uses ONLY fully completed 1m bars.
+    # Optional feature failures never degrade the active trading safeguards.
+    candle_context = unavailable_candle_context('Missing valid completed BTC candles')
+    if candles and not errors:
+        try:
+            candle_context = read_candlestick_context(candles, now)
+        except (TypeError, ValueError, ArithmeticError, KeyError, IndexError):
+            candle_context = unavailable_candle_context('Candle feature computation unavailable')
+    candle_challenger = unavailable_candle_challenger('No ensemble forecast yet')
     with state_lock:
         # Older unresolved settlement/ledger faults are independent of this
         # market poll. Preserve predictions, but suspend new paper decisions.
@@ -220,6 +237,10 @@ def update_once(now=None):
             signals=unavailable_signals('BTC feature calculation rejected invalid inputs')
             errors['btc_signals']='BTC feature calculation rejected invalid inputs'
         model=engine_pack(spot,market,candles,signals=signals)
+        try:
+            candle_challenger = derive_candlestick_challenger(candle_context,model)
+        except (TypeError, ValueError, ArithmeticError, KeyError, IndexError):
+            candle_challenger = unavailable_candle_challenger('Candle candidate computation unavailable')
         if not model.get('available') and not errors:
             errors['forecast']=model.get('reason','Model unavailable')
         if not errors and not persistent_faults:
@@ -247,7 +268,10 @@ def update_once(now=None):
             # may survive. Ledger also serializes concurrent manual writes.
             with ledger.atomic_cycle():
                 ledger.observed(market,model,spot,now)
-                ledger.engine_snapshots(market,model,now)
+                if CANDLESTICK_SHADOW_GRADING_ENABLED:
+                    ledger.engine_snapshots(market,model,now,candle_challenger)
+                else:
+                    ledger.engine_snapshots(market,model,now)
                 ledger.first_call(market,model,spot,now,hold_seconds=10,poll_gap=max(40,3*POLL_SECONDS))
                 if AUTO_PAPER and op['side'] in ('YES','NO'):
                     try:
@@ -295,6 +319,8 @@ def update_once(now=None):
             'market':market,'spot':spot,'candles':candles[-70:], 'model':model,'scalp':scalp,
             'opportunity':op,'engines':model.get('engines',[]),'errors':errors,'watch':watch,
              'research_shadow':research_shadow,
+             'candlestick_context':candle_context,
+             'candlestick_challenger':candle_challenger,
              'orderbook':book,'depth_opportunity':depth_op,
              'execution_intelligence':depth_exec,
              'btc_signals':signals,'trade_decision':trade_decision,
