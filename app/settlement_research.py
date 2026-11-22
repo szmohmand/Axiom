@@ -3,8 +3,8 @@
 The core signal follows the retrospective official-BRTI studies: normalized
 log-distance to strike divided by realized 1m volatility * sqrt(time left).
 
-Live AXIOM currently supplies Coinbase spot/candles, NOT BRTI. Thus output
-is labeled a SPOT_PROXY and is never an actionable or validated forecast.
+Live AXIOM supplies CF Benchmarks BRTI candles to this module. Historical
+source-event timing is not a guarantee of live receipt at the same time.
 It must not modify existing ensemble, opportunity, paper, or settlement logic.
 """
 from __future__ import annotations
@@ -34,7 +34,7 @@ def shadow_forecast_from_candles(candles: list[dict], market: dict | None,
     """Read ONLY completed, consecutive candles; never use future/incomplete bars.
 
     The BRTI event-time version can be evaluated offline on official BRTI,
-    separately from this Coinbase-proxy runtime. That retrospective study
+    separately from this live BRTI benchmark runtime. That retrospective study
     does NOT establish when every strike and index print first arrived.
     """
     if not market:
@@ -97,11 +97,15 @@ def shadow_forecast_from_candles(candles: list[dict], market: dict | None,
     # outcome. Keep the raw experimental probability but explicitly abstain.
     side = 'WAIT' if abs(z) < .5 else 'ABOVE' if z > 0 else 'BELOW'
     return {
-        'available': True, 'status': 'PROXY_ONLY_NOT_CALIBRATED',
+        'available': True, 'status': ('BRTI_NOT_CALIBRATED' if candles and
+            candles[-1].get('source')=='cfbenchmarks_brti_authenticated_live'
+            else 'PROXY_ONLY_NOT_CALIBRATED'),
         'side': side, 'prob_above': round(p, 6),
         'prob_below': round(1-p, 6), 'z_score': round(z, 5),
         'vol_minutes': len(returns), 'completed_bar_end': window[-1][0] + 60,
-        'source': 'COINBASE_SPOT_PROXY_NOT_BRTI',
+        'source': ('CF_BENCHMARKS_BRTI_LIVE' if candles and
+                   candles[-1].get('source')=='cfbenchmarks_brti_authenticated_live'
+                   else 'COINBASE_SPOT_PROXY_NOT_BRTI'),
         'research_only': True, 'votes_in_ensemble': False,
         'can_trigger_paper_or_orders': False,
         'near_target_uncertainty': abs(z) < .5,

@@ -17,6 +17,7 @@ from .engine import volatility_forecast, numeric
 from .boosted_model import boosted_forecast
 from .nison_methodology import scan_nison, forecast_nison_independent
 from .market_structure import pressure_forecast
+from .settlement_probability import forecast as brti_settlement_forecast
 
 
 def cdf(z: float) -> float:
@@ -119,8 +120,8 @@ def engine_pack(spot: float | None, market: dict | None, candles: list[dict], si
                      'prob_above':None,'reason':'Fitted model input unavailable'}
         engines.append(engine_result('axiom_gradient_boosted_btc',
             learned.get('prob_above') if learned.get('available') else None,
-            'trained-gradient-boosting','Historical BTC 90-day model with actual future BTC outcomes',
-            independent=True,calibrated=False,training='binance_spot_90day',
+            'trained-gradient-boosting','BRTI-trained 180-day model with actual future 60-second BRTI means',
+            independent=True,calibrated=False,training='cf_brti_historical_180day',
             learning_status=learned.get('reason')))
         try:
             report=scan_nison(candles,now)
@@ -148,11 +149,25 @@ def engine_pack(spot: float | None, market: dict | None, candles: list[dict], si
             independent=False,calibrated=False,
             active_factors=pressure.get('components',{}),
             experimental_z_shift=pressure.get('combined_z_shift')))
+    # The contract settles on an official *60-second BRTI average*.
+    # This eighth model is present ONLY on genuine BRTI production snapshots.
+    # Demo and legacy callers preserve the original seven-model topology.
+    if enhanced and isinstance(context.get("brti"), dict):
+        ref=context["brti"]
+        settlement=brti_settlement_forecast(market,ref,candles,now)
+        engines.append(engine_result("axiom_brti_settlement",
+            settlement.get("prob_above") if settlement.get("available") else None,
+            "brti-60s-average-conditional-normal",
+            settlement.get("reason","Official BRTI settlement model unavailable"),
+            independent=True,calibrated=False,
+            observed_final_minute_seconds=settlement.get("observed_final_minute_seconds"),
+            effective_variance_minutes=settlement.get("effective_variance_minutes"),
+            reference="CF_BENCHMARKS_BRTI"))
     # NO Kalshi quotes or Kalshi market pricing benchmarks in predictions.
     voting_models=frozenset((
         'axiom_volatility','aaryann_fair','kalshibot_headstart',
         'axiom_target_dynamics','axiom_gradient_boosted_btc',
-        'axiom_full_nison','axiom_multi_signal_context'))
+        'axiom_full_nison','axiom_multi_signal_context','axiom_brti_settlement'))
     good=[e['prob_above'] for e in engines
           if e['name'] in voting_models and e['available']]
     if len(good)<2:
@@ -172,7 +187,7 @@ def engine_pack(spot: float | None, market: dict | None, candles: list[dict], si
     if not enhanced and spread>.30: side='WAIT'
     agreement=sum((e['prob_above']>.5)==(p>.5) for e in engines
                   if e['name'] in voting_models and e['available'])
-    reason=('Experimental all-signal consensus; disagreement preserved, not vetoed' if enhanced else
+    reason=('Experimental BRTI-first all-signal consensus; disagreement preserved, not vetoed' if enhanced else
             'Consensus withheld: engines strongly disagree' if spread>.30 else
             'Consensus near 50%: no directional call' if side=='WAIT' else
             'Experimental median of independent models; NOT yet validated vs Kalshi')

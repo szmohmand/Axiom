@@ -1,7 +1,7 @@
 """Multi-timeframe BTC price and exchange trade-flow forecasting features.
 
-Only real BTC exchange OHLCV and Binance aggressor-signed trades enter model
-features. Kalshi quote, depth, bid, ask, midpoint, volume and wall values
+Authenticated CF Benchmarks BRTI OHLC and separate Binance aggressor-signed
+trades enter model features. Kalshi quote, depth, bid, ask, midpoint, volume and wall values
 must never enter a BTC outcome predictor. Kalshi liquidity belongs exclusively
 to separate execution / value / spread / contract-repricing analysis.
 """
@@ -24,16 +24,17 @@ def _sig(value):
 
 
 def timeframes(five_minute,now):
-    unavailable={"available":False,"reason":"No 30m/1h/2h fully closed Coinbase data",
+    unavailable={"available":False,"reason":"No 30m/1h/2h fully closed benchmark data",
                  "source":"coinbase_5m_completed","frames":{},"directional_components":{}}
     if not isinstance(five_minute,list) or len(five_minute)<7:return unavailable
     clean=[];last=None
     for row in five_minute:
         if not isinstance(row,dict):return unavailable
         ts=_num(row.get("t"));o=_num(row.get("open"));h=_num(row.get("high"))
-        l=_num(row.get("low"));c=_num(row.get("close"));v=_num(row.get("volume"))
-        if (None in (ts,o,h,l,c,v) or ts%300!=0 or ts+300>now or
-            (last is not None and ts-last!=300) or not 0<l<=min(o,c)<=max(o,c)<=h or v<0):
+        l=_num(row.get("low"));c=_num(row.get("close"))
+        raw_volume=row.get("volume");v=_num(raw_volume) if raw_volume is not None else None
+        if (None in (ts,o,h,l,c) or ts%300!=0 or ts+300>now or
+            (last is not None and ts-last!=300) or not 0<l<=min(o,c)<=max(o,c)<=h or (raw_volume is not None and (v is None or v<0))):
             return unavailable
         clean.append({"t":int(ts),"open":o,"high":h,"low":l,"close":c,"volume":v})
         last=ts
@@ -66,9 +67,11 @@ def timeframes(five_minute,now):
             "fully_closed_source_bars":n,
             "period_start":window[0]["t"],"period_end":window[-1]["t"]+300,
         }
+    from_brti=bool(clean) and all(x.get("source")=="cfbenchmarks_brti_authenticated_live"
+                                 for x in five_minute)
     return {"available":bool(output),
-            "reason":"Actual closed 5m OHLCV aggregated into multi-hour structure",
-            "source":"coinbase_5m_completed",
+            "reason":"Completed BRTI 5m price-only bars aggregated into multi-hour structure" if from_brti else "Actual closed 5m OHLCV aggregated into multi-hour structure",
+            "source":"cfbenchmarks_brti_authenticated_live" if from_brti else "coinbase_5m_completed",
             "frames":output,"directional_components":signals,
             "last_completed_bar_end":clean[-1]["t"]+300}
 

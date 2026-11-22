@@ -1,8 +1,8 @@
 """Read-only BRTI WebSocket reference, receipt provenance and freshness.
 
 No real orders, portfolio access, or historical backfill. The BTC spot based
-forecast intentionally remains unchanged: live BRTI is a separate nonvoting
-reference lane until forward accuracy is verified. No raw index feed is
+live BRTI drives price-based forecasting through authenticated index-derived
+candles. The raw transport stream itself is not a vote or an order channel. No raw index feed is
 published to disk or to the browser.
 """
 from __future__ import annotations
@@ -14,6 +14,9 @@ import math
 import os
 import threading
 import time
+
+from .brti_candles import (completed_one_minute, completed_five_minute,
+                           completed_minute_sigma, final_minute_prefix)
 
 WS_URL = "wss://external-api-ws.kalshi.com/trade-api/ws/v2"
 WS_PATH = "/trade-api/ws/v2"
@@ -111,6 +114,9 @@ class BRTITracker:
         self.connected = False
         self.error_kind = None
         self.latest = {}
+        # As-received first BRTI observation per UTC second, RAM only.
+        # No persisted index history, volume fabrication, or exchange proxy.
+        self.seconds = {}
         self.received_counts = {name: 0 for name in CHANNELS}
         self.rejected = 0
         self.out_of_order = 0
@@ -134,6 +140,7 @@ class BRTITracker:
             if old is None or old["ticker"] != ticker:
                 self.first_observed_market = {
                     "ticker": ticker, "target_usd": target,
+                    "close_ts": market.get("close_ts"),
                     "axiom_first_observed_at_ms": instant,
                     "first_publication_time_verified": False,
                     "source": "first_Kalshi_public_REST_observation"}
@@ -160,6 +167,13 @@ class BRTITracker:
                 self.out_of_order += 1
                 return False
             self.latest[channel] = row
+            second = row["source_ts_ms"] // 1000
+            if second not in self.seconds:
+                self.seconds[second] = float(row["value_usd"])
+            # Bound RAM history to 3 hours; retain only known received seconds.
+            oldest = second - 3 * 3600
+            if len(self.seconds) > 11000:
+                self.seconds = {t: v for t, v in self.seconds.items() if t >= oldest}
             self.received_counts[channel] += 1
             self.error_kind = None
         return True
@@ -185,11 +199,24 @@ class BRTITracker:
                 "UNAVAILABLE" if not current else
                 "STALE" if not self.connected or delay > MAX_RECEIPT_AGE_MS or age > MAX_LAG_MS else
                 "STREAMING")
+            candles = completed_one_minute(self.seconds, now_ms / 1000) if status == "STREAMING" else []
+            five = completed_five_minute(candles)
+            sigma = completed_minute_sigma(candles)
+            market = self.first_observed_market
+            prefix = (final_minute_prefix(
+                self.seconds, market.get("close_ts"),
+                current["source_ts_ms"] // 1000)
+                if status == "STREAMING" and market and current else None)
+            quality = {"status": "FULL_BRTI_LIVE" if len(candles) >= 31 else "WARMING_BRTI_LIVE",
+                       "source": "cfbenchmarks_brti_authenticated_live",
+                       "bars_used": len(candles), "bars_available": len(candles),
+                       "last_completed_bar_end": candles[-1]["t"] + 60 if candles else None,
+                       "real_exchange_volume_available": False, "missing_seconds_filled": 0}
             return {"status": status,
                     "reason": ("Live WebSocket not configured" if status == "DISABLED" else
                                "Awaiting genuine BRTI messages" if status == "UNAVAILABLE" else
                                "BRTI event/receipt data too old" if status == "STALE" else
-                               "Current authentic BRTI stream, NONVOTING only"),
+                               "Current authentic BRTI stream; primary live price reference"),
                     "authenticated_stream_verified": bool(status=="STREAMING"),
                     "latest_value_usd": current["value_usd"] if current else None,
                     "latest_channel": current["channel"] if current else None,
@@ -197,6 +224,12 @@ class BRTITracker:
                     "kalshi_received_at_ms": current["kalshi_received_at_ms"] if current else None,
                     "axiom_received_at_ms": current["axiom_received_at_ms"] if current else None,
                     "source_to_axiom_ms": current["source_to_axiom_ms"] if current else None,
+                    "btc_1m_candles": candles,
+                    "btc_5m_candles": five,
+                    "completed_minute_sigma_45": sigma,
+                    "settlement_window_stats": prefix,
+                    "candle_quality": quality,
+                    "price_candle_source": "cfbenchmarks_brti_authenticated_live",
                     "received_counts": dict(self.received_counts),
                     "rejected": self.rejected, "out_of_order": self.out_of_order,
                     "subscribed_channels": sorted(self.subscribed_channels),

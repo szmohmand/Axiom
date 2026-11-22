@@ -5,6 +5,7 @@ on:
       - integrate/axiom-binance-funding-lag-2026-11-20
       - integrate/axiom-intracontract-resale-2026-11-20
       - main
+      - feature/axiom-brti-settlement-first-forecast-2026-11-22
       - feature/axiom-contract-repricing-full-test-gate-2026-11-22
       - deploy/axiom-oracle-preparation-2026-11-19
       - tests/axiom-full-lifecycle-audit-2026-11-17
@@ -22,6 +23,7 @@ jobs:
       AUTO_PAPER: '0'
       POLL_SECONDS: '5'
       DATA_PATH: '/tmp/axiom-independent-whole-bot-readonly.sqlite3'
+      BRTI_LIVE_ENABLED: '0'
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -29,7 +31,7 @@ jobs:
           python-version: '3.13'
       - name: Install locked application and test packages
         run: python -m pip install --disable-pip-version-check -r requirements.lock.txt
-      - name: Real FastAPI lifespan, two complete independent worker polls, orderbook, health, UI, and storage
+      - name: Real worker polls and fail-closed BRTI-required forecasting without credentials
         shell: bash
         run: |
           set -o pipefail
@@ -40,78 +42,63 @@ jobs:
 
           assert not main.DEMO and not main.AUTO_PAPER
           assert main.POLL_SECONDS == 5
-          samples=[]
-          healthy=[]
+          distinct_attempts=set()
           valid_depth=0
           start=time.monotonic()
           with TestClient(main.app) as client:
-              threads={thread.name for thread in threading.enumerate()}
-              assert {'research-data-worker','research-settlement-worker'}<=threads, threads
+              threads={t.name for t in threading.enumerate()}
+              assert {'research-data-worker','research-settlement-worker'}<=threads
               assert client.get('/').status_code==200
-              while time.monotonic()-start < 85:
-                  health=client.get('/health')
-                  state=client.get('/api/state')
-                  assert state.status_code in (200,503)
-                  h=health.json(); s=state.json()
-                  assert not main.AUTO_PAPER
+              while time.monotonic()-start<85:
+                  h=client.get('/health')
+                  response=client.get('/api/state')
+                  assert response.status_code in (200,503)
+                  state=response.json()
+                  health=h.json()
+                  # Public unauthenticated CI intentionally has NO BRTI
+                  # WebSocket signer secrets. Coinbase is NOT a fallback.
+                  assert state['price_source']=='CF_BENCHMARKS_BRTI' if 'price_source' in state else True
+                  assert state.get('paper_auto_enabled') is False
                   assert main.ledger.data()['count']['paper']==0
-                  assert s['execution_intelligence']['order_placed'] is False
-                  assert s['depth_opportunity']['read_only'] is True
-                  assert s['execution_intelligence']['read_only'] is True
-                  assert s['depth_opportunity']['uses_orderbook_quotes_as_forecast'] is False
-                  tick=s.get('market',{}).get('ticker') if s.get('market') else None
-                  book=s.get('orderbook') or {}
-                  row={'time_utc':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),
-                       'health':h['status'],'healthy':h['ok'],'market':tick,
-                       'last_attempt':h['last_attempt'],'engine_count':len(s.get('engines') or []),
-                       'model_available':(s.get('model') or {}).get('available'),
-                       'depth_ok':book.get('available',False),
-                       'depth_levels':book.get('levels'),
-                       'opportunity':(s.get('depth_opportunity') or {}).get('side'),
-                       'execution':(s.get('execution_intelligence') or {}).get('action'),
-                       'error_components':list(h.get('errors',{}))}
-                  print(json.dumps(row,sort_keys=True),flush=True)
-                  samples.append(row)
-                  if h['ok']:
-                      assert health.status_code==200 and state.status_code==200
-                      assert s['status']=='LIVE' and s['model']['available']
-                      assert {e['name'] for e in s['engines']}=={
-                          'axiom_volatility','aaryann_fair','kalshibot_headstart',
-                          'axiom_target_dynamics','axiom_gradient_boosted_btc',
-                          'axiom_full_nison','axiom_multi_signal_context'}
-                      assert not s['contract_repricing']['order_placed']
-                      assert not s['contract_repricing']['independent_btc_forecast_changed']
-                      assert s['btc_signals']['available'] is True
-                      assert s['trade_decision']['order_placed'] is False
-                      assert len(s['candles'])>=31
-                      assert all(b['t']-a['t']==60 for a,b in zip(s['candles'],s['candles'][1:]))
-                      assert s['scalp']['side'] in ('LONG','SHORT','WAIT')
-                      assert s['opportunity']['side'] in ('YES','NO','WAIT')
-                      if book.get('available'):
-                          assert book['ticker']==tick
-                          assert book['is_full_aggregated_depth']
-                          assert book['individual_orders_visible'] is False
-                          assert sum(book['levels'].values())>2
-                          valid_depth+=1
-                      healthy.append(row)
-                  else:
-                      assert health.status_code==503
-                      assert s['depth_opportunity']['status']=='WAIT'
-                      assert s['execution_intelligence']['action']=='WAIT'
-                  if (len(set(x['last_attempt'] for x in healthy))>=2
-                      and valid_depth>=1):
+                  assert not bool((state.get('model') or {}).get('available'))
+                  assert state['opportunity']['side']=='WAIT'
+                  assert state['trade_decision']['order_placed'] is False
+                  assert state['execution_intelligence']['order_placed'] is False
+                  assert state['depth_opportunity']['read_only'] is True
+                  assert state['manual_paper_available'] is False
+                  assert state.get('forecast_warming') is not True
+                  assert h.status_code==503
+                  assert 'brti_stream' in health.get('errors',{}) or (
+                      health.get('status')=='STARTING' and not health.get('errors'))
+                  observed=state.get('last_attempt')
+                  if observed is not None:
+                      distinct_attempts.add(observed)
+                  book=state.get('orderbook') or {}
+                  if book.get('available'):
+                      assert book['is_full_aggregated_depth']
+                      assert book['individual_orders_visible'] is False
+                      assert sum(book['levels'].values())>2
+                      valid_depth+=1
+                  print(json.dumps({'health':health['status'],
+                      'market':(state.get('market') or {}).get('ticker'),
+                      'source':state.get('price_source'),
+                      'attempt':observed,'brti':state.get('live_briti',{}).get('status'),
+                      'forecast':'WAIT','valid_book':book.get('available',False),
+                      'paper_trades':0},sort_keys=True),flush=True)
+                  if len(distinct_attempts)>=2 and valid_depth>=1:
                       break
                   time.sleep(5)
-              assert len(set(x['last_attempt'] for x in healthy))>=2, 'Missing two independent healthy live worker polls'
-              assert valid_depth>=1, 'No real full-depth market book was validated'
-              assert main.ledger.conn.execute('select count(*) from observations').fetchone()[0]>=2
+              assert len(distinct_attempts)>=2,'Real worker did not advance twice'
+              assert valid_depth>=1,'Real Kalshi book was never validated'
+              assert main.ledger.conn.execute(
+                  'select count(*) from observations').fetchone()[0]==0
               assert client.post('/api/paper',json={'side':'YES'}).status_code==403
               assert client.post('/api/orders',json={}).status_code==404
           assert not any(t.name=='research-data-worker' and t.is_alive()
-                         for t in threading.enumerate()), 'Worker failed to shut down'
-          print(json.dumps({'kind':'summary','status':'PASS','healthy_polls':len(healthy),
-              'distinct_worker_iterations':len(set(x['last_attempt'] for x in healthy)),
-              'real_depth_samples':valid_depth,'paper_trades':0,
+                         for t in threading.enumerate()),'Worker failed to shut down'
+          print(json.dumps({'verdict':'PASS','no_coinbase_fallback':True,
+              'polls':len(distinct_attempts),'live_depth_checks':valid_depth,
+              'forecast_unavailable_until_authenticated_brti':True,
               'no_real_orders':True},sort_keys=True),flush=True)
           PY
       - name: Preserve real evidence even if acceptance fails

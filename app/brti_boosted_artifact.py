@@ -1,0 +1,9 @@
+"""Chronological 180-day CF Benchmarks BRTI price-only residual booster.
+
+Provenance: historical first tick/second BRTI OHLC and final-minute mean,
+May 20 to Nov 15 2026. No Binance prices, trade volume, Kalshi quotes,
+or retroactively published strikes were used as predictor inputs.
+Synthetic volatility-scaled training strikes are not official Kalshi floors.
+This experiment does not prove live predictive or economic alpha.
+"""
+MODEL_B85 = "c-pm?PjA~s5XHX>&lIuqcXx8^t=FPA!w?ilE`-=}Aju8VqTju5DOr}~6%(N;V3;OXTn>Np=FM1tclXQ1?s>D^b{}rKzq-DAT&<sXIPJU5a!31v9nKC%N&BPM<DX9t<8>VMaD0AT&KDoI%k>WDAD=#b!{PbMm*r;ub#?a{Cl60wUr&~gi<sjVQ+JD{<zlm5t^b&B7Q1ElAq^>8-|aTbF~XZ0?`JFno98IGr@r*~$Zda<dK!qW=iUxi3a;dAS+exf>*4B*vB8k~8Py*e5}SzIyOlJMIwu=9vY~L%VC}un&5dShP{NafTRRyAl{`i{+lLuF@i9&w)ZC?bPk0S#J|GQdq3orxlB9%a-5=o%*^R@&Mtagq!6sHu&aEX9;}mv_wRg0=!InX{9dT$lQ8|1*+!7cf6V{Fj$pAudZXu-1G{$>Gm@BQ9a1f-3AO#RaTnI;^aPny45XP2#PLN)+)F8;&iZ=<eMy58wDZT1Y6znr!)N8_Ps->(g6__xy{<vVJDDu~oz9?AnMZvz(o)WBBi9*(f7vNzh9H!N(#W_lAiBVeSFRb$*iA(mFB(1nthpdnz#RO|Ap~yyyHL_%6hpc4;5bl$#Rq@keoglU%@*i2Nh-IZVJcs(Qf*s0`iv>RW9p1stZWmsJtnkPid(31Aa>(VBIJQP!6n-Tq)DgSFRD(pOn45V@x#fQ~)uX<xpQ)f`Bg4ZkQm?flo~2o$tR<&|0Na-Aup3sIrk>2GDa!;0&0|)pC@mM#QoaM77=GH^jS}+fG(tZX%n>(2AMi37l233~NDSUNTy4rwVD=%=6nP|z$_Q}_>V=f8OsO0uopak06O{xLKe$sQysE!pjz6Fpsf8XB&};5MT}QU>mY^LZylR9Hahe9sjyLpZIv1#A`hQHtt9dke6N<CMOS`1NQ+W!v0k^jGO;9h5j7E-Dw8&eH@A;BbpeIlAM&|5-cd4MG)}(TE0#3ytr3va|U=;1SBa<Z2gUDy+Dj%DgyH^RmQ8`zox>=gC6&I>9Zv})Fn0OBat)Cp=^AvS-;GCs3haosujziJEh~|X(v34gsB_Yz3=t6msgkERmjwviRfuqneoc<>adIfli;ztKPOonJ7(qx!m6R4qaD-<FO5%J`s3f_&F7_HgQCzW(bd`Ub>dm_<17R>d1ZJgWC!;O8)X5CYiX4zXQh2)C9Mg@b3X<M9u8j3O4nN|xoS3lL@cpamw>U7nokW#$)5WFn3U9*QBu#^krk@9riXV;Y4y%Li*rs?YnU+UbIF+7#2=0@Vd*0L@|JVkW>4h8c7{9Y#A7W+th8U!fxNk9AV;o7=q&~5|5fLlhJzoP6hkZL=7=owWLBkq$Lqn<BScSxQ1`ZJS|rb%2XdTdh%QTFBtjOtL`KY@G@M=^<CEc?9`MigmJ8s>~bzO7#yELP)}3EQXV&E2y5(Eak;@4wE`&^|4`&1wHt$NYY^+3x1M)!pa$<8raCUws^JynA@s*8A>P>&3&|({?`YaCS@g&%b)ys(b"

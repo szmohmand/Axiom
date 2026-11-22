@@ -117,8 +117,8 @@ def test_real_gap_in_latest_31_minutes_still_blocks_forecast_and_paper(env):
 def test_mobile_dashboard_discloses_short_authentic_candle_history():
     from pathlib import Path
     html=(Path(__file__).resolve().parents[1]/'app/static/index.html').read_text()
-    assert "q?.status==='RECOVERED_REAL_CONTIGUOUS'" in html
-    assert 'real consecutive 1m candles; no prices invented' in html
+    assert "q?.status==='WARMING_BRTI_LIVE'" in html
+    assert 'BRTI history warming:' in html
     assert "set('dataErrors'" in html
 
 

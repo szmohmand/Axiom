@@ -22,13 +22,13 @@ button,input{font:inherit}button{cursor:pointer}button:disabled{opacity:.4;curso
     <div class="brand"><div class="mark">A</div><div><div class="brand-name">AXIOM</div><div class="brand-sub">BTC RESEARCH LAB / 15M</div></div></div>
     <div class="status-group"><span id="status" class="pill">CONNECTING</span><span id="mode" class="pill">—</span><span class="version">v2.0 · Multi-engine · Paper only</span></div>
   </header>
-  <div class="topnote" id="notice">AXIOM calculates its own experimental forecasts. Kalshi YES/NO prices come from traders' orders—not a prediction by Kalshi. Those quotes do not vote in AXIOM's forecast. Paper entries are hypothetical; Coinbase is not CF Benchmarks BRTI.</div>
+  <div class="topnote" id="notice">AXIOM calculates its own experimental forecasts. Kalshi YES/NO prices come from traders' orders—not a prediction by Kalshi. Those quotes do not vote in AXIOM's forecast. Paper entries are hypothetical; live price-based forecasts use authenticated CF Benchmarks BRTI.</div>
   <div class="hero">
-    <div><div class="eyebrow">LIVE MARKET INTELLIGENCE</div><h1 class="headline">Bitcoin, under the microscope.</h1><div class="subtitle" id="marketTitle">Reading live Kalshi and Coinbase feeds…</div></div>
+    <div><div class="eyebrow">LIVE MARKET INTELLIGENCE</div><h1 class="headline">Bitcoin, under the microscope.</h1><div class="subtitle" id="marketTitle">Reading Kalshi contracts and live CF Benchmarks BRTI…</div></div>
     <div class="clock"><small>CONTRACT CLOSES IN</small><div id="countdown" class="big">—:—</div><small id="marketTicker">KXBTC15M</small></div>
   </div>
   <section class="metric-grid">
-    <div class="card"><div class="metric-name">BTC Spot · Coinbase</div><div id="spot" class="metric-val">—</div><div class="metric-sub" id="spotLabel">Proxy, not settlement index</div></div>
+    <div class="card"><div class="metric-name" id="spotMetricSource">BTC Index · CF Benchmarks BRTI</div><div id="spot" class="metric-val">—</div><div class="metric-sub" id="spotLabel">Official BRTI index, not exchange spot</div></div>
     <div class="card"><div class="metric-name">Kalshi Official Target</div><div id="strike" class="metric-val">—</div><div id="strikeSub" class="metric-sub">Waiting for contract</div></div>
     <div class="card"><div class="metric-name">Kalshi YES · Quote midpoint</div><div id="marketProb" class="metric-val">—</div><div class="metric-sub">Price from traders' bid/ask orders · not a Kalshi prediction</div></div>
     <div class="card"><div class="metric-name">Ensemble ABOVE</div><div id="modelProb" class="metric-val">—</div><div id="modelMethod" class="metric-sub">Uncalibrated multi-engine estimate</div></div>
@@ -49,7 +49,7 @@ button,input{font:inherit}button{cursor:pointer}button:disabled{opacity:.4;curso
   </section>
   <div class="columns">
     <div class="stack">
-      <div class="card"><div class="card-head"><div class="card-title">BTC/USD · One-minute candles</div><span class="submark">Coinbase Exchange · Spot</span></div><div class="canvas-wrap"><canvas id="chart"></canvas></div>
+      <div class="card"><div class="card-head"><div class="card-title">BRTI/USD · One-minute candles</div><span class="submark">CF Benchmarks BRTI · price-only (no traded volume)</span></div><div class="canvas-wrap"><canvas id="chart"></canvas></div>
         <div class="chart-legend"><span><i class="dot"></i> 1m price candles</span><span><i class="dot" style="background:#e8bf83"></i> Contract target</span><span><i class="dot" style="background:#90a7ff"></i> EMA 9</span></div>
         <div class="readouts"><div class="readout"><div class="label">Distance to line</div><strong id="distance">—</strong></div><div class="readout"><div class="label">1m vol. estimate</div><strong id="vol">—</strong></div><div class="readout"><div class="label">Candles captured</div><strong id="candles">0</strong></div></div>
       </div>
@@ -65,7 +65,7 @@ button,input{font:inherit}button{cursor:pointer}button:disabled{opacity:.4;curso
         <div class="explain" id="forecastReason">Waiting for enough data. This forecast is not independently calibrated.</div>
       </div>
       <div class="card"><div class="card-head"><div class="card-title">Normalized-distance research</div><span class="pill">SHADOW · NON-VOTING</span></div>
-        <div class="label">BTC proxy study · not the BRTI index</div><div id="shadowSide" class="signal">WAIT</div>
+        <div class="label">BRTI settlement-index research model</div><div id="shadowSide" class="signal">WAIT</div>
         <div class="pair"><div class="info-cell"><div class="label">Distance / volatility (z)</div><b id="shadowZ">—</b></div><div class="info-cell"><div class="label">Real 1m bars used</div><b id="shadowBars">—</b></div></div>
         <div id="shadowReason" class="explain">Experimental reference only. Does not affect the forecast or trade decisions.</div>
       </div>
@@ -145,13 +145,13 @@ button,input{font:inherit}button{cursor:pointer}button:disabled{opacity:.4;curso
     <div class="pair"><div class="info-cell"><div class="label">Live BRTI index</div><b id="brtiValue">—</b></div><div class="info-cell"><div class="label">Stream status</div><b id="brtiState">NOT CONNECTED</b></div></div>
     <div class="pair"><div class="info-cell"><div class="label">Index source → AXIOM receipt</div><b id="brtiLag">—</b></div><div class="info-cell"><div class="label">Last 15m settlement-window average</div><b id="brtiFinal">—</b></div></div>
     <div id="brtiStrike" class="explain">Strike first-observation timestamp unavailable. The time AXIOM first saw a target is not proof of the exchange\'s first-publication time.</div>
-    <div id="brtiWarning" class="micro">Existing models use Coinbase; the new target-dynamics model can use authenticated fresh BRTI as its distance reference. A stream is not a separate voting engine and does not place orders. A partial 60-second window is not official final settlement.</div>
+    <div id="brtiWarning" class="micro">All live price-based model inputs and candlesticks use authenticated BRTI. Binance trade-flow indicators remain separate because the index has no trade tape. A partial 60-second window is not official final settlement.</div>
   </section>
   <section class="section card"><div class="card-head"><div class="card-title">Real execution evidence</div><span class="pill">NOT MEASURED</span></div><div class="explain" id="executionEvidence">No authenticated exchange fills or charged-fee records are connected. Actual net P&amp;L cannot be verified from paper win rate, market quotes, or order-book snapshots.</div><div class="micro" id="executionCost">Displayed liquidity is hypothetical; an available bid/ask is not an executed fill.</div></section>
   <section class="grid-history section"><div class="card"><div class="card-head"><div class="card-title">First-call history</div><span class="submark">Most recent</span></div><div class="table-wrap"><table class="data-table"><thead><tr><th>Market</th><th>Call</th><th>Conf.</th><th>Outcome</th></tr></thead><tbody id="callRows"><tr><td colspan="4" class="empty">No calls yet</td></tr></tbody></table></div></div>
   <div class="card"><div class="card-head"><div class="card-title">Paper positions</div><span class="submark">Assumed quoted-ask fill</span></div><div class="table-wrap"><table class="data-table"><thead><tr><th>Market</th><th>Side</th><th>Entry</th><th>P&L</th></tr></thead><tbody id="tradeRows"><tr><td colspan="4" class="empty">No positions yet</td></tr></tbody></table></div></div></section>
   <section class="section card"><div class="card-head"><div class="card-title">Sources and connection health</div><span class="submark" id="refreshed">Checking…</span></div><div class="micro" id="dataErrors">Live feeds are read-only. No Kalshi credentials or orders are required.</div><div class="trade-actions"><button class="btn small ghost" data-export="first_calls">Export calls CSV</button><button class="btn small ghost" data-export="paper_trades">Export paper CSV</button><button class="btn small ghost" data-export="observations">Export observations CSV</button></div><div class="message" id="exportMessage"></div></section>
-  <footer class="footer">AXIOM v1.0 is an original research implementation informed by published market-data conventions. It does not contain private code from any third-party trading bot. Its probabilities have not been fitted or calibrated against independent historical outcomes. Kalshi contract prices are quotes generated by participant orders, not Kalshi's model predictions. AXIOM uses them only for comparison and hypothetical execution; Coinbase spot is a proxy, not the official settlement benchmark. Paper positions assume instant execution at the displayed ask and exclude exchange fees, spread movement, and slippage. No live orders or wallet access exist in this software.</footer>
+  <footer class="footer">AXIOM v1.0 is an original research implementation informed by published market-data conventions. It does not contain private code from any third-party trading bot. Its probabilities have not been fitted or calibrated against independent historical outcomes. Kalshi contract prices are quotes generated by participant orders, not Kalshi's model predictions. AXIOM uses them only for comparison and hypothetical execution; live price-based forecasting uses authenticated CF Benchmarks BRTI. Paper positions assume instant execution at the displayed ask and exclude exchange fees, spread movement, and slippage. No live orders or wallet access exist in this software.</footer>
 </div>
 <script>
 const $ = id => document.getElementById(id);
@@ -182,6 +182,8 @@ function view(s){latest=s;const m=s.market, f=s.model||{},o=s.opportunity||{},sc
  set('consensusInfo',f.available?`Agree ${f.agreement??0}/${f.active_predictive_models?.length??0} · Spread ${pct(f.spread)} · UNVALIDATED`:'WAIT · missing inputs');
  set('agreementExplain',f.available?'BTC-derived models, including target distance, momentum and candle analysis, contribute to the forecast. Participant contract prices do not vote. Some models share BTC inputs; disagreement is reported, but the integrated ensemble does not automatically switch to WAIT because the spread exceeds 30 points.': 'Require at least two available BTC model estimates on one shared contract and candle set.');
  set('modelMethod',f.available?(f.all_signal_integration_active?'Uncalibrated equal-weight mean of available BTC models':'Uncalibrated median of available BTC models'):'Awaiting BTC model estimates');
+ set('spotMetricSource',s.mode==='DEMO'?'BTC Spot · Synthetic':'BTC Index · CF Benchmarks BRTI');
+ set('spotLabel',s.mode==='DEMO'?'Synthetic test price':'Authenticated BRTI benchmark');
  set('spot',money(s.spot));set('strike',money(m?.target));set('strikeSub',m?.target?'Published by Kalshi':'Not published / unavailable');set('marketProb',cents(m?.market_mid));set('modelProb',pct(f?.prob_above));
  set('distance',Number.isFinite(s.spot)&&Number.isFinite(m?.target)?(s.spot-m.target>=0?'+':'')+money(s.spot-m.target):'—');set('vol',f.sigma_1m!=null?pct(f.sigma_1m):'—');set('candles',s.candles?.length||0);
  const above=f.available?f.prob_above:null;set('forecastSide',f.available?f.side:'WAIT','direction '+directionClass(f.side));set('above',pct(above));set('below',pct(f.available?f.prob_below:null));$('probBar').style.width=f.available?(100*above).toFixed(1)+'%':'50%';set('forecastReason',f.reason||'Insufficient data');
@@ -199,7 +201,7 @@ function view(s){latest=s;const m=s.market, f=s.model||{},o=s.opportunity||{},sc
   set('dynZ',fmt(dyn.distance_volatility_z,3));set('dynAccel',fmt(dyn.acceleration_bps_per_min,3));
   set('dynTouch',pct(dyn.target_touch_probability));set('dynMove',pct(dyn.movement_2m_probability_5bp));
   set('dynEarly',fmt(dyn.early_displacement_bps,2));set('dynReversal',dyn.first_two_minute_reversal_flag||'—');
-  set('dynRef',dyn.available?dyn.price_reference+' · '+money(dyn.reference_value)+' · long-memory volatility '+pct(dyn.volatility_1m_long)+(dyn.settlement_proxy_warning?' · Coinbase is NOT BRTI settlement':' · authenticated current BRTI reference'):dyn.reason||'No fresh signals');
+  set('dynRef',dyn.available?dyn.price_reference+' · '+money(dyn.reference_value)+' · long-memory volatility '+pct(dyn.volatility_1m_long)+(dyn.settlement_proxy_warning?' · index unavailable':' · authenticated current BRTI reference'):dyn.reason||'No fresh signals');
   set('decisionAction',plan.action||'WAIT','signal '+directionClass(plan.side));set('decisionReason',plan.reason||'No qualifying entry');
   const bin=s.binance_intelligence||{},lag=s.binance_kalshi_delay||{};
   set('binanceSpot',bin.status==='STREAMING'?money(bin.spot_price):bin.status||'NO DATA');
@@ -261,7 +263,7 @@ function view(s){latest=s;const m=s.market, f=s.model||{},o=s.opportunity||{},sc
    $('callRows').innerHTML=unavailable;
    $('tradeRows').innerHTML=unavailable;
  }
- set('refreshed',s.last_attempt?`Checked ${new Date(s.last_attempt*1000).toLocaleTimeString()}`:'Not connected');const errors=Object.entries(s.errors||{});const q=s.candle_quality,qualityNote=q?.status==='RECOVERED_REAL_CONTIGUOUS'?` Coinbase gap excluded: ${q.bars_used} real consecutive 1m candles; no prices invented.`:'';set('dataErrors',(errors.length?errors.map(([k,v])=>`${k}: ${v}`).join(' · '):'Kalshi and Coinbase reads healthy. Settlement grading uses Kalshi official market result.')+qualityNote);
+ set('refreshed',s.last_attempt?`Checked ${new Date(s.last_attempt*1000).toLocaleTimeString()}`:'Not connected');const errors=Object.entries(s.errors||{});const q=s.candle_quality,qualityNote=s.mode!=='DEMO'&&q?.status==='WARMING_BRTI_LIVE'?(' BRTI history warming: '+(q.bars_used||0)+'/31 genuine completed minutes; forecast WAIT until ready.'):'';set('dataErrors',(errors.length?errors.map(([k,v])=>`${k}: ${v}`).join(' · '):(s.mode==='DEMO'?'Synthetic demonstration inputs healthy.':'Kalshi and authenticated BRTI feeds healthy. Kalshi official market result determines settlement.'))+qualityNote);
  if(s.mode==='DEMO')set('notice','DEMO MODE: All displayed BTC prices, markets and outcomes are synthetic. This is for software testing only; not real trading information.');
  paintChart(s.candles,m?.target);countdown()}
 async function load(){try{const r=await fetch('/api/state',{cache:'no-store'});const data=await r.json();if(!r.ok&&!data?.status)throw Error('HTTP '+r.status);view(data)}catch(e){set('status','OFFLINE','pill err');set('dataErrors','Cannot contact local bot server: '+e.message)}}
