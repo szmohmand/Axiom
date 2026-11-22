@@ -48,11 +48,24 @@ def test_persistent_sqlite_backup_original_env_and_rollback_are_preserved():
     assert 'ENVFILE=/etc/axiom/axiom.env' in s
     assert "DATA_PATH" in s
     assert "/var/lib/axiom/deploy-backups/" in s
-    assert "source.backup(dest" in s
+    assert 'upgrade_sqlite.py" backup "$1" "$2"' in s
+    assert 'upgrade_sqlite.py" restore "$BACKUP" "$DATA_PATH"' in s
     assert "PRAGMA integrity_check" in s
-    assert "ACTIVATED=0" in s and "trap rollback ERR" in s
+    assert "STOPPED=0" in s and "SWITCHED=0" in s
+    assert "trap 'rollback $?' ERR" in s
+    assert 'systemctl stop "$SERVICE"' in s
+    assert 'sqlite_backup "$DATA_PATH" "$BACKUP"' in s
     assert 'systemctl restart "$SERVICE"' in s
     assert "previous-release.conf" in s
+    assert "2_000_000_000" in s  # swap headroom for 1GB VM
+    assert "1_500_000_000" in s  # isolated venv/disk headroom
+    assert 'AUTO_PAPER' in s and 'DEMO_MODE' in s
+    assert '"$ACTIVE_PYTHON" -m venv "$VENV"' in s
+    assert 'CURRENT_DIR=$(systemctl show --value -p WorkingDirectory "$SERVICE")' in s
+    assert 'ACTIVE_PYTHON="$ROOT/venvs/$ACTIVE_SHA/bin/python"' in s
+    assert 'ACTIVE_PYTHON="$ROOT/venv/bin/python"' in s
+    assert "PRECHECK" in s and "BRTI_LIVE_ENABLED=0" in s
+    assert "SWITCHED=1" in s and 'systemctl start "$SERVICE"' in s
     assert "read-only" in s.lower()
     assert "order_placed" in s
     assert "independent_btc_forecast_changed" in s
