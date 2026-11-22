@@ -95,6 +95,10 @@ def _refresh_status_locked():
         state['status'] = 'DEGRADED'
     elif state['last_attempt'] is None:
         state['status'] = 'STARTING'
+    elif state.get('forecast_warming') and not DEMO and state['market'] is not None and state['spot'] is not None:
+        # BRTI transport/contract health is distinct from the 31-minute model
+        # warmup. Service is healthy, but every prediction and paper entry WAITs.
+        state['status'] = 'LIVE'
     elif (state['market'] is None or state['spot'] is None or
           not state['model'] or not state['model'].get('available') or
           len(state['candles']) < 31):
@@ -295,7 +299,14 @@ def update_once(now=None):
             candle_challenger = derive_candlestick_challenger(candle_context,model)
         except (TypeError, ValueError, ArithmeticError, KeyError, IndexError):
             candle_challenger = unavailable_candle_challenger('Candle candidate computation unavailable')
-        if not model.get('available') and not errors:
+        # Genuine 1m BRTI bars must accumulate after boot; unlike a broken
+        # exchange feed, this is a healthy transport with an unavailable
+        # predictor. Never make demo mode or missing data look like a forecast.
+        warming=(not DEMO and not errors and brti_now is not None
+                 and brti_now.get('status')=='STREAMING'
+                 and spot is not None and 0 <= len(candles)<31
+                 and not model.get('available'))
+        if not model.get('available') and not errors and not warming:
             errors['forecast']=model.get('reason','Model unavailable')
         if not errors and not persistent_faults:
             try:
@@ -384,6 +395,10 @@ def update_once(now=None):
                 errors[component] = state['errors'][component]
         state.update({'last_attempt':now,
             'market':market,'spot':spot,'candles':candles[-75:], 'model':model,'scalp':scalp,
+            'forecast_warming':(not DEMO and not errors and market is not None
+                 and brti_now is not None and brti_now.get('status')=='STREAMING'
+                 and spot is not None and 0 <= len(candles)<31
+                 and not model.get('available')),
             'price_source':'SYNTHETIC_DEMO' if DEMO else 'CF_BENCHMARKS_BRTI',
             'opportunity':op,'engines':model.get('engines',[]),'errors':errors,'watch':watch,
              'research_shadow':research_shadow,
@@ -614,7 +629,7 @@ def get_state():
     d['server_time']=now
     # A token alone is not permission to record a position against stale or
     # broken market data. The UI and paper endpoint share the same readiness rule.
-    d['manual_paper_available']=bool(ADMIN_TOKEN) and d['ok'] and bool(d.get('market'))
+    d['manual_paper_available']=bool(ADMIN_TOKEN) and d['ok'] and bool(d.get('market')) and bool((d.get('model') or {}).get('available'))
     d['disclaimer']=('Experimental models and gross simulated trading only. SYNTHETIC DEMO BTC spot is NOT the BRTI settlement index. No real orders.'
                     if DEMO else
                     'Experimental models and gross simulated trading only. Live forecast inputs are authentic CF Benchmarks BRTI; exchange-only signed trade flow is separately identified. BRTI has no traded volume. Kalshi aggregated depth is a participant-order snapshot; no real orders are placed.')
@@ -630,8 +645,8 @@ def paper(req:PaperRequest, authorization:str|None=Header(default=None)):
     with state_lock:
         snapshot=_view_locked(time.time())
         m=snapshot.get('market'); ts=snapshot.get('last_attempt')
-    if (not snapshot['ok'] or not m or not ts or
-            time.time()-ts > max(50,3*POLL_SECONDS)):
+    if (not snapshot['ok'] or not (snapshot.get('model') or {}).get('available')
+            or not m or not ts or time.time()-ts > max(50,3*POLL_SECONDS)):
         raise HTTPException(409,'Market snapshot unhealthy, unavailable or stale')
     ask=m.get('yes_ask' if req.side.upper()=='YES' else 'no_ask')
     bid=m.get('yes_bid' if req.side.upper()=='YES' else 'no_bid')
