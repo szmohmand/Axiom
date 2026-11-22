@@ -231,6 +231,7 @@ def test_newest_unpublished_brti_hour_is_recorded_while_older_complete_contract_
                     open_time="2026-11-17T18:00:00Z",
                     close_time="2026-11-17T18:15:00Z")
     older = _terms()
+    monkeypatch.setattr("time.time", lambda: _sec(latest["close_time"]) + 3600)
     monkeypatch.setenv("KALSHI_API_KEY_ID", "synthetic-id-not-used")
     monkeypatch.setenv("KALSHI_PRIVATE_KEY_PEM", "synthetic-secret-not-used")
 
@@ -268,6 +269,7 @@ def test_actual_index_conflict_is_not_skipped_to_later_passing_contract(monkeypa
                     open_time="2026-11-17T18:00:00Z",
                     close_time="2026-11-17T18:15:00Z")
     older = _terms()
+    monkeypatch.setattr("time.time", lambda: _sec(latest["close_time"]) + 3600)
     monkeypatch.setenv("KALSHI_API_KEY_ID", "synthetic-id")
     monkeypatch.setenv("KALSHI_PRIVATE_KEY_PEM", "synthetic-secret")
     class Session:
