@@ -108,7 +108,8 @@ class AppBoundaryAudit(unittest.TestCase):
             self.assertEqual(depth.analyze_opportunities(model,market(),b,NOW)["status"],"WAIT")
         for size in ("broken",0,-1,float("inf"),100001):
             self.assertEqual(depth.analyze_opportunities(forecast(),market(),b,NOW,size)["status"],"WAIT")
-        self.assertEqual(depth.analyze_opportunities(forecast(),market(seconds_left=20),b,NOW)["status"],"WAIT")
+        self.assertEqual(depth.analyze_opportunities(forecast(),market(seconds_left=20),b,NOW)["status"],"CANDIDATE")
+        self.assertEqual(depth.analyze_opportunities(forecast(),market(seconds_left=19.999),b,NOW)["status"],"WAIT")
         self.assertEqual(depth.analyze_opportunities(forecast(),market(),None,NOW)["status"],"WAIT")
         self.assertEqual(depth.execution_guidance(None,forecast(),market(),None,NOW)["action"],"WAIT")
         self.assertEqual(depth.execution_guidance(None,{},market(),b,NOW)["action"],"WAIT")

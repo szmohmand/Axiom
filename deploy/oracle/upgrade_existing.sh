@@ -303,8 +303,11 @@ for _ in range(35):
         if s.get('paper_auto_enabled') is not False:
             raise RuntimeError('paper auto-entry was not disabled')
         q=s['contract_repricing'] or {}
-        if q.get('order_placed') is not False or q.get('independent_btc_forecast_changed') is not False:
-            raise RuntimeError('Kalshi quote model is not verified read-only/isolated')
+        # Phase 3 publishes the legacy repricing lane as an inert, read-only
+        # DISABLED block; it does not expose the old forecast-changed field.
+        if (q.get('status')!='DISABLED' or q.get('read_only') is not True
+                or q.get('order_placed') is not False):
+            raise RuntimeError('Legacy repricing lane is not disabled/read-only')
         if (s.get('execution_intelligence') or {}).get('order_placed') is not False:
             raise RuntimeError('execution is not read-only')
         print('PASS: running tested AXIOM release, healthy read-only local API and separate Kalshi pricing model.')
