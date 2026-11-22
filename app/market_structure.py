@@ -1,15 +1,14 @@
-"""Multi-timeframe and market-microstructure features that genuinely vote.
+"""Multi-timeframe BTC price and exchange trade-flow forecasting features.
 
-Coinbase 5-minute OHLCV supplies actual completed 30m/60m/120m candles.
-Kalshi orderbook identifies participant quote positioning (NOT authenticated
-BTC order flow); Binance signed aggressive trades identify BTC taker flow.
-All contributions are exposed to the ensemble, not background-only.
+Only real BTC exchange OHLCV and Binance aggressor-signed trades enter model
+features. Kalshi quote, depth, bid, ask, midpoint, volume and wall values
+must never enter a BTC outcome predictor. Kalshi liquidity belongs exclusively
+to separate execution / value / spread / contract-repricing analysis.
 """
 from __future__ import annotations
 
 import math
 import statistics
-from .orderbook import current_book
 
 
 def _num(v):
@@ -76,71 +75,23 @@ def timeframes(five_minute,now):
 
 
 class DepthFlowTracker:
-    def __init__(self):
-        self.last=None
+    """Backward-compatible name; the forecast adapter is BTC-ONLY.
 
-    @staticmethod
-    def _top(levels):
-        if not levels:return None
-        return _num(levels[0].get("price"))
-
-    @staticmethod
-    def _levels_value(levels):
-        return sum(float(x.get("size") or 0) for x in levels if
-                   _num(x.get("price")) is not None and _num(x.get("size")) is not None)
-
-    def observe(self,book,market,binance,spot,now):
-        result={"available":False,"reason":"No current Kalshi depth",
-                "source":"kalshi_rest_depth_and_binance_trades",
+    The arguments 'book'/'market' are deliberately ignored, even if callers
+    supply Kalshi bid/ask/mid/orderbook data. No historical quote state is kept
+    or inspected here. This enforces Kalshi's role as an execution venue rather
+    than a forecasting oracle.
+    """
+    def observe(self,book=None,market=None,binance=None,spot=None,now=None):
+        result={"available":False,"reason":"No observed Bitcoin trade-flow features",
+                "source":"binance_btc_spot_aggtrades_only",
                 "directional_components":{},"observations":{},
-                "absorption_is_verified":False,"whale_wallet_identified":False}
-        book_ok=(isinstance(market,dict) and current_book(book,market.get("ticker"),now))
-        if not book_ok:
-            self.last=None
-        best=(book.get("best") or {}) if book_ok else {}
-        bids=(book.get("bids") or {}) if book_ok else {}
-        asks=(book.get("asks") or {}) if book_ok else {}
-        yi=_num(book.get("book_imbalance_5c")) if book_ok else None
-        if yi is not None:
-            result["directional_components"]["kalshi_near_book_imbalance"]=_sig(2*yi)
-        # Kalshi resting order walls on a given outcome, NOT identified BTC market makers.
-        yes_wall=max([_num(x.get("size")) or 0 for x in bids.get("YES",[])],default=0)
-        no_wall=max([_num(x.get("size")) or 0 for x in bids.get("NO",[])],default=0)
-        if yes_wall+no_wall>0:
-            result["directional_components"]["kalshi_liquidity_wall_bias"]=_sig(
-                math.log((1+yes_wall)/(1+no_wall)))
-        ybest=best.get("YES") or {}
-        midpoint=None
-        if _num(ybest.get("bid")) is not None and _num(ybest.get("ask")) is not None:
-            midpoint=(float(ybest["bid"])+float(ybest["ask"]))/2
-        snapshot=({"ticker":market["ticker"],"ts":float(book["received_at"]),
-                   "mid":midpoint,"yes":self._levels_value(bids.get("YES",[])),
-                   "no":self._levels_value(bids.get("NO",[])),
-                   "spot":_num(spot)} if book_ok else None)
-        prev=self.last
-        self.last=snapshot
-        if (snapshot and prev and prev["ticker"]==snapshot["ticker"] and
-            0<snapshot["ts"]-prev["ts"]<=120):
-            # Positive imbalance in replenishment is a separate feature from
-            # static walls, and can reveal shifts within the contract.
-            delta_yes=snapshot["yes"]-prev["yes"]
-            delta_no=snapshot["no"]-prev["no"]
-            norm=(abs(delta_yes)+abs(delta_no))
-            if norm>0:
-                result["directional_components"]["kalshi_depth_replenishment"]=_sig(
-                    (delta_yes-delta_no)/norm*2)
-            result["observations"]["kalshi_depth_change"]={
-                "yes_contracts":round(delta_yes,3),"no_contracts":round(delta_no,3),
-                "seconds_between":round(snapshot["ts"]-prev["ts"],3),
-            }
-            if (prev["spot"] is not None and snapshot["spot"] is not None and
-                prev["spot"]>0):
-                result["observations"]["spot_change_bps"]=round(
-                    math.log(snapshot["spot"]/prev["spot"])*10000,4)
+                "uses_kalshi_quotes_for_prediction":False,
+                "uses_kalshi_orderbook_for_prediction":False,
+                "whale_wallet_identified":False}
         if isinstance(binance,dict):
-            # Binance @aggTrade includes buyer-is-maker, allowing genuine
-            # signed taker volume; no invented Bitcoin CVD from Kalshi quotes.
-            for label,key in (("cvd_2m","btc_taker_cvd_2m"),("cvd_5m","btc_taker_cvd_5m")):
+            for label,key in (("cvd_2m","btc_taker_cvd_2m"),
+                              ("cvd_5m","btc_taker_cvd_5m")):
                 row=binance.get(label) or {}
                 imbalance=_num(row.get("taker_imbalance"))
                 if imbalance is not None and row.get("trades_seen",0)>0:
@@ -151,45 +102,22 @@ class DepthFlowTracker:
             threshold=_num(large.get("large_trade_threshold_usdt"))
             if net is not None and threshold is not None and threshold>0:
                 result["directional_components"]["btc_large_aggressive_prints"]=_sig(
-                    net/max(threshold,1.))
+                    net/threshold)
                 result["observations"]["large_trades"]={
                     "count":large.get("large_print_count"),
                     "proxy_not_wallet_identity":True,
                     "net_taker_usdt":net}
-        if (snapshot and prev and snapshot["mid"] is not None and prev["mid"] is not None and
-            prev["ticker"]==snapshot["ticker"]):
-            cvd=_num(((binance or {}).get("cvd_2m") or {}).get("taker_imbalance"))
-            if cvd is not None:
-                quote_move=snapshot["mid"]-prev["mid"]
-                spot_move=None
-                if (snapshot["spot"] is not None and prev["spot"] is not None
-                    and prev["spot"]>0):
-                    spot_move=10000*math.log(snapshot["spot"]/prev["spot"])
-                # Continuous candidate score: BTC aggressor flow dominates
-                # when Kalshi has not repriced; shrinks smoothly as quote
-                # movement increases, never silently zeroed at an arbitrary
-                # 0.5-cent cutoff.
-                stickiness=1/(1+abs(quote_move)/.01)
-                lag_proxy=_sig(2*cvd)*stickiness
-                result["directional_components"]["btc_vs_kalshi_quote_absorption_proxy"]=lag_proxy
-                if spot_move is not None:
-                    result["directional_components"]["btc_price_first_repricing_proxy"]=(
-                        _sig(spot_move/10)*stickiness)
-                result["observations"]["absorption_proxy"]={
-                    "status":"CONTINUOUS_BTC_TAKER_FLOW_VS_KALSHI_REPRICING_PROXY",
-                    "not_verified_btc_l2_absorption":True,
-                    "quote_change":round(quote_move,6),
-                    "kalshi_quote_stickiness":round(stickiness,6),
-                    "btc_move_bps":round(spot_move,5) if spot_move is not None else None}
         result.update(available=bool(result["directional_components"]),
-                      reason="Observed Coinbase/Binance/Kalshi context with explicit provenance",
-                      observations={**result["observations"],
-                        "kalshi_best_yes_bid":_num(ybest.get("bid")),
-                        "kalshi_best_yes_ask":_num(ybest.get("ask")),
-                        "kalshi_resting_wall_yes":yes_wall,
-                        "kalshi_resting_wall_no":no_wall})
+                      reason="Real Binance BTC trade-flow signals, never Kalshi contract prices")
         return result
 
+_BTC_PREDICTIVE_FEATURES=frozenset((
+    "30m_efficiency","30m_close_location",
+    "1h_efficiency","1h_close_location",
+    "2h_efficiency","2h_close_location",
+    "btc_taker_cvd_2m","btc_taker_cvd_5m",
+    "btc_large_aggressive_prints",
+))
 
 def pressure_forecast(spot,market,base_probability,context):
     """Independent market-pressure forecast. Every observed family can vote.
@@ -199,7 +127,7 @@ def pressure_forecast(spot,market,base_probability,context):
     Underlying strengths are hypotheses, not a fitted ML classifier.
     """
     unavailable={"name":"axiom_multi_signal_context",
-       "method":"multi-timeframe-orderflow-cvd-walls-largeprints",
+       "method":"btc-only-multitimeframe-cvd-aggressive-prints",
        "available":False,"prob_above":None,"prob_below":None,
        "side":"WAIT","reason":"No observed features",
        "independent":False,"trained":False,"calibrated":False}
@@ -213,7 +141,8 @@ def pressure_forecast(spot,market,base_probability,context):
         signals=obj.get("directional_components") or {}
         for key,val in signals.items():
             x=_num(val)
-            if x is not None:
+            # Harden the boundary against old/stale injected Kalshi features.
+            if key in _BTC_PREDICTIVE_FEATURES and x is not None:
                 families[key]=x
     if not families:return unavailable
     combined=sum(families.values())/math.sqrt(len(families))
@@ -227,7 +156,7 @@ def pressure_forecast(spot,market,base_probability,context):
             "prob_above":round(max(.000001,min(.999999,probability)),6),
             "prob_below":round(max(.000001,min(.999999,1-probability)),6),
             "side":"ABOVE" if probability>.5 else "BELOW",
-            "reason":"Experimental independent BTC market features add measurable forecast influence",
+            "reason":"Experimental BTC-only OHLCV and actual exchange trade-flow features",
             "components":families,"combined_z_shift":round(combined,6),
             "source_status":{k:(context.get(k) or {}).get("available") for k in ("timeframes","microstructure")},
             "hypotheses_not_validated_alpha":True}
