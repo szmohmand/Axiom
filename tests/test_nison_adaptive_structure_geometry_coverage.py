@@ -119,7 +119,7 @@ def test_structure_chooser_uses_strongest_not_duplicate_pattern(monkeypatch):
     assert ns.scan_structural_formations(bars,float("nan"))==[]
     weak=ns._event("THREE_RIVER_BOTTOM",1,.12)
     strong=ns._event("THREE_RIVER_BOTTOM",1,.8)
-    monkeypatch.setattr(ns,"_triples",lambda *a:[weak,strong])
+    monkeypatch.setattr(ns,"_triples",lambda *a:[strong,weak])
     monkeypatch.setattr(ns,"_rounded",lambda *a:[])
     monkeypatch.setattr(ns,"_towers",lambda *a:[])
     result=ns.scan_structural_formations(bars,2)
@@ -127,3 +127,12 @@ def test_structure_chooser_uses_strongest_not_duplicate_pattern(monkeypatch):
     assert result[0]["experimental_weight"]==strong["experimental_weight"]
     assert result[0]["details"]["observed_closed_bars"]==len(bars)
     assert result[0]["details"]["adaptive_kernel_bandwidth_bars"]>0
+
+
+def test_nearby_extrema_skip_tiny_swing_and_keep_dominant_peak():
+    # The intervening trough is too small to survive the noise estimator,
+    # so a subsequently higher peak must replace the first peak.
+    raw=[0,2,1,1,4,1]
+    x=ns._turns(raw,noise=100)
+    assert x==[(4,"peak",4)]
+    assert ns._turns([1,1,1,1],noise=1)==[]
