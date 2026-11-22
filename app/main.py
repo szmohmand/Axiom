@@ -177,8 +177,9 @@ def update_once(now=None):
             if not math.isfinite(spot) or spot <= 0:
                 spot = None
                 errors['brti_stream']='Invalid authenticated CF Benchmarks BRTI index value'
-            if len(candles)<31:
-                errors['brti_candles']='Warming up real CF Benchmarks BRTI 1m history (need 31 completed minutes)'
+            # Real BRTI candle history warms up after server restart. The service
+            # remains operational, but the forecast remains WAIT until enough
+            # genuine completed minutes exist. Never backfill fake candles.
     else:
         try:
             spot=provider.price()
