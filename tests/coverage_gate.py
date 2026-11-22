@@ -39,7 +39,7 @@ REVIEWED_MISSING_ARCS = {
     # Both malformed-book reset and all three venue dispatches are tested.
     # Diagnostic-only methods shifted these existing, proven-unreachable
     # source guards; no new exception is introduced by this update.
-    "app/axiom_brain.py": {(228, -197), (313, -254)},
+    "app/axiom_brain.py": {(229, -198), (342, -255)},
     # The source-second loop always contains 37 five-second windows; all
     # accepted iterations append once, yielding 36 returns exactly.
     "app/brti_live.py": {(122, 123)},
