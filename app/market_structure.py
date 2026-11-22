@@ -94,11 +94,13 @@ class DepthFlowTracker:
                 "source":"kalshi_rest_depth_and_binance_trades",
                 "directional_components":{},"observations":{},
                 "absorption_is_verified":False,"whale_wallet_identified":False}
-        if not isinstance(market,dict) or not current_book(book,market.get("ticker"),now):
+        book_ok=(isinstance(market,dict) and current_book(book,market.get("ticker"),now))
+        if not book_ok:
             self.last=None
-            return result
-        best=book.get("best") or {};bids=book.get("bids") or {};asks=book.get("asks") or {}
-        yi=_num((book.get("book_imbalance_5c")))
+        best=(book.get("best") or {}) if book_ok else {}
+        bids=(book.get("bids") or {}) if book_ok else {}
+        asks=(book.get("asks") or {}) if book_ok else {}
+        yi=_num(book.get("book_imbalance_5c")) if book_ok else None
         if yi is not None:
             result["directional_components"]["kalshi_near_book_imbalance"]=_sig(2*yi)
         # Kalshi resting order walls on a given outcome, NOT identified BTC market makers.
@@ -111,13 +113,13 @@ class DepthFlowTracker:
         midpoint=None
         if _num(ybest.get("bid")) is not None and _num(ybest.get("ask")) is not None:
             midpoint=(float(ybest["bid"])+float(ybest["ask"]))/2
-        snapshot={"ticker":market["ticker"],"ts":float(book["received_at"]),
-                  "mid":midpoint,"yes":self._levels_value(bids.get("YES",[])),
-                  "no":self._levels_value(bids.get("NO",[])),
-                  "spot":_num(spot)}
+        snapshot=({"ticker":market["ticker"],"ts":float(book["received_at"]),
+                   "mid":midpoint,"yes":self._levels_value(bids.get("YES",[])),
+                   "no":self._levels_value(bids.get("NO",[])),
+                   "spot":_num(spot)} if book_ok else None)
         prev=self.last
         self.last=snapshot
-        if (prev and prev["ticker"]==snapshot["ticker"] and
+        if (snapshot and prev and prev["ticker"]==snapshot["ticker"] and
             0<snapshot["ts"]-prev["ts"]<=120):
             # Positive imbalance in replenishment is a separate feature from
             # static walls, and can reveal shifts within the contract.
@@ -164,7 +166,7 @@ class DepthFlowTracker:
                 result["observations"]["funding_hypothesis"]="same-direction positioning; contrarian possibility still open"
             if binance.get("funding_status")=="LIVE" and basis is not None:
                 result["directional_components"]["btc_perpetual_basis_pressure"]=_sig(basis/10)
-        if (prev and snapshot["mid"] is not None and prev["mid"] is not None and
+        if (snapshot and prev and snapshot["mid"] is not None and prev["mid"] is not None and
             prev["ticker"]==snapshot["ticker"] and
             abs(snapshot["mid"]-prev["mid"])<.005):
             cvd=_num((binance or {}).get("cvd_2m",{}).get("taker_imbalance"))
