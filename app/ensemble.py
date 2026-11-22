@@ -5,7 +5,8 @@ Provenance:
  - kalshibot_headstart: uses the published MIT head-start feature from
    jaldrich2023/KalshiBot Predictor.swift, but NOT its trained predictor.
  - axiom_volatility: original AXIOM v1 GBM-inspired forecast.
- - market_baseline: participant order-book YES midpoint; NOT a Kalshi prediction.
+ - Kalshi participant bid/ask prices are used ONLY after prediction for
+   separately evaluated entry/exit and spread (not an ensemble engine).
 
 The ensemble is not calibrated and none of the above is verified profitable.
 """
@@ -40,21 +41,18 @@ def log_returns(closes: list[float]) -> list[float]:
 def engine_pack(spot: float | None, market: dict | None, candles: list[dict], signals: dict | None = None, *, context: dict | None = None, now: float | None = None) -> dict:
     """Run available engines on the SAME market/spot snapshot.
 
-    Each engine reports its source and provenance; no fabricated ML outputs or
-    unsupported order flow data. Consensus is a median of independent estimates,
-    withheld when disagreement is substantial. Market mid stays outside consensus.
+    Kalshi quotes and Kalshi order-book activity are prohibited from all
+    prediction inputs. Only the contract's publicly specified BTC strike and
+    time-to-expiry are accepted, alongside actual BTC market data. The
+    separate execution screen handles bid/ask/spread/value afterwards.
     """
+    # Strict projection makes bid/ask, midpoint, order sizes, YES/NO prices
+    # and all other Kalshi quote fields invisible to ALL forecast engines,
+    # including experimental or future models.
+    market=({k:market[k] for k in
+             ('ticker','target','seconds_left','close_ts')
+             if k in market} if isinstance(market,dict) else None)
     engines=[]
-    mid=market.get('market_mid') if market else None
-    # Retain the historical 'kalshi_market' name for scorecard and export
-    # compatibility, but do NOT treat participant order-book quotes as a model.
-    # A 70-cent price is a price, not Kalshi's 70% winning prediction.
-    quote_benchmark=engine_result('kalshi_market',mid,'orderbook-quote-benchmark',
-                                  'YES bid/ask midpoint set by participant orders; NOT Kalshi\'s prediction',
-                                  independent=False,is_model_prediction=False,
-                                  role='participant_order_book_price_benchmark')
-    quote_benchmark['side']='N/A'  # A quote cannot issue a direction signal.
-    engines.append(quote_benchmark)
     if not market:
         return {'available':False, 'prob_above':None,'prob_below':None,'side':'WAIT',
                 'reason':'No active Kalshi BTC15M market', 'engines':engines,
@@ -109,9 +107,8 @@ def engine_pack(spot: float | None, market: dict | None, candles: list[dict], si
             target_touch_probability=d.get('target_touch_probability'),
             movement_2m_probability_5bp=d.get('movement_2m_probability_5bp'),
             calibrated=False))
-    # The integrated candidate gives the learned model, complete Nison
-    # methodology and all observed market-context features actual ensemble
-    # votes. Nothing is relegated to "background" merely for being new.
+    # Japanese patterns, boosted BTC and BTC-only exchange trade flow vote.
+    # Kalshi quote level, wall or repricing data NEVER enters predictions.
     # Baseline calls without context preserve historical regression behavior.
     enhanced=isinstance(context,dict) and now is not None
     if enhanced:
@@ -146,12 +143,12 @@ def engine_pack(spot: float | None, market: dict | None, candles: list[dict], si
             pressure={'available':False,'prob_above':None,'reason':'Market feature inputs unavailable'}
         engines.append(engine_result('axiom_multi_signal_context',
             pressure.get('prob_above') if pressure.get('available') else None,
-            'multiscale-orderflow-cvd-walls',
-            '30m/60m/120m + book imbalance, liquidity walls, absorption, CVD and large-trade flow',
+            'multiscale-btc-only-cvd-price-structure',
+            'BTC 30m/1h/2h structure + real Binance signed CVD and large aggressive prints',
             independent=False,calibrated=False,
             active_factors=pressure.get('components',{}),
             experimental_z_shift=pressure.get('combined_z_shift')))
-    # Kalshi midpoint quote stays a comparator, not a probability forecast.
+    # NO Kalshi quotes or Kalshi market pricing benchmarks in predictions.
     voting_models=frozenset((
         'axiom_volatility','aaryann_fair','kalshibot_headstart',
         'axiom_target_dynamics','axiom_gradient_boosted_btc',
@@ -182,10 +179,10 @@ def engine_pack(spot: float | None, market: dict | None, candles: list[dict], si
     return {'available':True,'prob_above':round(p,5),'prob_below':round(1-p,5),'side':side,
             'reason':reason,'engines':engines,'agreement':agreement,
             'spread':round(spread,5),
-            # Preserve legacy alpha_vs_market for existing API consumers;
-            # this is only a model-minus-order-book-mid quote discrepancy.
-            'alpha_vs_market':round(p-mid,5) if mid is not None else None,
-            'forecast_minus_quote_mid':round(p-mid,5) if mid is not None else None,
+            # Quote comparison belongs in the execution screen and never in
+            # a BTC forecast result; keep old keys empty for compatibility.
+            'alpha_vs_market':None,
+            'forecast_minus_quote_mid':None,
             'quote_discrepancy_is_validated_alpha':False,
             'validated':False,'method':'experimental-median-consensus',
             'all_signal_integration_active':enhanced,

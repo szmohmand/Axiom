@@ -52,22 +52,20 @@ def test_large_changes_in_order_book_quotes_cannot_change_independent_forecast()
     assert a['prob_below']==b['prob_below']
     assert a['spread']==b['spread']
     assert a['agreement']==b['agreement']
-    assert a['forecast_minus_quote_mid']!=b['forecast_minus_quote_mid']
+    assert a['forecast_minus_quote_mid'] is None
+    assert b['forecast_minus_quote_mid'] is None
+    assert a['engines']==b['engines']
     assert a['quote_discrepancy_is_validated_alpha'] is False
 
 
-def test_quote_benchmark_is_never_an_independent_direction_signal():
+def test_quote_prices_do_not_appear_in_any_prediction_engine():
     market,candles,spot=sample()
     e=engine_pack(spot,market,candles)
-    book=next(x for x in e['engines'] if x['name']=='kalshi_market')
-    assert book['prob_above']==.70  # legacy numeric quote-as-benchmark only
-    assert book['role']=='participant_order_book_price_benchmark'
-    assert book['method']=='orderbook-quote-benchmark'
-    assert book['independent'] is False
-    assert book['is_model_prediction'] is False
-    assert book['side']=='N/A'
-    real=[x for x in e['engines'] if x['name']!='kalshi_market']
-    assert len(real)==3 and all(x['independent'] for x in real)
+    assert 'kalshi_market' not in {x['name'] for x in e['engines']}
+    assert len(e['engines'])==3
+    assert all(x['independent'] for x in e['engines'])
+    assert e['alpha_vs_market'] is None
+    assert e['forecast_minus_quote_mid'] is None
 
 
 def test_quotes_change_paper_entry_value_not_model_prediction():
@@ -89,10 +87,11 @@ def test_quote_brier_benchmark_is_labeled_not_proven_alpha(tmp_path):
     market,candles,spot=sample()
     model=engine_pack(spot,market,candles)
     db=Ledger(str(tmp_path/'quotes.sqlite3'))
-    assert db.engine_snapshots(market,model,1700004000)==5
+    count=db.engine_snapshots(market,model,1700004000)
+    assert count==len(model["engines"])+1
     db.grade(market['ticker'],'yes',1700004900)
     stats=db.engine_scores()
-    assert len(stats['scores'])==5
+    assert len(stats['scores'])==count
     assert 'participant quotes' in stats['note'] or 'Order-book' in stats['note']
     assert all(x['benchmark_kind']=='participant_order_book_yes_midpoint'
                for x in stats['scores'])
