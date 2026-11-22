@@ -1,8 +1,8 @@
 """Read-only BRTI WebSocket reference, receipt provenance and freshness.
 
 No real orders, portfolio access, or historical backfill. The BTC spot based
-forecast intentionally remains unchanged: live BRTI is a separate nonvoting
-reference lane until forward accuracy is verified. No raw index feed is
+live BRTI drives price-based forecasting through authenticated index-derived
+candles. The raw transport stream itself is not a vote or an order channel. No raw index feed is
 published to disk or to the browser.
 """
 from __future__ import annotations
@@ -216,7 +216,7 @@ class BRTITracker:
                     "reason": ("Live WebSocket not configured" if status == "DISABLED" else
                                "Awaiting genuine BRTI messages" if status == "UNAVAILABLE" else
                                "BRTI event/receipt data too old" if status == "STALE" else
-                               "Current authentic BRTI stream, NONVOTING only"),
+                               "Current authentic BRTI stream; primary live price reference"),
                     "authenticated_stream_verified": bool(status=="STREAMING"),
                     "latest_value_usd": current["value_usd"] if current else None,
                     "latest_channel": current["channel"] if current else None,
