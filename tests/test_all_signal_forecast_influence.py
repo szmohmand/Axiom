@@ -53,10 +53,9 @@ def test_genuine_two_hour_completed_5m_context():
     assert f["directional_components"]["2h_efficiency"]>0
 
 
-def test_binance_cvd_funding_large_print_without_kalshi_depth_still_influences():
+def test_binance_cvd_large_print_without_kalshi_depth_still_influences():
     now=1800007200
-    binance={"status":"STREAMING","funding_status":"LIVE",
-             "funding_rate":.00035,"funding_mark_index_basis_bps":4.0,
+    binance={"status":"STREAMING",
              "cvd_2m":{"taker_imbalance":.7,"trades_seen":100},
              "cvd_5m":{"taker_imbalance":.4,"trades_seen":200},
              "large_trade_activity":{"net_taker_usdt":120000.,
@@ -67,8 +66,28 @@ def test_binance_cvd_funding_large_print_without_kalshi_depth_still_influences()
     assert result["available"],result
     assert "btc_taker_cvd_2m" in signals
     assert "btc_large_aggressive_prints" in signals
-    assert "btc_perpetual_funding_pressure" in signals
-    assert "btc_perpetual_basis_pressure" in signals
+    assert "btc_perpetual_funding_pressure" not in signals
+    assert "btc_perpetual_basis_pressure" not in signals
+
+
+def test_funding_cannot_change_market_structure_features_or_forecast():
+    now=1800007200
+    tracker=DepthFlowTracker()
+    ticker={"ticker":"KXBTC15M-TEST"}
+    base={"status":"STREAMING","cvd_2m":{"taker_imbalance":.60,"trades_seen":100},
+          "large_trade_activity":{"net_taker_usdt":3000.,
+              "large_trade_threshold_usdt":1000.,"large_print_count":3}}
+    original=tracker.observe(None,ticker,base,64000,now)
+    fake={**base,"funding_rate":.05,"funding_status":"LIVE",
+          "funding_percent":5.0,"funding_mark_index_basis_bps":99999}
+    injected=tracker.observe(None,ticker,fake,64000,now)
+    assert original==injected
+    forecast={"timeframes":{"directional_components":{"30m_efficiency":.5}},
+              "microstructure":original}
+    other={"timeframes":{"directional_components":{"30m_efficiency":.5}},
+           "microstructure":injected}
+    m={"ticker":ticker["ticker"],"target":64000,"seconds_left":600}
+    assert pressure_forecast(64000,m,.52,forecast)==pressure_forecast(64000,m,.52,other)
 
 
 def test_real_kalshi_book_imbalance_and_replenishment_enter_context():
