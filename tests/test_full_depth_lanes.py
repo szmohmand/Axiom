@@ -110,7 +110,7 @@ def test_same_forecast_with_different_depth_changes_opportunity_not_probability(
     tight=makebook(12345., yes=[["0.46","100"],["0.50","100"]],
                    no=[["0.42","100"],["0.46","100"]])
     expensive=makebook(12345.,yes=[["0.95","100"],["0.97","100"]],
-                       no=[["0.10","100"],["0.13","100"]])
+                       no=[["0.01","100"],["0.02","100"]])
     a=analyze_opportunities(f,m,tight,12345.,size_contracts=10)
     b=analyze_opportunities(f,m,expensive,12345.,size_contracts=10)
     assert a["side"]=="YES" and a["selected"] is not None
