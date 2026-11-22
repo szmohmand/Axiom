@@ -103,6 +103,28 @@ def run():
                     assert int(data["yes"])>0 and int(data["no"])>0, data
                     assert data["bodyWidth"]<=data["viewport"]+2, "Unexpected horizontal page overflow"
                     assert data["status"]=="DEMO", data
+                    # Read the SAME state object the browser rendered, rather
+                    # than comparing against an earlier HTTP poll that may
+                    # have changed while demo/live prices were refreshing.
+                    consensus = page.evaluate("""() => {
+                      const f=latest?.model || {};
+                      const active=f.active_predictive_models || [];
+                      const method=document.querySelector('#modelMethod').textContent.trim();
+                      const count=document.querySelector('#consensusInfo').textContent.trim();
+                      const detail=document.querySelector('#agreementExplain').textContent.trim();
+                      return {method, count, detail, backendMethod:f.method,
+                              active:active.length, agreement:f.agreement,
+                              valid:f.available,
+                              mean:f.all_signal_integration_active};
+                    }""")
+                    assert consensus["valid"] and consensus["mean"], consensus
+                    assert consensus["backendMethod"]=="experimental-equal-weight-mean-consensus", consensus
+                    assert "equal-weight mean" in consensus["method"], consensus
+                    assert consensus["count"].startswith(
+                        f'Agree {consensus["agreement"]}/{consensus["active"]} · '), consensus
+                    assert 0<=consensus["agreement"]<=consensus["active"], consensus
+                    assert "does not automatically switch to WAIT" in consensus["detail"], consensus
+                    assert "disagreement >30 points forces WAIT" not in consensus["detail"], consensus
                     assert data["action"] in ("WAIT","ENTER"),data
                     assert not script_errors, "Dashboard JavaScript error(s): " + repr(script_errors)
                     screenshot=str(Path.cwd()/f"axiom-{name}-ui-acceptance.png")
