@@ -123,6 +123,11 @@ def _view_locked(now):
     data['errors'] = dict(state['errors'])
     data['settlement'] = dict(state['settlement'])
     data['live_briti'] = brti_tracker.snapshot()
+    if not DEMO:
+        data['constituent_feeds'] = flow_tracker.diagnostics(now)
+        for venue, details in data['constituent_feeds'].items():
+            if details['health_error'] is not None:
+                data['errors']['constituent_' + venue] = details['health_error']
     if DEMO:
         data['binance_intelligence'] = binance_telemetry.snapshot(now)
     attempted = state['last_attempt']
@@ -802,6 +807,7 @@ def health():
         'last_success':snapshot['last_success'],
         'heartbeat_age_seconds':snapshot['heartbeat_age_seconds'],
         'errors':snapshot['errors'],'settlement':snapshot['settlement'],
+        'constituent_feeds':snapshot.get('constituent_feeds'),
         'live_briti':snapshot['live_briti'],
         'binance_intelligence':snapshot['binance_intelligence'],
         'binance_kalshi_delay':snapshot.get('binance_kalshi_delay')},

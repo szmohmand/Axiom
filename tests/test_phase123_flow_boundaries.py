@@ -232,7 +232,7 @@ def test_readonly_signal_respects_side_price_and_flow():
     assert brain._exit_signal("NO",book(no=".3"),{"CVD_norm_60s":.4},120)["reason"]=="CVD_SIGN_FLIP"
 
 
-def test_mock_public_ws_sessions_reconnect_and_nonblocking_threads(monkeypatch):
+def test_mock_public_ws_sessions_reconnect_and_nonblocking_threads(monkeypatch,caplog):
     class FakeSocket:
         def __init__(self):
             self.sent=[]
@@ -250,9 +250,11 @@ def test_mock_public_ws_sessions_reconnect_and_nonblocking_threads(monkeypatch):
             return json.dumps({"type":"match","product_id":"BTC-USD",
                                "trade_id":123,"side":"sell","size":"1"})
     sockets=[]
-    def connect(*_args,**_kwargs):
+    connection_options=[]
+    def connect(*_args,**kwargs):
         socket=FakeSocket()
         sockets.append(socket)
+        connection_options.append(kwargs)
         return socket
     monkeypatch.setitem(sys.modules,"websockets",SimpleNamespace(connect=connect))
     class St:
@@ -268,8 +270,11 @@ def test_mock_public_ws_sessions_reconnect_and_nonblocking_threads(monkeypatch):
     stop=St()
     flow=brain.ConstituentFlow()
     for venue, sends in [("coinbase",1),("kraken",2),("bitstamp",2)]:
-        asyncio.run(brain._session(flow,venue,stop))
+        with pytest.raises(TimeoutError, match=venue):
+            asyncio.run(brain._session(flow,venue,stop))
         assert len(sockets[-1].sent)==sends
+        assert connection_options[-1]["max_size"] == 16 * 1024 * 1024
+        assert flow.worker_status[venue] == "SUBSCRIPTION_SENT"
     def finished(coro):
         coro.close()
     monkeypatch.setattr(brain.asyncio,"run",finished)
@@ -282,6 +287,10 @@ def test_mock_public_ws_sessions_reconnect_and_nonblocking_threads(monkeypatch):
     stop.stopped=False
     brain._venue_worker(flow,"kraken",stop)
     assert stop.waits[-1]==4
+    error = flow.diagnostics()["kraken"]
+    assert error["connection_status"] == "BACKOFF"
+    assert "OSError: disconnected" in error["last_error"]
+    assert "venue=kraken" in caplog.text
     made=[]
     class FakeThread:
         def __init__(self,**kwargs):
@@ -335,3 +344,62 @@ def test_remaining_flow_validation_downward_pressure_and_regime():
              "best":{"YES":{"bid":None,"ask":None}}}
     tape.observe(contract(),invalid,100.,NOW)
     assert not tape.mid_history
+
+
+
+def test_venue_diagnostics_track_reconnect_staleness_and_recovery():
+    flow = brain.ConstituentFlow()
+    initial = flow.diagnostics(NOW)
+    assert list(initial) == ["coinbase", "kraken", "bitstamp"]
+    assert initial["coinbase"]["connection_status"] == "STARTING"
+    assert initial["coinbase"]["last_valid_book_age_seconds"] is None
+    assert initial["coinbase"]["last_trade_age_seconds"] is None
+    assert initial["coinbase"]["health_error"] is None
+
+    flow.connection_event("coinbase", "CONNECTING", now=NOW-40)
+    assert flow.diagnostics(NOW)["coinbase"]["health_error"] is None
+    flow.connection_event("coinbase", "SUBSCRIPTION_SENT", now=NOW-35)
+    status = flow.diagnostics(NOW)["coinbase"]
+    assert status["health_error"] == "No recent valid order book"
+    assert not status["book_ready"] and not status["trade_ready"]
+
+    flow._book("coinbase", {100.: 5.}, {101.: 4.}, NOW-1, snapshot=True)
+    status = flow.diagnostics(NOW)["coinbase"]
+    assert status["book_ready"] and not status["trade_ready"]
+    assert status["health_error"] == "No recent accepted trades"
+    assert status["last_valid_book_age_seconds"] == 1
+    flow._trade("coinbase", 1, "buy", .2, NOW-1)
+    status = flow.diagnostics(NOW)["coinbase"]
+    assert status["ready"] and status["health_error"] is None
+    assert status["last_trade_age_seconds"] == 1
+
+    # The last valid timestamps survive the reconnect book/trade reset.
+    flow.reset("coinbase")
+    status = flow.diagnostics(NOW)
+    assert status["coinbase"]["last_valid_book_at"] == NOW-1
+    assert status["coinbase"]["last_trade_at"] == NOW-1
+    assert not status["coinbase"]["ready"]
+
+    flow.connection_event("coinbase", "BACKOFF",
+                          error=RuntimeError("WebSocket close 1009 MESSAGE_TOO_BIG"),
+                          now=NOW)
+    status = flow.diagnostics(NOW)["coinbase"]
+    assert status["connection_status"] == "BACKOFF"
+    assert status["last_error_at"] == NOW
+    assert "1009 MESSAGE_TOO_BIG" in status["health_error"]
+
+    flow.connection_event("coinbase", "CONNECTING", now=NOW+1)
+    flow.connection_event("coinbase", "SUBSCRIPTION_SENT", now=NOW+2)
+    assert flow.diagnostics(NOW+3)["coinbase"]["health_error"] is None
+    flow._book("coinbase", {100.: 5.}, {101.: 4.}, NOW+3, snapshot=True)
+    flow._trade("coinbase", 2, "sell", .3, NOW+3)
+    status = flow.diagnostics(NOW+4)["coinbase"]
+    assert status["ready"] and status["health_error"] is None
+    assert status["last_error"] is not None  # Historical error retained.
+    assert status["last_valid_book_age_seconds"] == 1
+    assert status["last_trade_age_seconds"] == 1
+
+    # The current book/trades can become stale even while the socket stays up.
+    status = flow.diagnostics(NOW+80)["coinbase"]
+    assert status["health_error"] == "No recent valid order book"
+    assert status["last_valid_book_age_seconds"] == 77

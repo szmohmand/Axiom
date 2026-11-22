@@ -226,3 +226,55 @@ def test_demo_market_failure_survives_without_calling_live_exchange(env):
     state=main.update_once()
     assert "kalshi" in state["errors"]
     assert state["trade_decision"]["order_placed"] is False
+
+
+
+def test_constituent_worker_failure_exposed_in_health_and_state(live):
+    main,clock,provider,client=live
+    main.flow_tracker.connection_event(
+        "coinbase", "BACKOFF", error=RuntimeError("WebSocket 1009 MESSAGE_TOO_BIG"),
+        now=clock.now)
+    result=main.update_once()
+    assert result["status"]=="DEGRADED"
+    assert "constituent_coinbase" in result["errors"]
+    feed=result["constituent_feeds"]["coinbase"]
+    assert feed["connection_status"]=="BACKOFF"
+    assert "1009" in feed["last_error"]
+    assert feed["last_valid_book_at"] is None
+    assert result["trade_decision"]["order_placed"] is False
+    assert result["trade_decision"]["read_only"] is True
+
+    health=client.get("/health")
+    assert health.status_code==503
+    h=health.json()
+    assert "constituent_coinbase" in h["errors"]
+    assert h["constituent_feeds"]["coinbase"]["connection_status"]=="BACKOFF"
+    state=client.get("/api/state")
+    assert state.status_code==200
+    assert "constituent_coinbase" in state.json()["errors"]
+    assert state.json()["constituent_feeds"]["coinbase"]["health_error"]
+
+    # Diagnostic worker faults are not inserted into persistent model error
+    # state; a recovered connection can clear the health warning.
+    assert "constituent_coinbase" not in main.state["errors"]
+    main.flow_tracker.connection_event("coinbase", "CONNECTING", now=clock.now)
+    main.flow_tracker.connection_event("coinbase", "SUBSCRIPTION_SENT", now=clock.now)
+    recovered=main.update_once()
+    assert "constituent_coinbase" not in recovered["errors"]
+    assert recovered["trade_decision"]["order_placed"] is False
+
+
+def test_subscription_without_valid_book_or_trade_surfaces_after_grace(live):
+    main,clock,provider,client=live
+    main.flow_tracker.connection_event("kraken", "SUBSCRIPTION_SENT", now=clock.now-40)
+    diag=main.update_once()
+    assert diag["errors"]["constituent_kraken"] == "No recent valid order book"
+    main.flow_tracker._book("kraken", {90000.: 3.}, {90001.: 5.},
+                           clock.now, snapshot=True)
+    diag=main.update_once()
+    assert diag["errors"]["constituent_kraken"] == "No recent accepted trades"
+    main.flow_tracker._trade("kraken", "id-123", "buy", 1., clock.now)
+    diag=main.update_once()
+    assert "constituent_kraken" not in diag["errors"]
+    assert diag["constituent_feeds"]["kraken"]["ready"] is True
+    assert diag["execution_intelligence"]["order_placed"] is False

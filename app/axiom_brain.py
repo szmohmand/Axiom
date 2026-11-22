@@ -6,6 +6,7 @@ from collections import deque
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import json
+import logging
 import math
 import statistics
 import threading
@@ -23,6 +24,8 @@ URLS = {
 BRTI_SOURCE = "cfbenchmarks_brti_authenticated_live"
 # 1m log-return sigma; conservative temporary ceiling until 24h IV history.
 COLD_START_IV_MAX_1M = 0.0012
+LOG = logging.getLogger(__name__)
+CONSTITUENT_MAX_FRAME_BYTES = 16 * 1024 * 1024
 
 
 def _positive(value):
@@ -129,6 +132,57 @@ class ConstituentFlow:
         self.trade_ids = {v: {} for v in VENUES}
         self.depth_samples = {v: deque(maxlen=1200) for v in VENUES}
         self.trade_sequence = 0
+        # Transport diagnostics never feed prices, votes, or paper decisions.
+        self.worker_status = {v: "STARTING" for v in VENUES}
+        self.connected_at = {v: None for v in VENUES}
+        self.last_error = {v: None for v in VENUES}
+        self.last_error_at = {v: None for v in VENUES}
+        self.last_valid_book_at = {v: None for v in VENUES}
+        self.last_valid_trade_at = {v: None for v in VENUES}
+
+    def connection_event(self, venue, status, *, error=None, now=None):
+        at = time.time() if now is None else float(now)
+        with self.lock:
+            self.worker_status[venue] = status
+            if status == "SUBSCRIPTION_SENT":
+                self.connected_at[venue] = at
+            if error is not None:
+                self.last_error[venue] = f"{type(error).__name__}: {str(error)[:220]}"
+                self.last_error_at[venue] = at
+
+    def diagnostics(self, now=None):
+        now = time.time() if now is None else float(now)
+        with self.lock:
+            result = {}
+            for venue in VENUES:
+                status = self.worker_status[venue]
+                book_at, trade_at = self.book_at[venue], self.trade_at[venue]
+                book_ready = book_at is not None and 0 <= now-book_at <= 12
+                trade_ready = trade_at is not None and 0 <= now-trade_at <= 20
+                connected_at = self.connected_at[venue]
+                def age(at):
+                    return None if at is None else round(max(0., now-at), 2)
+                if status == "BACKOFF":
+                    problem = self.last_error[venue] or "WebSocket reconnecting"
+                elif (status == "SUBSCRIPTION_SENT" and connected_at is not None
+                      and now-connected_at > 30):
+                    problem = ("No recent valid order book" if not book_ready else
+                               "No recent accepted trades" if not trade_ready else None)
+                else:
+                    problem = None
+                result[venue] = {
+                    "connection_status": status, "connection_at": connected_at,
+                    "last_error": self.last_error[venue],
+                    "last_error_at": self.last_error_at[venue],
+                    "last_valid_book_at": self.last_valid_book_at[venue],
+                    "last_valid_book_age_seconds": age(self.last_valid_book_at[venue]),
+                    "last_trade_at": self.last_valid_trade_at[venue],
+                    "last_trade_age_seconds": age(self.last_valid_trade_at[venue]),
+                    "book_ready": book_ready, "trade_ready": trade_ready,
+                    "ready": book_ready and trade_ready,
+                    "health_error": problem,
+                }
+            return result
 
     def reset(self, venue):
         with self.lock:
@@ -169,6 +223,7 @@ class ConstituentFlow:
                 self.ofi[venue].append((now, pressure, gross))
         self.books[venue] = new
         self.book_at[venue] = now
+        self.last_valid_book_at[venue] = now
         mid, bid_depth, ask_depth = _near_depth(new)
         if mid is not None:
             samples = self.depth_samples[venue]
@@ -194,6 +249,7 @@ class ConstituentFlow:
         self.trades[venue].append((now, size if side == "buy" else -size,
                                    self.trade_sequence))
         self.trade_at[venue] = now
+        self.last_valid_trade_at[venue] = now
 
     def ingest(self, venue, packet, now=None):
         if venue not in VENUES or not isinstance(packet, dict):
@@ -386,7 +442,8 @@ class ConstituentFlow:
 async def _session(flow, venue, stop):
     import websockets
     async with websockets.connect(URLS[venue], open_timeout=10, close_timeout=3,
-                                  ping_interval=20, ping_timeout=15, max_size=4_000_000) as ws:
+                                  ping_interval=20, ping_timeout=15,
+                                  max_size=CONSTITUENT_MAX_FRAME_BYTES) as ws:
         if venue == "coinbase":
             await ws.send(json.dumps({"type": "subscribe", "product_ids": ["BTC-USD"],
                                       "channels": ["level2", "matches"]}))
@@ -401,11 +458,12 @@ async def _session(flow, venue, stop):
             for channel in ("order_book_btcusd", "live_trades_btcusd"):
                 await ws.send(json.dumps({"event": "bts:subscribe",
                                           "data": {"channel": channel}}))
+        flow.connection_event(venue, "SUBSCRIPTION_SENT")
         while not stop.is_set():
             try:
                 raw = await asyncio.wait_for(ws.recv(), timeout=30)
-            except asyncio.TimeoutError:
-                break
+            except asyncio.TimeoutError as exc:
+                raise TimeoutError(f"{venue} WebSocket received no data for 30s") from exc
             packet = json.loads(raw)
             flow.ingest(venue, packet)
 
@@ -414,10 +472,13 @@ def _venue_worker(flow, venue, stop):
     backoff = 2
     while not stop.is_set():
         flow.reset(venue)
+        flow.connection_event(venue, "CONNECTING")
         try:
             asyncio.run(_session(flow, venue, stop))
             backoff = 2
-        except Exception:
+        except Exception as exc:
+            LOG.exception("Constituent WebSocket worker failed: venue=%s", venue)
+            flow.connection_event(venue, "BACKOFF", error=exc)
             backoff = min(60, backoff * 2)
         finally:
             flow.reset(venue)
