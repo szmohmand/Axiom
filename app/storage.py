@@ -123,7 +123,7 @@ class Ledger:
     def trade(self, market, side, now, model_probability=None, source='MANUAL'):
         side=side.upper()
         if side not in ('YES','NO'): raise ValueError('Side must be YES or NO')
-        if market['seconds_left'] < 45: raise ValueError('Market too close to close')
+        if market['seconds_left'] < 20: raise ValueError('Less than 20 seconds remain')
         entry=market.get('yes_ask' if side=='YES' else 'no_ask')
         if entry is None or not .01<=entry<=.99: raise ValueError('No valid current ask available')
         with self.lock:
