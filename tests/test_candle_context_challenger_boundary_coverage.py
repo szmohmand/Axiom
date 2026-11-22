@@ -56,9 +56,10 @@ def test_candle_context_defensively_rejects_invalid_raw_data(variant):
     if variant=="stale":now=NOW+500
     if variant=="zero_range":
         for row in data:
-            row["open"]=row["close"]
-            row["high"]=row["close"]
-            row["low"]=row["close"]
+            row["open"]=1000.
+            row["close"]=1000.
+            row["high"]=1000.
+            row["low"]=1000.
     result=cc.read_candlestick_context(data,now)
     assert result["available"] is False,variant
 
